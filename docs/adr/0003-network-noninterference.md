@@ -36,6 +36,12 @@ mutation, and respawn. Producer-side authority remains primary; the packet gate
 is a last-line interlock for those integrated actions, not a general Minecraft
 network firewall.
 
+An internal Horizonwright boundary failure disables new automation and denies
+the exact integrated packet whose authorization could not be established. It
+does not close an otherwise healthy Minecraft channel. Transport ownership
+remains with Minecraft and Forge; Horizonwright reports the failure while
+unknown and unintegrated traffic continues through unchanged.
+
 ## Consequences
 
 - Emergency and death safety block understood action packets after authority is
@@ -46,3 +52,6 @@ network firewall.
   before the boundary may block their packets.
 - Diagnostics may identify observed unknown traffic, but observation must not
   delay, release, rewrite, fail, or count it as a denied action.
+- Handler installation, bridge, retirement, or removal failures quarantine
+  Horizonwright automation without disconnecting the player or taking ownership
+  of unrelated network traffic.

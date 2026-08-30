@@ -1,6 +1,7 @@
 package io.github.kaseyawolf2.horizonwright.forge.client.network;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
@@ -78,6 +79,46 @@ public class OutboundPacketFirewallTest {
 
         arbitraryProxy.payload()
             .release();
+        channel.finish();
+    }
+
+    @Test
+    public void manualAutomationStopDoesNotBlockDirectPlayerMining() {
+        InMemoryActionBroker broker = new InMemoryActionBroker();
+        ActionSessionGuard guard = new ActionSessionGuard();
+        guard.markFirewallInstalled();
+        broker.addRevocationListener(guard);
+        EmbeddedChannel channel = new EmbeddedChannel(new OutboundPacketFirewall(guard));
+        broker.enterAutomationLockdown();
+        C07PacketPlayerDigging playerDig = new C07PacketPlayerDigging(0, 1, 64, 1, 1);
+
+        assertTrue(channel.writeOutbound(playerDig));
+        assertSame(playerDig, channel.readOutbound());
+        assertEquals(0L, guard.getBlockedActionCount());
+        channel.finish();
+    }
+
+    @Test
+    public void directHandlerRemovalDisablesAutomationButLeavesTheChannelAlone() {
+        InMemoryActionBroker broker = new InMemoryActionBroker();
+        ActionLease lease = broker.tryAcquire("navigation", EnumSet.of(ActionCapability.MOVEMENT))
+            .get();
+        ActionSessionGuard guard = new ActionSessionGuard();
+        guard.markFirewallInstalled();
+        guard.begin(lease);
+        OutboundPacketFirewall firewall = new OutboundPacketFirewall(guard);
+        EmbeddedChannel channel = new EmbeddedChannel(firewall);
+
+        channel.pipeline()
+            .remove(firewall);
+
+        assertTrue(channel.isOpen());
+        assertFalse(guard.isReadyForSession());
+        assertEquals(ActionSessionGuard.Mode.QUARANTINED, guard.getMode());
+        Object unknown = new Object();
+        assertTrue(channel.writeOutbound(unknown));
+        assertSame(unknown, channel.readOutbound());
+        assertEquals(0L, guard.getBlockedActionCount());
         channel.finish();
     }
 

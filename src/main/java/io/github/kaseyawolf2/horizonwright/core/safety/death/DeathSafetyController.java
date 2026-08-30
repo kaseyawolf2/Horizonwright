@@ -16,6 +16,13 @@ import java.util.Set;
  */
 public final class DeathSafetyController {
 
+    private static final DimensionBlockPosition UNKNOWN_DEATH_POSITION = new DimensionBlockPosition(
+        Integer.MIN_VALUE,
+        Integer.MIN_VALUE,
+        Integer.MIN_VALUE,
+        Integer.MIN_VALUE);
+    private static final InventoryManifest UNKNOWN_PRE_DEATH_INVENTORY = InventoryManifest.empty(0);
+
     private static final Set<DeathSafetyDirective> FIRST_LATCH_DIRECTIVES = EnumSet.of(
         DeathSafetyDirective.FORCE_CHECKPOINT_ACTIVE_TASK,
         DeathSafetyDirective.CANCEL_ALL_NAVIGATION_AND_PENDING_WORK,
@@ -160,6 +167,35 @@ public final class DeathSafetyController {
             resetHealthyStability();
         }
         return update(DeathSafetyEventDisposition.ACCEPTED);
+    }
+
+    /**
+     * Fail-safe lethal observation used when the network boundary has no usable client-thread baseline.
+     *
+     * <p>
+     * The placeholder position and inventory are never eligible for automatic recovery because this transition enters
+     * manual hold immediately. Persisting the explicit reason is safer than either fabricating recoverable evidence or
+     * throwing back into the inbound packet path.
+     */
+    public synchronized DeathSafetyUpdate onLethalHealthWithoutContext(SafetyEventStamp stamp) {
+        DeathSafetyEventDisposition rejected = rejectStamp(stamp);
+        if (rejected != null) {
+            return update(rejected);
+        }
+        if (hasUnresolvedDeath()) {
+            return state == DeathSafetyState.MANUAL_HOLD ? update(DeathSafetyEventDisposition.IGNORED_IN_CURRENT_STATE)
+                : enterManualHold(ManualHoldReason.PRE_DEATH_CONTEXT_UNAVAILABLE);
+        }
+        DeathContext unavailableContext = new DeathContext(
+            UNKNOWN_DEATH_POSITION,
+            currentPlayerIdentity,
+            null,
+            UNKNOWN_PRE_DEATH_INVENTORY);
+        return latchFirstDeath(
+            stamp,
+            DeathSignal.LETHAL_HEALTH_PACKET,
+            unavailableContext,
+            ManualHoldReason.PRE_DEATH_CONTEXT_UNAVAILABLE);
     }
 
     public synchronized DeathSafetyUpdate onDeathSignal(SafetyEventStamp stamp, DeathSignal signal,
@@ -572,6 +608,11 @@ public final class DeathSafetyController {
             || !currentPlayerIdentity.equals(context.getOldPlayerIdentity())) {
             return update(DeathSafetyEventDisposition.IGNORED_IN_CURRENT_STATE);
         }
+        return latchFirstDeath(stamp, signal, context, null);
+    }
+
+    private DeathSafetyUpdate latchFirstDeath(SafetyEventStamp stamp, DeathSignal signal, DeathContext context,
+        ManualHoldReason initialManualHoldReason) {
         if (nextDeathEpoch == Long.MAX_VALUE) {
             throw new IllegalStateException("death epoch exhausted");
         }
@@ -586,9 +627,9 @@ public final class DeathSafetyController {
         preDeathInventory = context.getPreDeathInventory();
         preDeathInventoryFingerprint = preDeathInventory.getContentFingerprint();
         respawnRequestConsumed = false;
-        manualHoldReason = null;
-        state = DeathSafetyState.DEATH_LATCHED;
-        recoveryPhase = RecoveryPhase.AWAITING_RESPAWN;
+        manualHoldReason = initialManualHoldReason;
+        state = initialManualHoldReason == null ? DeathSafetyState.DEATH_LATCHED : DeathSafetyState.MANUAL_HOLD;
+        recoveryPhase = initialManualHoldReason == null ? RecoveryPhase.AWAITING_RESPAWN : RecoveryPhase.MANUAL_HOLD;
         resetHealthyStability();
         resetRecoveryTransientEvidence();
 
@@ -601,7 +642,11 @@ public final class DeathSafetyController {
             deathWorldIdentity,
             context);
         interlock.latchDeath(record);
-        return update(DeathSafetyEventDisposition.ACCEPTED, FIRST_LATCH_DIRECTIVES);
+        Set<DeathSafetyDirective> firstLatch = EnumSet.copyOf(FIRST_LATCH_DIRECTIVES);
+        if (initialManualHoldReason != null) {
+            firstLatch.add(DeathSafetyDirective.ENTER_MANUAL_HOLD);
+        }
+        return update(DeathSafetyEventDisposition.ACCEPTED, firstLatch);
     }
 
     private DeathSafetyUpdate rejectDeathEpochOrPhase(long observedDeathEpoch, RecoveryPhase requiredPhase) {

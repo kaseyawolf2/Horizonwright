@@ -2,6 +2,7 @@ package io.github.kaseyawolf2.horizonwright.forge.client.network;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
 
 import java.util.EnumSet;
@@ -79,6 +80,36 @@ public class ClientPacketFirewallInstallerTest {
         channel.runPendingTasks();
         assertEquals(ActionSessionGuard.Mode.PLAYER, guard.getMode());
         assertTrue(guard.isReadyForSession());
+        channel.finish();
+    }
+
+    @Test
+    public void handlerInstallConflictQuarantinesAutomationWithoutClosingTransport() {
+        InMemoryActionBroker broker = new InMemoryActionBroker();
+        ActionLease lease = broker.tryAcquire("navigation", EnumSet.of(ActionCapability.MOVEMENT))
+            .get();
+        ActionSessionGuard guard = new ActionSessionGuard();
+        guard.markFirewallInstalled();
+        guard.begin(lease);
+        ClientPacketFirewallInstaller installer = new ClientPacketFirewallInstaller(guard);
+        NetworkManager manager = new NetworkManager(true);
+        EmbeddedChannel channel = new EmbeddedChannel(new ChannelInboundHandlerAdapter());
+        channel.pipeline()
+            .addLast("horizonwright_action_firewall", new ChannelInboundHandlerAdapter());
+        channel.pipeline()
+            .addLast("packet_handler", new ChannelInboundHandlerAdapter());
+
+        installer.ensureInstalled(manager, channel);
+        channel.runPendingTasks();
+
+        assertEquals(ClientPacketFirewallInstaller.State.FAILED, installer.getState());
+        assertEquals(ActionSessionGuard.Mode.QUARANTINED, guard.getMode());
+        assertFalse(installer.isReady());
+        assertTrue(channel.isOpen());
+        Object unknown = new Object();
+        assertTrue(channel.writeOutbound(unknown));
+        assertSame(unknown, channel.readOutbound());
+        assertEquals(0L, guard.getBlockedActionCount());
         channel.finish();
     }
 }

@@ -2,6 +2,7 @@ package io.github.kaseyawolf2.horizonwright.core.safety.death;
 
 /** Fail-closed reasons which require explicit operator resolution. */
 public enum ManualHoldReason {
+    PRE_DEATH_CONTEXT_UNAVAILABLE,
     PROFILE_MISMATCH,
     REPEATED_DEATH_DURING_RECOVERY,
     UNSAFE_RECOVERY_NAVIGATION,
