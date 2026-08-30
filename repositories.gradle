@@ -1,0 +1,3 @@
+repositories {
+    // Add exact-version optional GTNH integrations here as they are implemented.
+}
