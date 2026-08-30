@@ -5,5 +5,11 @@ dependencies {
         rfg.deobf(project.files("vendor/baritone/baritone-v1.2.19-mc1.7.10.jar"))
     )
 
+    // The settings UI contract tests exercise the exact same pinned API. This
+    // remains test-only and is still excluded from Horizonwright's artifact.
+    testImplementation(
+        rfg.deobf(project.files("vendor/baritone/baritone-v1.2.19-mc1.7.10.jar"))
+    )
+
     testImplementation("junit:junit:4.13.2")
 }

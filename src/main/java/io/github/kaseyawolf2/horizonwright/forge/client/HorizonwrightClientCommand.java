@@ -1,14 +1,18 @@
 package io.github.kaseyawolf2.horizonwright.forge.client;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 
 import net.minecraft.command.CommandBase;
 import net.minecraft.command.ICommandSender;
+import net.minecraft.event.ClickEvent;
+import net.minecraft.event.HoverEvent;
 import net.minecraft.util.ChatComponentText;
 import net.minecraft.util.ChunkCoordinates;
 import net.minecraft.util.EnumChatFormatting;
+import net.minecraft.util.IChatComponent;
 
 import io.github.kaseyawolf2.horizonwright.HorizonwrightRuntime;
 import io.github.kaseyawolf2.horizonwright.HorizonwrightRuntime.RuntimeSnapshot;
@@ -17,13 +21,27 @@ import io.github.kaseyawolf2.horizonwright.core.task.ControllerSnapshot;
 import io.github.kaseyawolf2.horizonwright.core.task.TaskLane;
 import io.github.kaseyawolf2.horizonwright.core.task.TaskResumeCandidates;
 import io.github.kaseyawolf2.horizonwright.core.task.TaskSnapshot;
+import io.github.kaseyawolf2.horizonwright.runtime.persistence.session.ClientProfileBindingCoordinator;
+import io.github.kaseyawolf2.horizonwright.runtime.persistence.session.ClientProfileBindingSnapshot;
+import io.github.kaseyawolf2.horizonwright.runtime.persistence.session.ClientProfileBindingState;
+import io.github.kaseyawolf2.horizonwright.runtime.persistence.session.CurrentRuntimeProvider;
 
 public final class HorizonwrightClientCommand extends CommandBase {
 
-    private final HorizonwrightRuntime runtime;
+    private final CurrentRuntimeProvider runtimeProvider;
+    private final ClientProfileBindingCoordinator profileBindings;
 
-    public HorizonwrightClientCommand(HorizonwrightRuntime runtime) {
-        this.runtime = runtime;
+    public HorizonwrightClientCommand(CurrentRuntimeProvider runtimeProvider) {
+        this(runtimeProvider, null);
+    }
+
+    public HorizonwrightClientCommand(CurrentRuntimeProvider runtimeProvider,
+        ClientProfileBindingCoordinator profileBindings) {
+        if (runtimeProvider == null) {
+            throw new IllegalArgumentException("runtimeProvider must not be null");
+        }
+        this.runtimeProvider = runtimeProvider;
+        this.profileBindings = profileBindings;
     }
 
     @Override
@@ -33,7 +51,7 @@ public final class HorizonwrightClientCommand extends CommandBase {
 
     @Override
     public String getCommandUsage(ICommandSender sender) {
-        return "/hw [panel|status|task [id]|goto <x> <y> <z> [tolerance]|pause [id]|resume [id]|cancel <id>|navcancel|dryrun [on|off]|stop|reset]";
+        return "/hw [panel|profile [status|enroll|recover|reassociate <id>]|status|task [id]|goto <x> <y> <z> [tolerance]|pause [id]|resume [id]|cancel <id>|navcancel|dryrun [on|off]|stop|reset]";
     }
 
     @Override
@@ -43,16 +61,32 @@ public final class HorizonwrightClientCommand extends CommandBase {
             ClientBootstrap.openDashboard();
             return;
         }
+        if ("profile".equals(subcommand)) {
+            controlProfile(sender, arguments);
+            return;
+        }
+        if (!isRuntimeCommand(subcommand)) {
+            sender.addChatMessage(
+                new ChatComponentText(
+                    EnumChatFormatting.RED + "Unknown Horizonwright command. " + getCommandUsage(sender)));
+            return;
+        }
+        CurrentRuntimeUiResolver.Resolution resolution = CurrentRuntimeUiResolver.resolve(runtimeProvider);
+        if (!resolution.isAvailable()) {
+            showUnavailable(sender, resolution);
+            return;
+        }
+        HorizonwrightRuntime runtime = resolution.getRuntime();
         if ("status".equals(subcommand)) {
-            showStatus(sender);
+            showStatus(sender, runtime);
             return;
         }
         if ("task".equals(subcommand)) {
-            showTask(sender, arguments);
+            showTask(sender, arguments, runtime);
             return;
         }
         if ("goto".equals(subcommand)) {
-            startNavigation(sender, arguments);
+            startNavigation(sender, arguments, runtime);
             return;
         }
         if ("navcancel".equals(subcommand)) {
@@ -75,41 +109,52 @@ public final class HorizonwrightClientCommand extends CommandBase {
             return;
         }
         if ("pause".equals(subcommand)) {
-            controlTask(sender, arguments, Control.PAUSE);
+            controlTask(sender, arguments, Control.PAUSE, runtime);
             return;
         }
         if ("resume".equals(subcommand)) {
-            controlTask(sender, arguments, Control.RESUME);
+            controlTask(sender, arguments, Control.RESUME, runtime);
             return;
         }
         if ("cancel".equals(subcommand)) {
-            controlTask(sender, arguments, Control.CANCEL);
+            controlTask(sender, arguments, Control.CANCEL, runtime);
             return;
         }
         if ("dryrun".equals(subcommand)) {
-            setDryRun(sender, arguments);
+            setDryRun(sender, arguments, runtime);
             return;
         }
         if ("stop".equals(subcommand)) {
-            runtime.stopAutomation("manual /hw stop command");
-            sender.addChatMessage(
-                new ChatComponentText(
-                    EnumChatFormatting.RED + "Horizonwright automation stopped. Player control returns after the "
-                        + "queued automation-packet drain; use /hw reset to re-arm."));
+            stopAutomation(sender, runtime);
             return;
         }
         if ("reset".equals(subcommand)) {
-            resetAutomation(sender);
+            resetAutomation(sender, runtime);
             return;
         }
-        sender.addChatMessage(
-            new ChatComponentText(
-                EnumChatFormatting.RED + "Unknown Horizonwright command. " + getCommandUsage(sender)));
     }
 
     @Override
     public boolean canCommandSenderUseCommand(ICommandSender sender) {
         return true;
+    }
+
+    private static boolean isRuntimeCommand(String subcommand) {
+        return "status".equals(subcommand) || "task".equals(subcommand)
+            || "goto".equals(subcommand)
+            || "navcancel".equals(subcommand)
+            || "pause".equals(subcommand)
+            || "resume".equals(subcommand)
+            || "cancel".equals(subcommand)
+            || "dryrun".equals(subcommand)
+            || "stop".equals(subcommand)
+            || "reset".equals(subcommand);
+    }
+
+    private static void showUnavailable(ICommandSender sender, CurrentRuntimeUiResolver.Resolution resolution) {
+        sender.addChatMessage(
+            new ChatComponentText(
+                EnumChatFormatting.YELLOW + "Horizonwright session unavailable: " + resolution.getDiagnostic()));
     }
 
     @Override
@@ -118,6 +163,7 @@ public final class HorizonwrightClientCommand extends CommandBase {
             return getListOfStringsMatchingLastWord(
                 arguments,
                 "panel",
+                "profile",
                 "status",
                 "task",
                 "goto",
@@ -129,10 +175,31 @@ public final class HorizonwrightClientCommand extends CommandBase {
                 "stop",
                 "reset");
         }
-        if (arguments.length != 2) {
-            return null;
+        if (arguments.length == 2 && "profile".equalsIgnoreCase(arguments[0])) {
+            return getListOfStringsMatchingLastWord(arguments, "status", "enroll", "recover", "reassociate");
         }
-        ControllerSnapshot snapshot = runtime.controllerSnapshot();
+        if (arguments.length == 3 && "profile".equalsIgnoreCase(arguments[0])
+            && "reassociate".equalsIgnoreCase(arguments[1])
+            && profileBindings != null) {
+            return getListOfStringsFromIterableMatchingLastWord(
+                arguments,
+                profileBindings.getSnapshot()
+                    .getReassociationCandidateProfileIds());
+        }
+        CurrentRuntimeUiResolver.Resolution resolution = CurrentRuntimeUiResolver.resolve(runtimeProvider);
+        if (!resolution.isAvailable()) {
+            return Collections.emptyList();
+        }
+        if (arguments.length != 2) {
+            return Collections.emptyList();
+        }
+        ControllerSnapshot snapshot;
+        try {
+            snapshot = resolution.getRuntime()
+                .controllerSnapshot();
+        } catch (RuntimeException failure) {
+            return Collections.emptyList();
+        }
         if ("resume".equalsIgnoreCase(arguments[0])) {
             return getListOfStringsFromIterableMatchingLastWord(arguments, taskIds(resumeCandidates(snapshot)));
         }
@@ -143,10 +210,60 @@ public final class HorizonwrightClientCommand extends CommandBase {
         if ("dryrun".equalsIgnoreCase(arguments[0])) {
             return getListOfStringsMatchingLastWord(arguments, "on", "off");
         }
-        return null;
+        return Collections.emptyList();
     }
 
-    private void startNavigation(ICommandSender sender, String[] arguments) {
+    private void controlProfile(ICommandSender sender, String[] arguments) {
+        if (profileBindings == null) {
+            sender.addChatMessage(
+                new ChatComponentText(EnumChatFormatting.YELLOW + "Profile enrollment is unavailable."));
+            return;
+        }
+        String operation = arguments.length < 2 ? "status" : arguments[1].toLowerCase();
+        try {
+            ClientProfileBindingSnapshot result;
+            if ("status".equals(operation) && (arguments.length == 1 || arguments.length == 2)) {
+                result = profileBindings.getSnapshot();
+            } else if ("enroll".equals(operation) && arguments.length == 2) {
+                result = profileBindings.confirmEnrollment(true);
+            } else if ("recover".equals(operation) && arguments.length == 2) {
+                result = profileBindings.recoverInterruptedUpdate();
+            } else if ("reassociate".equals(operation) && arguments.length == 3) {
+                profileBindings.requestReassociation(arguments[2]);
+                result = profileBindings.confirmReassociation(arguments[2], true);
+            } else {
+                sender.addChatMessage(
+                    new ChatComponentText(
+                        EnumChatFormatting.RED
+                            + "Usage: /hw profile [status|enroll|recover|reassociate <profile-id>]"));
+                return;
+            }
+            showProfileSnapshot(sender, result);
+        } catch (RuntimeException failure) {
+            sender.addChatMessage(
+                new ChatComponentText(
+                    EnumChatFormatting.RED + "Profile operation refused safely: " + safeMessage(failure)));
+        }
+    }
+
+    private static void showProfileSnapshot(ICommandSender sender, ClientProfileBindingSnapshot snapshot) {
+        EnumChatFormatting color = snapshot.getSelectedIdentity()
+            .isPresent() ? EnumChatFormatting.GREEN
+                : snapshot.getState() == ClientProfileBindingState.FAILED ? EnumChatFormatting.RED
+                    : EnumChatFormatting.YELLOW;
+        sender.addChatMessage(
+            new ChatComponentText(
+                color + "Horizonwright profile " + snapshot.getState() + ": " + snapshot.getDiagnostic()));
+        if (!snapshot.getReassociationCandidateProfileIds()
+            .isEmpty()) {
+            sender.addChatMessage(
+                new ChatComponentText(
+                    EnumChatFormatting.AQUA + "Candidates: "
+                        + String.join(", ", snapshot.getReassociationCandidateProfileIds())));
+        }
+    }
+
+    private void startNavigation(ICommandSender sender, String[] arguments, HorizonwrightRuntime runtime) {
         if (arguments.length != 4 && arguments.length != 5) {
             sender.addChatMessage(new ChatComponentText(EnumChatFormatting.RED + getCommandUsage(sender)));
             return;
@@ -179,7 +296,7 @@ public final class HorizonwrightClientCommand extends CommandBase {
         }
     }
 
-    private void showStatus(ICommandSender sender) {
+    private void showStatus(ICommandSender sender, HorizonwrightRuntime runtime) {
         RuntimeSnapshot runtimeSnapshot = runtime.snapshot();
         ControllerSnapshot controller = runtimeSnapshot.getController();
         String active = controller.getActiveTaskId()
@@ -205,7 +322,7 @@ public final class HorizonwrightClientCommand extends CommandBase {
                     + resumeSuffix(controller)));
     }
 
-    private void resetAutomation(ICommandSender sender) {
+    private void resetAutomation(ICommandSender sender, HorizonwrightRuntime runtime) {
         try {
             boolean reset = runtime.resetAutomationStop();
             sender.addChatMessage(
@@ -220,6 +337,20 @@ public final class HorizonwrightClientCommand extends CommandBase {
         }
     }
 
+    private static void stopAutomation(ICommandSender sender, HorizonwrightRuntime runtime) {
+        try {
+            runtime.stopAutomation("manual /hw stop command");
+            sender.addChatMessage(
+                new ChatComponentText(
+                    EnumChatFormatting.RED + "Horizonwright automation stopped. Player control returns after the "
+                        + "queued automation-packet drain; use /hw reset to re-arm."));
+        } catch (RuntimeException failure) {
+            sender.addChatMessage(
+                new ChatComponentText(
+                    EnumChatFormatting.RED + "Automation stop failed safely: " + failure.getMessage()));
+        }
+    }
+
     private static String actionMode(RuntimeSnapshot snapshot, String activeTaskId) {
         if (snapshot.getActionBroker()
             .isDeathSafetyLocked()) {
@@ -230,7 +361,7 @@ public final class HorizonwrightClientCommand extends CommandBase {
             .isAutomationLocked() ? "AUTOMATION STOPPED" : "active=" + activeTaskId;
     }
 
-    private void showTask(ICommandSender sender, String[] arguments) {
+    private void showTask(ICommandSender sender, String[] arguments, HorizonwrightRuntime runtime) {
         if (arguments.length > 2) {
             sender.addChatMessage(new ChatComponentText(EnumChatFormatting.RED + getCommandUsage(sender)));
             return;
@@ -264,7 +395,7 @@ public final class HorizonwrightClientCommand extends CommandBase {
         }
     }
 
-    private void controlTask(ICommandSender sender, String[] arguments, Control control) {
+    private void controlTask(ICommandSender sender, String[] arguments, Control control, HorizonwrightRuntime runtime) {
         if ((control == Control.PAUSE && arguments.length > 2) || (control == Control.RESUME && arguments.length > 2)
             || (control == Control.CANCEL && arguments.length != 2)) {
             sender.addChatMessage(new ChatComponentText(EnumChatFormatting.RED + getCommandUsage(sender)));
@@ -314,7 +445,7 @@ public final class HorizonwrightClientCommand extends CommandBase {
         }
     }
 
-    private void setDryRun(ICommandSender sender, String[] arguments) {
+    private void setDryRun(ICommandSender sender, String[] arguments, HorizonwrightRuntime runtime) {
         if (arguments.length > 2) {
             sender.addChatMessage(new ChatComponentText(EnumChatFormatting.RED + getCommandUsage(sender)));
             return;
@@ -378,18 +509,39 @@ public final class HorizonwrightClientCommand extends CommandBase {
             return;
         }
         sender.addChatMessage(
-            new ChatComponentText(EnumChatFormatting.YELLOW + "Several Horizonwright tasks can resume; choose one:"));
+            new ChatComponentText(
+                EnumChatFormatting.YELLOW + "Several Horizonwright tasks can resume; click one to continue:"));
         for (TaskSnapshot candidate : candidates.asList()) {
-            sender.addChatMessage(
-                new ChatComponentText(
-                    EnumChatFormatting.AQUA + "/hw resume "
-                        + candidate.getSpec()
-                            .getId()
-                        + EnumChatFormatting.GRAY
-                        + " ("
-                        + candidate.getState()
-                        + ")"));
+            sender.addChatMessage(clickableResumeChoice(candidate));
         }
+    }
+
+    static IChatComponent clickableResumeChoice(TaskSnapshot candidate) {
+        if (candidate == null) {
+            throw new IllegalArgumentException("candidate must not be null");
+        }
+        String taskId = candidate.getSpec()
+            .getId();
+        ChatComponentText choice = new ChatComponentText(
+            "[Resume] " + candidate.getSpec()
+                .getDisplayName() + "  [" + taskId + "]");
+        choice.getChatStyle()
+            .setColor(EnumChatFormatting.AQUA)
+            .setUnderlined(Boolean.TRUE)
+            .setChatClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, "/hw resume " + taskId))
+            .setChatHoverEvent(
+                new HoverEvent(
+                    HoverEvent.Action.SHOW_TEXT,
+                    new ChatComponentText(
+                        "Click to resume " + candidate.getSpec()
+                            .getDisplayName()
+                            + "\nTask: "
+                            + taskId
+                            + "\nState: "
+                            + candidate.getState()
+                            + "\n"
+                            + candidate.getDetail())));
+        return choice;
     }
 
     private static Iterable<TaskSnapshot> resumeCandidates(ControllerSnapshot snapshot) {
@@ -441,6 +593,13 @@ public final class HorizonwrightClientCommand extends CommandBase {
                 : "";
         return EnumChatFormatting.AQUA + task.getSpec()
             .getId() + EnumChatFormatting.GRAY + " " + task.getState() + " - " + task.getDetail() + blocked;
+    }
+
+    private static String safeMessage(RuntimeException failure) {
+        String message = failure.getMessage();
+        return message == null || message.trim()
+            .isEmpty() ? failure.getClass()
+                .getSimpleName() : message;
     }
 
     private enum Control {

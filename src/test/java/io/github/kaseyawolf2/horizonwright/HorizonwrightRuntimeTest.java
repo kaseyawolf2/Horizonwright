@@ -52,7 +52,8 @@ public class HorizonwrightRuntimeTest {
 
         runtime.close();
 
-        assertTrue(broker.isSafetyLocked());
+        assertTrue(broker.isAutomationLocked());
+        assertFalse(broker.isDeathSafetyLocked());
         assertEquals(NavigationState.CANCELLED, backend.handle.state);
         assertTrue(
             broker.snapshot()

@@ -1,9 +1,13 @@
 package io.github.kaseyawolf2.horizonwright.forge.client;
 
+import java.nio.file.Path;
 import java.util.Collections;
+import java.util.Optional;
+import java.util.UUID;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.settings.KeyBinding;
+import net.minecraft.network.NetworkManager;
 import net.minecraftforge.client.ClientCommandHandler;
 
 import org.lwjgl.input.Keyboard;
@@ -14,11 +18,28 @@ import cpw.mods.fml.common.FMLCommonHandler;
 import cpw.mods.fml.common.eventhandler.SubscribeEvent;
 import cpw.mods.fml.common.gameevent.InputEvent;
 import cpw.mods.fml.common.gameevent.TickEvent;
+import cpw.mods.fml.common.network.FMLNetworkEvent;
 import io.github.kaseyawolf2.horizonwright.HorizonwrightMod;
 import io.github.kaseyawolf2.horizonwright.HorizonwrightRuntime;
 import io.github.kaseyawolf2.horizonwright.core.action.ActionSessionGuard;
-import io.github.kaseyawolf2.horizonwright.core.task.ScheduleEnvironment;
+import io.github.kaseyawolf2.horizonwright.core.persistence.HorizonwrightPersistenceStore;
+import io.github.kaseyawolf2.horizonwright.core.persistence.ProfileBindingIndexStore;
+import io.github.kaseyawolf2.horizonwright.core.persistence.ProfileBindingKey;
+import io.github.kaseyawolf2.horizonwright.core.persistence.WorldProfileIdentity;
 import io.github.kaseyawolf2.horizonwright.forge.client.network.ClientPacketFirewallInstaller;
+import io.github.kaseyawolf2.horizonwright.forge.client.persistence.SingleplayerWorldBindingEvidence;
+import io.github.kaseyawolf2.horizonwright.forge.client.persistence.SingleplayerWorldMarkerRegistry;
+import io.github.kaseyawolf2.horizonwright.forge.client.persistence.SingleplayerWorldMarkerSnapshot;
+import io.github.kaseyawolf2.horizonwright.runtime.persistence.session.ClientProfileBindingCoordinator;
+import io.github.kaseyawolf2.horizonwright.runtime.persistence.session.ClientProfileBindingObservation;
+import io.github.kaseyawolf2.horizonwright.runtime.persistence.session.ClientProfileBindingSnapshot;
+import io.github.kaseyawolf2.horizonwright.runtime.persistence.session.ClientProfileBindingState;
+import io.github.kaseyawolf2.horizonwright.runtime.persistence.session.ClientRuntimeSessionManager;
+import io.github.kaseyawolf2.horizonwright.runtime.persistence.session.CurrentRuntimeProvider;
+import io.github.kaseyawolf2.horizonwright.runtime.persistence.session.HorizonwrightRuntimeSessionFactory;
+import io.github.kaseyawolf2.horizonwright.runtime.persistence.session.RefusingUnresolvedDeathStateBoundary;
+import io.github.kaseyawolf2.horizonwright.runtime.persistence.session.RuntimeConnectionToken;
+import io.github.kaseyawolf2.horizonwright.runtime.persistence.session.TaskControllerRuntimeSessionPersistence;
 
 public final class ClientBootstrap {
 
@@ -28,11 +49,18 @@ public final class ClientBootstrap {
         "key.horizonwright.dashboard",
         Keyboard.KEY_H,
         "key.categories.horizonwright");
-    private final HorizonwrightRuntime runtime = HorizonwrightRuntime.getInstance();
     private final ClientInputArbiter inputArbiter = new ClientInputArbiter();
     private final ClientScheduleEnvironmentTracker scheduleEnvironment = new ClientScheduleEnvironmentTracker();
-    private final ClientPacketFirewallInstaller packetFirewall = new ClientPacketFirewallInstaller(
-        runtime.getActionSessionGuard());
+    private ClientRuntimeSessionManager runtimeSessions;
+    private ClientProfileBindingCoordinator profileBindings;
+    private NetworkManager connectionManager;
+    private RuntimeConnectionToken connectionToken;
+    private boolean localConnection;
+    private long nextConnectionToken = 1L;
+    private long observedMarkerRevision = -1L;
+    private WorldProfileIdentity activeIdentity;
+    private HorizonwrightRuntime attachedRuntime;
+    private ClientPacketFirewallInstaller packetFirewall;
     private boolean initialized;
 
     private ClientBootstrap() {}
@@ -41,18 +69,66 @@ public final class ClientBootstrap {
         return INSTANCE;
     }
 
-    public synchronized void initialize() {
+    public synchronized void initialize(Path stateRoot) {
         if (initialized) {
             return;
         }
+        if (stateRoot == null) {
+            throw new IllegalArgumentException("stateRoot must not be null");
+        }
+        HorizonwrightPersistenceStore persistenceStore = new HorizonwrightPersistenceStore(stateRoot);
+        profileBindings = new ClientProfileBindingCoordinator(
+            new ProfileBindingIndexStore(stateRoot),
+            persistenceStore,
+            ClientBootstrap::randomStableId,
+            ClientBootstrap::randomStableId,
+            System::currentTimeMillis);
+        runtimeSessions = new ClientRuntimeSessionManager(new HorizonwrightRuntimeSessionFactory(connection -> {
+            Minecraft minecraft = Minecraft.getMinecraft();
+            boolean connected = minecraft.theWorld != null && minecraft.thePlayer != null;
+            long worldTime = connected ? minecraft.theWorld.getWorldTime() : 0L;
+            return scheduleEnvironment.observe(connected, worldTime, Collections.<String>emptySet());
+        }, connection -> new RefusingUnresolvedDeathStateBoundary()),
+            identity -> new TaskControllerRuntimeSessionPersistence(persistenceStore, identity),
+            System::currentTimeMillis);
         ClientRegistry.registerKeyBinding(dashboardKey);
         FMLCommonHandler.instance()
             .bus()
             .register(this);
-        ClientCommandHandler.instance.registerCommand(new HorizonwrightClientCommand(runtime));
-        runtime.getActionBroker()
-            .addRevocationListener(inputArbiter);
+        SingleplayerWorldMarkerRegistry.getInstance()
+            .initialize();
+        ClientCommandHandler.instance.registerCommand(new HorizonwrightClientCommand(runtimeSessions, profileBindings));
         initialized = true;
+    }
+
+    @SubscribeEvent
+    public synchronized void onClientConnected(FMLNetworkEvent.ClientConnectedToServerEvent event) {
+        if (event == null || event.manager == null) {
+            return;
+        }
+        retireConnection();
+        connectionManager = event.manager;
+        connectionToken = new RuntimeConnectionToken("client-connection-" + nextConnectionToken++);
+        localConnection = event.isLocal;
+        observedMarkerRevision = -1L;
+        profileBindings.clearWorld();
+        HorizonwrightMod.LOG.info(
+            "Horizonwright observed {} client connection {}",
+            localConnection ? "local" : "remote",
+            connectionToken);
+    }
+
+    @SubscribeEvent
+    public synchronized void onClientDisconnected(FMLNetworkEvent.ClientDisconnectionFromServerEvent event) {
+        if (event == null || event.manager != connectionManager) {
+            return;
+        }
+        retireConnection();
+        connectionManager = null;
+        connectionToken = null;
+        localConnection = false;
+        observedMarkerRevision = -1L;
+        profileBindings.clearWorld();
     }
 
     @SubscribeEvent
@@ -73,34 +149,155 @@ public final class ClientBootstrap {
     }
 
     @SubscribeEvent
-    public void onClientTick(TickEvent.ClientTickEvent event) {
-        if (event.phase == TickEvent.Phase.END) {
-            Minecraft minecraft = Minecraft.getMinecraft();
-            boolean connected = minecraft.theWorld != null && minecraft.thePlayer != null;
-            long worldTime = connected ? minecraft.theWorld.getWorldTime() : ScheduleEnvironment.UNKNOWN_WORLD_TIME;
-            runtime.clientTick(scheduleEnvironment.observe(connected, worldTime, Collections.<String>emptySet()));
-            packetFirewall.ensureInstalled();
+    public synchronized void onClientTick(TickEvent.ClientTickEvent event) {
+        if (event.phase != TickEvent.Phase.END || runtimeSessions == null) {
+            return;
+        }
+        try {
+            synchronizeSingleplayerProfile();
+            activateReadyProfile();
+            tickAttachedRuntime();
+        } catch (RuntimeException failure) {
+            HorizonwrightMod.LOG.error("Horizonwright client session tick failed safely", failure);
         }
     }
 
     public static void openDashboard() {
+        CurrentRuntimeProvider provider = INSTANCE.runtimeSessions;
+        if (provider == null) {
+            HorizonwrightMod.LOG.warn("Horizonwright dashboard requested before client runtime initialization");
+            return;
+        }
         Minecraft.getMinecraft()
-            .displayGuiScreen(new GuiHorizonwrightDashboard(HorizonwrightRuntime.getInstance()));
+            .displayGuiScreen(new GuiHorizonwrightDashboard(provider));
+    }
+
+    private void synchronizeSingleplayerProfile() {
+        if (connectionToken == null || !localConnection) {
+            return;
+        }
+        SingleplayerWorldMarkerSnapshot marker = SingleplayerWorldMarkerRegistry.getInstance()
+            .snapshot();
+        if (marker.getRevision() == observedMarkerRevision) {
+            return;
+        }
+        observedMarkerRevision = marker.getRevision();
+        Optional<SingleplayerWorldBindingEvidence> evidence = marker.getEvidence();
+        if (!evidence.isPresent()) {
+            profileBindings.clearWorld();
+            retireProfile();
+            HorizonwrightMod.LOG.warn("Horizonwright world profile unavailable: {}", marker.getDiagnostic());
+            return;
+        }
+        SingleplayerWorldBindingEvidence world = evidence.get();
+        ClientProfileBindingObservation observation = new ClientProfileBindingObservation(
+            ProfileBindingKey.singleplayer(world.getLocatorKey(), world.getWorldFingerprint()),
+            currentSingleplayerDisplayName(),
+            "singleplayer",
+            world.getWorldFingerprint());
+        ClientProfileBindingSnapshot binding = profileBindings.observe(observation);
+        HorizonwrightMod.LOG.info("Horizonwright world profile {}: {}", binding.getState(), binding.getDiagnostic());
+        if (binding.getState() != ClientProfileBindingState.READY) {
+            retireProfile();
+        }
+    }
+
+    private void activateReadyProfile() {
+        if (connectionToken == null || !localConnection) {
+            return;
+        }
+        Optional<WorldProfileIdentity> selected = profileBindings.getSnapshot()
+            .getSelectedIdentity();
+        if (!selected.isPresent()) {
+            return;
+        }
+        WorldProfileIdentity identity = selected.get();
+        if (activeIdentity == null || !activeIdentity.equals(identity)) {
+            retireProfile();
+            runtimeSessions.bindProfile(identity);
+            activeIdentity = identity;
+        }
+        Minecraft minecraft = Minecraft.getMinecraft();
+        if (minecraft.theWorld == null || minecraft.thePlayer == null || minecraft.getNetHandler() == null) {
+            return;
+        }
+        runtimeSessions.worldReady(identity, connectionToken);
+        Optional<HorizonwrightRuntime> current = runtimeSessions.getCurrentRuntime();
+        if (current.isPresent() && current.get() != attachedRuntime) {
+            attachedRuntime = current.get();
+            attachedRuntime.getActionBroker()
+                .addRevocationListener(inputArbiter);
+            ClientNavigationBootstrap.initialize(attachedRuntime);
+            packetFirewall = new ClientPacketFirewallInstaller(attachedRuntime.getActionSessionGuard());
+        }
+    }
+
+    private void tickAttachedRuntime() {
+        if (attachedRuntime == null || packetFirewall == null || activeIdentity == null || connectionToken == null) {
+            return;
+        }
+        packetFirewall.ensureInstalled();
+        if (packetFirewall.isReady()) {
+            runtimeSessions.clientTick(activeIdentity, connectionToken);
+        }
+    }
+
+    private void retireConnection() {
+        retireProfile();
+        if (runtimeSessions != null) {
+            runtimeSessions.unbindProfile();
+        }
+    }
+
+    private void retireProfile() {
+        if (runtimeSessions != null && activeIdentity != null && connectionToken != null) {
+            runtimeSessions.worldUnavailable(activeIdentity, connectionToken);
+            runtimeSessions.unbindProfile();
+        }
+        if (attachedRuntime != null) {
+            attachedRuntime.getActionSessionGuard()
+                .markTransportClosed();
+        }
+        activeIdentity = null;
+        attachedRuntime = null;
+        packetFirewall = null;
     }
 
     private void preemptForPhysicalInput(int keyCode) {
-        if (runtime.getActionSessionGuard()
-            .getMode() != ActionSessionGuard.Mode.ACTIVE || !isPlayerActionBinding(keyCode)) {
+        if (runtimeSessions == null || !isPlayerActionBinding(keyCode)) {
+            return;
+        }
+        Optional<HorizonwrightRuntime> current = runtimeSessions.getCurrentRuntime();
+        if (!current.isPresent() || current.get()
+            .getActionSessionGuard()
+            .getMode() != ActionSessionGuard.Mode.ACTIVE) {
             return;
         }
         try {
-            runtime.getActionBroker()
+            current.get()
+                .getActionBroker()
                 .revokeAll();
             HorizonwrightMod.LOG.info("Physical player input preempted Horizonwright navigation");
         } catch (RuntimeException failure) {
             HorizonwrightMod.LOG
                 .error("Physical input revocation listener failed after the action epoch advanced", failure);
         }
+    }
+
+    private static String currentSingleplayerDisplayName() {
+        Minecraft minecraft = Minecraft.getMinecraft();
+        if (minecraft.getIntegratedServer() == null) {
+            return "Singleplayer world";
+        }
+        String worldName = minecraft.getIntegratedServer()
+            .getFolderName();
+        return worldName == null || worldName.trim()
+            .isEmpty() ? "Singleplayer world" : worldName.trim();
+    }
+
+    private static String randomStableId() {
+        return UUID.randomUUID()
+            .toString();
     }
 
     private static boolean isPlayerActionBinding(int keyCode) {

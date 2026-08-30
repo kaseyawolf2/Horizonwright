@@ -344,7 +344,9 @@ public final class HorizonwrightRuntime implements AutoCloseable {
             failure = cancellationFailure;
         }
         try {
-            actionBroker.enterSafetyLockdown();
+            // Ordinary runtime retirement is automation-owner cleanup, not evidence of player death.
+            // A true death transition is the only authority allowed to engage the stronger packet latch.
+            actionBroker.enterAutomationLockdown();
         } catch (RuntimeException revocationFailure) {
             failure = append(failure, revocationFailure);
         }

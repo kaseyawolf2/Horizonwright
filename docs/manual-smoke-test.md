@@ -15,33 +15,48 @@ slow. Automated GUI control is reserved for infrequent release checkpoints.
 4. Back up and then open the disposable `Horizonwright Smoke Tes` world, or
    create a new disposable world. Never use a valued world or multiplayer
    server.
-5. Press `H` and confirm the dashboard reports:
+5. Run `/hw profile status`. On the first launch for this disposable world it
+   must report explicit enrollment is needed; run `/hw profile enroll`, then
+   confirm `/hw profile status` reports `READY`. Rejoining the same world must
+   select the same profile without asking for enrollment again.
+6. Press `H` and confirm the dashboard reports:
    - action epoch `1` and zero leases while idle;
    - Baritone `v1.2.19-mc1.7.10` ready;
    - safety ready; and
    - unattended operation disabled.
-6. Stand on clear, level ground with at least five unobstructed blocks ahead.
+   Open the **Baritone** tab, search for `allowSprint`, select it, and confirm
+   its type, current value, default, Apply, Reset, and Toggle controls are
+   visible. Toggle it and reset it, then reopen the tab and confirm the reset
+   value persisted.
+7. Stand on clear, level ground with at least five unobstructed blocks ahead.
    Note the selected hotbar slot, close the dashboard, and run `/hw status`.
-7. Run `/hw goto ~4 ~ ~ 1`. Confirm the player walks to the clear target and
+8. Run `/hw goto ~4 ~ ~ 1`. Confirm the player walks to the clear target and
    status reaches `COMPLETED`. Confirm no block was dug or placed, no entity was
    attacked or used, and the selected hotbar slot did not change. Keep Waila's
    overlay enabled and confirm it continues updating during the route.
-8. In a disposable open area, submit a target more than 128 blocks away (for
+9. In a disposable open area, submit a target more than 128 blocks away (for
    example `/hw goto ~160 ~ ~ 2`) and confirm it is accepted and begins moving.
    While it is moving, press `E`; confirm the inventory opens normally. Close
    it, cancel the long route if necessary, and confirm direct control remains
    available.
-9. Face another clear stretch and run `/hw goto ~12 ~ ~ 1`, then promptly run
+10. Face another clear stretch and run `/hw goto ~12 ~ ~ 1`, then promptly run
    `/hw navcancel`. Confirm status reaches `CANCELLED`, motion stops, and no key
    remains stuck.
-10. Start another clear route and run `/hw stop`. Confirm automation stops, the
+11. Start another clear route and run `/hw stop`. Confirm automation stops, the
     dashboard reports `AUTOMATION STOPPED`, and a new `/hw goto` is refused.
     Then verify ordinary player movement, manual block breaking, the `E`
     inventory, and unrelated mod UI/network behavior still work. Run `/hw reset`
-    after cleanup drains, submit a new short route, and confirm automation works
-    again. Do not use an actual death to test this manual-stop checkpoint.
-11. Save and quit to title, then exit Minecraft cleanly.
-12. Report completion, cancellation, automation-stop/reset, hotbar, long-route,
+    after cleanup drains, run `/hw resume` without copying a task ID, and confirm
+    the suspended route resumes. The dashboard's task-control button must also
+    read `Resume task` when that route is the sole resumable task. Do not use an
+    actual death to test this manual-stop checkpoint.
+12. Create two resumable routes. Run `/hw resume` without an ID and confirm both
+    chat choices are clickable and show hover details; click one and confirm
+    only that exact task resumes. Repeat with two resumable routes from the
+    dashboard and confirm **Choose task** opens a selection popup instead of
+    guessing.
+13. Save and quit to title, then exit Minecraft cleanly.
+14. Report completion, cancellation, automation-stop/reset, hotbar, long-route,
     inventory-menu, and world-mutation
     results. Check the log for Horizonwright packet denials: no Forge, custom,
     unclassified, or non-packet traffic may be denied merely because it is
@@ -56,3 +71,13 @@ request.
 Unknown or unintegrated network traffic is outside Horizonwright's ownership
 and must pass through unchanged in every state, including death safety. Only
 packet semantics with an explicit tested integration may be gated.
+
+## Recorded physical result
+
+On 2026-08-30, the operator completed the long-route, inventory-during-walk,
+automation stop/reset, direct movement/mining/inventory, unrelated-traffic, and
+ID-free resume checks above in the isolated GTNH 2.9.0-beta-2 instance. The
+operator also created two resumable routes and confirmed that ambiguous
+`/hw resume` listed both choices and that an exact task ID resumed only the
+selected route. All checks passed with production JAR SHA-256
+`CF9C16E234048D818C0957BA3284394FA6C62C81CA6D24ED6AC8DDB5415B41D7`.
