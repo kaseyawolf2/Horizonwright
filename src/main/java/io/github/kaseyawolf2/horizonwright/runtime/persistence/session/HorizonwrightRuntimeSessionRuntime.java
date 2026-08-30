@@ -66,6 +66,11 @@ public final class HorizonwrightRuntimeSessionRuntime implements RuntimeSessionR
         return runtime.getController();
     }
 
+    public synchronized HorizonwrightRuntime getHorizonwrightRuntime() {
+        ensureRestored();
+        return runtime;
+    }
+
     @Override
     public synchronized UnresolvedDeathState snapshotUnresolvedDeathState() {
         ensureRestored();

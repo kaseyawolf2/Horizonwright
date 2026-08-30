@@ -161,6 +161,11 @@ public final class ProfileRuntimeSession implements AutoCloseable {
         return Optional.ofNullable(activeConnection);
     }
 
+    /** Resolves the owned runtime only after restore completed and while this session remains active. */
+    public synchronized Optional<RuntimeSessionRuntime> getActiveRuntime() {
+        return state == RuntimeSessionState.ACTIVE ? Optional.of(runtime) : Optional.<RuntimeSessionRuntime>empty();
+    }
+
     public synchronized Optional<RuntimeSessionConnection> getLastConnection() {
         return Optional.ofNullable(lastConnection);
     }
