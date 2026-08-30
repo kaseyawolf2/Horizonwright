@@ -1,0 +1,15 @@
+# Integer columns inside dx^2 + dz^2 <= radius^2, ordered by dx then dz.
+dx	dz
+-2	0
+-1	-1
+-1	0
+-1	1
+0	-2
+0	-1
+0	0
+0	1
+0	2
+1	-1
+1	0
+1	1
+2	0

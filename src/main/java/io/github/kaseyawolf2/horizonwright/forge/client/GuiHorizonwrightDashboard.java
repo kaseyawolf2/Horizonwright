@@ -7,6 +7,7 @@ import net.minecraft.util.EnumChatFormatting;
 import io.github.kaseyawolf2.horizonwright.HorizonwrightRuntime;
 import io.github.kaseyawolf2.horizonwright.HorizonwrightRuntime.RuntimeSnapshot;
 import io.github.kaseyawolf2.horizonwright.Tags;
+import io.github.kaseyawolf2.horizonwright.core.navigation.NavigationProgress;
 
 public final class GuiHorizonwrightDashboard extends GuiScreen {
 
@@ -52,12 +53,12 @@ public final class GuiHorizonwrightDashboard extends GuiScreen {
         drawDefaultBackground();
         drawRect(left, top, left + panelWidth, top + 216, 0xE010141B);
         drawCenteredString(fontRendererObj, "Horizonwright " + Tags.VERSION, width / 2, top + 14, 0xFFF0C674);
-        drawCenteredString(fontRendererObj, "Milestone 0A - Bootstrap", width / 2, top + 29, 0xFF8FAAD0);
+        drawCenteredString(fontRendererObj, "Milestone 0B - Safe navigation spike", width / 2, top + 29, 0xFF8FAAD0);
 
         drawString(fontRendererObj, "Task orchestrator", left + 16, top + 58, 0xFFAAAAAA);
         drawString(fontRendererObj, "Not started", left + 152, top + 58, 0xFFE0E0E0);
         drawString(fontRendererObj, "Navigation", left + 16, top + 78, 0xFFAAAAAA);
-        drawString(fontRendererObj, snapshot.getNavigationDiagnostic(), left + 152, top + 78, 0xFFE0E0E0);
+        drawString(fontRendererObj, truncate(snapshot.getNavigationDiagnostic(), 40), left + 152, top + 78, 0xFFE0E0E0);
         drawString(fontRendererObj, "Action epoch", left + 16, top + 98, 0xFFAAAAAA);
         drawString(
             fontRendererObj,
@@ -85,7 +86,15 @@ public final class GuiHorizonwrightDashboard extends GuiScreen {
             left + 152,
             top + 138,
             0xFFFFFFFF);
-        drawString(fontRendererObj, "Unattended operation remains disabled.", left + 16, top + 160, 0xFFCC7777);
+        NavigationProgress progress = snapshot.getNavigationProgress();
+        drawString(
+            fontRendererObj,
+            progress == null ? "Navigation request: none"
+                : truncate(progress.getRequestId() + ": " + progress.getState() + " - " + progress.getDetail(), 58),
+            left + 16,
+            top + 158,
+            0xFFB8C8DE);
+        drawString(fontRendererObj, "Unattended operation remains disabled.", left + 16, top + 171, 0xFFCC7777);
 
         super.drawScreen(mouseX, mouseY, partialTicks);
     }
@@ -93,5 +102,12 @@ public final class GuiHorizonwrightDashboard extends GuiScreen {
     @Override
     public boolean doesGuiPauseGame() {
         return false;
+    }
+
+    private static String truncate(String value, int maximumLength) {
+        if (value == null || value.length() <= maximumLength) {
+            return value;
+        }
+        return value.substring(0, maximumLength - 3) + "...";
     }
 }

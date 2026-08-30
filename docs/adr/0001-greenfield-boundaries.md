@@ -11,7 +11,7 @@ the early milestones. Package boundaries act as logical modules:
 - `core` is pure Java and imports no Minecraft, Forge, Baritone, or optional
   mod types.
 - `forge` owns lifecycle and client UI integration.
-- a future `navigation.baritone` package will be the only package allowed to
+- `navigation.baritone` is the only package allowed to
   import Baritone types.
 - exact-version optional-mod implementation types remain in `integrations`.
 
@@ -20,7 +20,7 @@ same epoch as their movement lease so stale backend work can be rejected.
 
 ## Consequences
 
-The first build uses a deterministic fake navigation backend in tests. The
-real navigation spike cannot begin until a clean source snapshot, licensing
-obligations, and packaging/collision behavior are recorded. This keeps the
-dirty neighboring checkout out of both the build graph and product identity.
+Deterministic fakes remain the primary contract-test boundary. The real
+Baritone adapter was added only after its clean snapshot, licenses, separate-JAR
+packaging model, and collision diagnostics were recorded. The dirty neighboring
+checkout remains outside both the build graph and product identity.

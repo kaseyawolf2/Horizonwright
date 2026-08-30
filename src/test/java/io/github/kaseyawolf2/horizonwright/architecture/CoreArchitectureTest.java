@@ -38,6 +38,25 @@ public class CoreArchitectureTest {
         assertTrue("Forbidden core imports: " + violations, violations.isEmpty());
     }
 
+    @Test
+    public void baritoneImportsRemainInsideThePrivateAdapterPackage() throws IOException {
+        Path sourceRoot = Paths.get("src", "main", "java");
+        List<String> violations = new ArrayList<>();
+
+        try (Stream<Path> paths = Files.walk(sourceRoot)) {
+            paths.filter(
+                path -> path.toString()
+                    .endsWith(".java"))
+                .filter(
+                    path -> !path.toString()
+                        .replace('\\', '/')
+                        .contains("/navigation/baritone/"))
+                .forEach(path -> findImport(path, "import baritone.", violations));
+        }
+
+        assertTrue("Baritone imports outside the private adapter: " + violations, violations.isEmpty());
+    }
+
     private static void findViolations(Path path, List<String> violations) {
         try {
             String source = new String(Files.readAllBytes(path), StandardCharsets.UTF_8);
@@ -45,6 +64,17 @@ public class CoreArchitectureTest {
                 if (source.contains(forbiddenImport)) {
                     violations.add(path + " -> " + forbiddenImport);
                 }
+            }
+        } catch (IOException exception) {
+            throw new IllegalStateException("Failed to inspect " + path, exception);
+        }
+    }
+
+    private static void findImport(Path path, String forbiddenImport, List<String> violations) {
+        try {
+            String source = new String(Files.readAllBytes(path), StandardCharsets.UTF_8);
+            if (source.contains(forbiddenImport)) {
+                violations.add(path + " -> " + forbiddenImport);
             }
         } catch (IOException exception) {
             throw new IllegalStateException("Failed to inspect " + path, exception);

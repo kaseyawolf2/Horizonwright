@@ -2,6 +2,7 @@ package io.github.kaseyawolf2.horizonwright.core.navigation;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 
 import java.util.EnumSet;
 
@@ -48,12 +49,34 @@ public class NavigationBackendContractTest {
         ActionLease lease = broker.tryAcquire("navigation", EnumSet.of(ActionCapability.MOVEMENT))
             .get();
         FakeNavigationBackend backend = new FakeNavigationBackend();
+        broker.addRevocationListener(backend);
         NavigationHandle handle = backend
             .submit(new NavigationRequest("stale-request", lease.getEpoch(), 0, 1, 64, 1, 0), lease);
 
         broker.revokeAll();
 
         assertFalse(lease.isValid());
+        assertFalse(backend.isInputHeld());
+        assertEquals(
+            NavigationState.CANCELLED,
+            handle.progress()
+                .getState());
+    }
+
+    @Test
+    public void explicitCancellationIsIdempotentAndReleasesInputs() {
+        InMemoryActionBroker broker = new InMemoryActionBroker();
+        ActionLease lease = broker.tryAcquire("navigation", EnumSet.of(ActionCapability.MOVEMENT))
+            .get();
+        FakeNavigationBackend backend = new FakeNavigationBackend();
+        NavigationHandle handle = backend
+            .submit(new NavigationRequest("explicit-cancel", lease.getEpoch(), 0, 2, 64, 2, 0), lease);
+
+        assertTrue(backend.isInputHeld());
+        handle.cancel();
+        handle.cancel();
+
+        assertFalse(backend.isInputHeld());
         assertEquals(
             NavigationState.CANCELLED,
             handle.progress()

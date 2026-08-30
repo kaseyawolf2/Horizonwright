@@ -2,6 +2,8 @@ package io.github.kaseyawolf2.horizonwright.testfixtures;
 
 import io.github.kaseyawolf2.horizonwright.core.action.ActionCapability;
 import io.github.kaseyawolf2.horizonwright.core.action.ActionLease;
+import io.github.kaseyawolf2.horizonwright.core.action.ActionRevocation;
+import io.github.kaseyawolf2.horizonwright.core.action.ActionRevocationListener;
 import io.github.kaseyawolf2.horizonwright.core.navigation.BackendAvailability;
 import io.github.kaseyawolf2.horizonwright.core.navigation.NavigationBackend;
 import io.github.kaseyawolf2.horizonwright.core.navigation.NavigationHandle;
@@ -9,11 +11,12 @@ import io.github.kaseyawolf2.horizonwright.core.navigation.NavigationProgress;
 import io.github.kaseyawolf2.horizonwright.core.navigation.NavigationRequest;
 import io.github.kaseyawolf2.horizonwright.core.navigation.NavigationState;
 
-public final class FakeNavigationBackend implements NavigationBackend {
+public final class FakeNavigationBackend implements NavigationBackend, ActionRevocationListener {
 
     private boolean available = true;
     private String diagnostic = "Deterministic fake navigation backend";
     private FakeHandle activeHandle;
+    private boolean inputsHeld;
 
     @Override
     public BackendAvailability availability() {
@@ -39,6 +42,7 @@ public final class FakeNavigationBackend implements NavigationBackend {
             throw new IllegalStateException("fake backend already has an active request");
         }
         activeHandle = new FakeHandle(request, movementLease);
+        inputsHeld = true;
         return activeHandle;
     }
 
@@ -51,10 +55,12 @@ public final class FakeNavigationBackend implements NavigationBackend {
         if (!handle.movementLease.isValid()) {
             handle.state = NavigationState.CANCELLED;
             handle.detail = "Action lease revoked";
+            inputsHeld = false;
             return;
         }
         handle.state = NavigationState.COMPLETED;
         handle.detail = "Target reached";
+        inputsHeld = false;
     }
 
     public void setUnavailable(String diagnostic) {
@@ -63,7 +69,22 @@ public final class FakeNavigationBackend implements NavigationBackend {
         if (activeHandle != null && !activeHandle.isTerminal()) {
             activeHandle.state = NavigationState.FAILED;
             activeHandle.detail = diagnostic;
+            inputsHeld = false;
         }
+    }
+
+    @Override
+    public void onActionEpochRevoked(ActionRevocation revocation) {
+        if (activeHandle != null && !activeHandle.isTerminal()
+            && activeHandle.request.getActionEpoch() == revocation.getRevokedEpoch()) {
+            activeHandle.state = NavigationState.CANCELLED;
+            activeHandle.detail = "Action epoch revoked";
+        }
+        inputsHeld = false;
+    }
+
+    public boolean isInputHeld() {
+        return inputsHeld;
     }
 
     private FakeHandle requireActive() {
@@ -73,7 +94,7 @@ public final class FakeNavigationBackend implements NavigationBackend {
         return activeHandle;
     }
 
-    private static final class FakeHandle implements NavigationHandle {
+    private final class FakeHandle implements NavigationHandle {
 
         private final NavigationRequest request;
         private final ActionLease movementLease;
@@ -95,6 +116,7 @@ public final class FakeNavigationBackend implements NavigationBackend {
             if (!isTerminal() && !movementLease.isValid()) {
                 state = NavigationState.CANCELLED;
                 detail = "Action lease revoked";
+                inputsHeld = false;
             }
             return new NavigationProgress(request.getRequestId(), request.getActionEpoch(), state, detail);
         }
@@ -104,6 +126,7 @@ public final class FakeNavigationBackend implements NavigationBackend {
             if (!isTerminal()) {
                 state = NavigationState.CANCELLED;
                 detail = "Cancelled";
+                inputsHeld = false;
             }
         }
 

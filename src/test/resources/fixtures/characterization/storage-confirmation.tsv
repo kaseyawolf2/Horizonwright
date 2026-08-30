@@ -1,0 +1,6 @@
+case	window	action	epoch	confirmed_window	confirmed_action	confirmed_epoch	confirmed_destination_count	expected_state
+exact-confirmation	4	11	7	4	11	7	2	COMMITTED
+wrong-window	4	11	7	5	11	7	2	ABORTED
+wrong-action	4	11	7	4	12	7	2	ABORTED
+stale-epoch	4	11	7	4	11	8	2	ABORTED
+unexpected-slot-state	4	11	7	4	11	7	1	ABORTED

@@ -13,6 +13,10 @@ public interface ActionBroker {
 
     ActionBrokerSnapshot snapshot();
 
+    void addRevocationListener(ActionRevocationListener listener);
+
+    void removeRevocationListener(ActionRevocationListener listener);
+
     void revokeAll();
 
     void enterSafetyLockdown();

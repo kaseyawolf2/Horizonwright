@@ -18,11 +18,11 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Set up Java 25
-        uses: actions/setup-java@v4
+      - name: Set up Temurin 25.0.4.1+1
+        uses: actions/setup-java@v6
         with:
           distribution: temurin
-          java-version: '25'
+          java-version: '25.0.4.1+1'
           cache: gradle
 
       - name: Validate wrapper

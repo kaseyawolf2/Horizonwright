@@ -1,3 +1,9 @@
 dependencies {
+    // Exact, hash-verified development input only. This is deobfuscated for the
+    // local development runtime and is never embedded in or published by Horizonwright.
+    devOnlyNonPublishable(
+        rfg.deobf(project.files("vendor/baritone/baritone-v1.2.19-mc1.7.10.jar"))
+    )
+
     testImplementation("junit:junit:4.13.2")
 }

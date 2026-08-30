@@ -1,0 +1,14 @@
+case	kind	metadata	can_grow	mature	action
+wheat-young	WHEAT	6	-	false	WAIT
+wheat-mature	WHEAT	7	-	true	BREAK_AND_REPLANT
+carrot-mature	CARROTS	7	-	true	BREAK_AND_REPLANT
+potato-young	POTATOES	5	-	false	WAIT
+potato-mature	POTATOES	7	-	true	BREAK_AND_REPLANT
+wart-young	NETHER_WART	2	-	false	WAIT
+wart-mature	NETHER_WART	3	-	true	BREAK_AND_REPLANT
+cocoa-age-two-facing-zero	COCOA	8	-	false	WAIT
+cocoa-age-three-facing-zero	COCOA	12	-	true	BREAK_AND_REPLANT
+cocoa-age-three-facing-three	COCOA	15	-	true	BREAK_AND_REPLANT
+growable-still-growing	GENERIC_IGROWABLE	0	true	false	WAIT
+growable-mature	GENERIC_IGROWABLE	0	false	true	BREAK_AND_REPLANT
+growable-unknown	GENERIC_IGROWABLE	0	-	false	HOLD_FOR_ADAPTER

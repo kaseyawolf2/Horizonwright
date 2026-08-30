@@ -1,0 +1,8 @@
+case	equipped	durability	head_clearance	landing_safe	sprinting	equipment_revision	current_revision	auto_step	high_jump	safe_fall	extra_sprint_cost	valid
+absent	false	0	3	true	false	5	5	false	false	false	0	false
+ready	true	100	2	true	false	5	5	true	true	true	0	true
+sprinting	true	100	2	true	true	5	5	true	true	true	1	true
+head-obstructed	true	100	1	true	true	5	5	true	false	true	1	true
+unsafe-landing	true	100	3	false	false	5	5	true	false	true	0	true
+broken	true	0	3	true	true	5	5	false	false	false	0	false
+equipment-changed	true	100	3	true	false	5	6	true	true	true	0	false

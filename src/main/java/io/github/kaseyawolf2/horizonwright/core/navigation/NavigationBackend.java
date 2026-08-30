@@ -7,4 +7,7 @@ public interface NavigationBackend {
     BackendAvailability availability();
 
     NavigationHandle submit(NavigationRequest request, ActionLease movementLease);
+
+    /** Performs client-thread-only teardown deferred out of pathing callbacks. */
+    default void clientTick() {}
 }

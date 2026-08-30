@@ -1,30 +1,69 @@
 # Reuse register
 
 This register prevents accidental migration of the old process architecture.
-`REIMPLEMENT` means behavior may be characterized and independently written;
-`PORT_WITH_ATTRIBUTION` requires a clean, exact source snapshot plus a license
-review; `LEAVE_BEHIND` means the old implementation is intentionally excluded.
+Reference checkouts may provide evidence, but Horizonwright's controller,
+safety model, task architecture, persistence, and build remain independently
+owned.
+
+## Decision labels
+
+- `REIMPLEMENT`: characterize behavior and write an independent implementation.
+- `PORT_WITH_ATTRIBUTION`: reuse only from an exact clean source snapshot with
+  its license, corresponding source, notices, and provenance.
+- `SEPARATE_RUNTIME`: compile against the recorded artifact but require it as a
+  separately installed mod; do not embed it in Horizonwright.
+- `LEAVE_BEHIND`: intentionally exclude the old implementation.
 
 ## Reference checkout observed on 2026-08-30
 
 - Path: `D:\Dev\Baritone-Backport\baritone-1.7.10`
-- Clean HEAD: `fcbbd4882cc7d846a8e613dea4b50203e1fb4ebc`
+- Clean snapshot commit: `fcbbd4882cc7d846a8e613dea4b50203e1fb4ebc`
 - Tag: `v1.2.19-mc1.7.10`
 - Branch: `1.7.10-forge`
-- State: dirty (modified and untracked feature work was present)
+- Observed working-tree state: dirty, with unrelated modified and untracked
+  feature work present
 
-The path and its current artifacts are not build inputs. The recorded commit
-identifies a point for investigation; it is not yet the selected backend
-snapshot.
+The path and its mutable artifacts are not build inputs. A detached clean
+checkout was rebuilt to establish the recorded binary, and the complete source
+snapshot in `vendor/baritone/` is now the authoritative record.
 
-| Candidate | Decision | Notes |
+## Baritone snapshot
+
+| Field | Recorded value |
+| --- | --- |
+| Official upstream | `https://github.com/cabaletta/baritone` |
+| Official `v1.2.19` base | `d9cb2d91a06501c5bcba2181509d0df80361f413` |
+| Minecraft 1.7.10 fork | `https://github.com/kaseyawolf2/baritone` |
+| Clean snapshot | `fcbbd4882cc7d846a8e613dea4b50203e1fb4ebc` |
+| Local tag | `v1.2.19-mc1.7.10` |
+| Distance from base | 47 commits |
+| Binary SHA-256 | `f644ac987bae86863122853af1e47ae1298c485b4bac1f3c4fab98ce3aad3c1d` |
+| Full source snapshot SHA-256 | `31f6f0efa564c7b8cd2e79ca76adf216601f7218ff5776df15bfcaf6db1d2659` |
+| License | LGPL-3.0-or-later; complete LGPL/GPL material and fastutil's Apache-2.0 license are in `vendor/baritone/` |
+
+The snapshot commit and tag were local-only when captured. Do not invent a
+remote commit URL for them.
+
+## Reuse decisions
+
+| Candidate | Decision | Boundary |
 | --- | --- | --- |
 | Old mod lifecycle and `Minecraft.startGame` bootstrap | `LEAVE_BEHIND` | Horizonwright has its own Forge lifecycle. |
-| Baritone commands, process ownership, and runtime state | `LEAVE_BEHIND` | Horizonwright's controller and scheduler own work. |
-| Baritone pathfinding/navigation engine | Pending packaging ADR | No source or binary included yet. |
-| Circle/cylinder geometry | `REIMPLEMENT` | Capture golden fixtures before implementation. |
-| Farming and CropsNH behavior | `REIMPLEMENT` | Use exact-version public APIs where possible. |
-| GT prospecting grid calculations | `REIMPLEMENT` | Capture coordinate fixtures first. |
-| Storage/container transactions | `REIMPLEMENT` | New epoch-bound transactional service required. |
-| Tinkers tool classification and repair behavior | `REIMPLEMENT` | Exact-version adapter, no leaked implementation types. |
-| Piston Boots movement behavior | `REIMPLEMENT` | Navigation capability snapshots replace global settings. |
+| Baritone API and navigation engine | `SEPARATE_RUNTIME`, `PORT_WITH_ATTRIBUTION` | Exact binary is a hash-verified `devOnlyNonPublishable` compile input and separately installed runtime; no Baritone class ships inside Horizonwright. |
+| Baritone launch hooks and mixins | `SEPARATE_RUNTIME` | They remain owned by the separate Baritone mod and never bootstrap Horizonwright. |
+| Baritone commands, process ownership, and runtime state | `LEAVE_BEHIND` | Horizonwright's controller, scheduler, action broker, and safety state own work; only a private adapter process is registered. |
+| Neighbor-checkout feature patches | `LEAVE_BEHIND` | Dirty or untracked work is never a build or source input. |
+| Circle/cylinder geometry | `REIMPLEMENT` | Pure geometry with golden fixtures; no copied implementation. |
+| Farming and CropsNH behavior | `REIMPLEMENT` | Use exact-version public APIs and independently recorded ordinary-crop fixtures. |
+| GT prospecting grid calculations | `REIMPLEMENT` | Use coordinate fixtures and an independent implementation. |
+| Storage/container transactions | `REIMPLEMENT` | New epoch-bound transactional service. |
+| Tinkers classification and repair behavior | `REIMPLEMENT` | Exact-version adapter; no implementation types in core or task packages. |
+| Piston Boots movement behavior | `REIMPLEMENT` | Capability snapshots replace mutable global settings. |
+
+## Compatibility rule
+
+Horizonwright may be rebuilt and relinked with an interface-compatible modified
+Baritone. Different bytes remain unvalidated in production, so the backend,
+navigation, and unattended operation fail closed until a maintainer deliberately
+updates the commit, corresponding source, license and checksum records and
+reruns collision, adapter, input-release, packet-firewall, and GTNH smoke tests.

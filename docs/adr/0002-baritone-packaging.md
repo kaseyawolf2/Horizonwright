@@ -1,31 +1,111 @@
 # ADR 0002: Baritone backend packaging
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-08-30
 
 ## Context
 
-The local 1.7.10 backport demonstrates a viable navigation engine but is a
-dirty development checkout. Baritone is LGPL-licensed and its launch hooks,
-reflection, mixins, and input ownership make relocation riskier than a normal
-library shade.
+The Minecraft 1.7.10 Baritone fork provides the selected navigation engine,
+but the neighboring checkout contains unrelated local work and is not a
+Horizonwright build input. Baritone's launch hooks, mixins, service provider,
+reflection, and relocated fastutil classes make embedding or relocating it
+riskier than loading it as an ordinary Forge coremod.
 
-## Starting hypothesis
+Horizonwright must retain ownership of task scheduling, action authorization,
+input release, commands, and user-facing state. Baritone must remain a private,
+replaceable navigation implementation and must never gain authority merely
+because its classes are present.
 
-Evaluate a clean, exact, internally resolved source snapshot first. Keep all
-Baritone types behind Horizonwright's private `NavigationBackend`, preserve
-the required license and notices, and fail clearly if a conflicting Baritone
-installation is present.
+## Decision
 
-## Required evidence before acceptance
+Require a separate, exact-version Baritone JAR at runtime. The selected build
+is `v1.2.19-mc1.7.10` at clean snapshot commit
+`fcbbd4882cc7d846a8e613dea4b50203e1fb4ebc`, with production binary SHA-256
+`f644ac987bae86863122853af1e47ae1298c485b4bac1f3c4fab98ce3aad3c1d`.
 
-1. Freeze and hash a clean backend source snapshot independently of the local
-   reference checkout.
-2. Complete the LGPL compatibility and distribution notice review.
-3. Compare bundled, separate-JAR, and relocated launch behavior in the pinned
-   disposable GTNH instance.
-4. Prove submit, progress, completion, cancellation, epoch rejection, input
-   release, and duplicate-class diagnostics.
+The binary is also declared as `devOnlyNonPublishable` so the adapter can
+compile and local development runs can load it. It is never embedded, shaded,
+relocated, published in Horizonwright metadata, copied from the neighboring
+checkout, or placed inside Horizonwright's production JAR.
 
-No packaging option is accepted yet, and the current Gradle build resolves no
-Baritone dependency.
+Horizonwright orders itself optionally after mod ID `baritone`. It can still
+launch without Baritone, but its navigation capability remains unavailable.
+Before loading any Baritone API type, the installation probe requires:
+
+- exactly one loaded `baritone` mod container;
+- version `v1.2.19-mc1.7.10`;
+- exactly one `baritone/api/BaritoneAPI.class` resource;
+- exactly one provider resource containing only `baritone.BaritoneProvider`;
+- a readable source artifact; and
+- the exact production JAR SHA-256 outside a deobfuscated development run.
+
+Missing, duplicate, byte-different, or structurally incompatible installations
+fail closed with a dashboard and `/hw status` diagnostic. Deobfuscated or
+remapped development artifacts may pass structural validation while being
+reported as `referenceBytes=false`; production may not.
+
+## Authority boundary
+
+The real adapter lives only under `navigation.baritone`, owns a private
+`IBaritoneProcess`, and accepts one request at a time. A request must carry a
+current Horizonwright lease with `MOVEMENT` and `LOOK` and the same action
+epoch. Revocation, explicit cancellation, world loss, dimension change,
+backend loss, or a safety-firewall denial terminates the request and releases
+Baritone and vanilla inputs.
+
+Horizonwright does not write Baritone settings. The outbound packet firewall
+therefore rejects any attack, dig, place, use, held-slot, container, or other
+restricted packet that Baritone attempts without a matching capability. The
+Milestone 0 route is intentionally clear and unobstructed; any attempted world
+mutation fails the route rather than broadening its lease.
+
+## Provenance and license
+
+- Official upstream: <https://github.com/cabaletta/baritone>
+- Official `v1.2.19` base commit:
+  `d9cb2d91a06501c5bcba2181509d0df80361f413`
+- Minecraft 1.7.10 fork: <https://github.com/kaseyawolf2/baritone>
+- Clean snapshot commit: `fcbbd4882cc7d846a8e613dea4b50203e1fb4ebc`
+- Local tag: `v1.2.19-mc1.7.10`
+- Distance from official base: 47 commits
+- Complete source snapshot SHA-256:
+  `31f6f0efa564c7b8cd2e79ca76adf216601f7218ff5776df15bfcaf6db1d2659`
+
+The snapshot commit and tag were not published by the fork remote when
+captured. The vendored complete source snapshot is the authoritative durable
+source record.
+
+Baritone is LGPL-3.0-or-later. `vendor/baritone/` preserves the corresponding
+source, LGPL text, upstream `LICENSE-Part-2.jpg`, complete GPLv3 text, and
+checksums. Baritone relocates fastutil 8.5.13 under
+`baritone.shadow.it.unimi.dsi.fastutil`; its complete Apache-2.0 license is
+preserved as well.
+
+Horizonwright can be rebuilt and relinked against an interface-compatible
+modified Baritone. The exact validated binary is a safety compatibility record,
+not a restriction on modification. A changed build requires deliberate review
+and an updated commit, source snapshot, licenses, checksums, compatibility
+record, and safety tests before production navigation is enabled.
+
+## Verification
+
+`verifyBaritoneArtifacts` hashes the binary, complete source snapshot, sources
+JAR, licenses, and checksum manifest. `assemble` and `check` depend on it.
+Architecture tests keep Baritone imports inside the adapter package and inspect
+the production Horizonwright JAR for class collisions.
+
+Deterministic tests cover installation mismatch and duplicate-resource
+diagnostics, lease and epoch rejection, cancellation, input release, and packet
+classification. A real GTNH launch, clear-route completion, cancellation, and
+emergency-stop run remain the physical acceptance gate for this checkpoint.
+
+## Consequences
+
+- Installation requires two independent mod JARs: Horizonwright and the pinned
+  Baritone runtime.
+- Horizonwright's production artifact contains no `baritone.*` or relocated
+  fastutil classes.
+- Missing or incompatible Baritone never prevents the rest of Horizonwright
+  from loading, but navigation remains unavailable.
+- Updating Baritone is an explicit compatibility and safety event rather than
+  an ordinary dependency bump.

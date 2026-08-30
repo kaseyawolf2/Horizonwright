@@ -1,9 +1,12 @@
 package io.github.kaseyawolf2.horizonwright.core.action;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.EnumMap;
 import java.util.EnumSet;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -11,16 +14,19 @@ import java.util.Set;
 public final class InMemoryActionBroker implements ActionBroker {
 
     private final Map<ActionCapability, Lease> leasesByCapability = new EnumMap<>(ActionCapability.class);
+    private final Set<ActionRevocationListener> revocationListeners = new LinkedHashSet<>();
     private long epoch = 1L;
     private long nextLeaseId = 1L;
     private boolean safetyLocked;
+    private int revocationTransitionsInProgress;
+    private ActionRevocation lastSafetyRevocation;
 
     @Override
     public synchronized Optional<ActionLease> tryAcquire(String owner, Set<ActionCapability> requestedCapabilities) {
         String normalizedOwner = normalizeOwner(owner);
         EnumSet<ActionCapability> capabilities = copyCapabilities(requestedCapabilities);
 
-        if (safetyLocked) {
+        if (safetyLocked || revocationTransitionsInProgress > 0) {
             return Optional.empty();
         }
         for (ActionCapability capability : capabilities) {
@@ -56,24 +62,53 @@ public final class InMemoryActionBroker implements ActionBroker {
     }
 
     @Override
-    public synchronized void revokeAll() {
-        advanceEpochAndClear();
-    }
-
-    @Override
-    public synchronized void enterSafetyLockdown() {
-        if (!safetyLocked) {
-            safetyLocked = true;
-            advanceEpochAndClear();
+    public void addRevocationListener(ActionRevocationListener listener) {
+        if (listener == null) {
+            throw new IllegalArgumentException("listener must not be null");
+        }
+        synchronized (this) {
+            revocationListeners.add(listener);
         }
     }
 
     @Override
-    public synchronized void leaveSafetyLockdown() {
-        if (safetyLocked) {
-            advanceEpochAndClear();
+    public synchronized void removeRevocationListener(ActionRevocationListener listener) {
+        revocationListeners.remove(listener);
+    }
+
+    @Override
+    public void revokeAll() {
+        notifyRevocation(beginRevocation(ActionRevocationReason.EXPLICIT_REVOCATION));
+    }
+
+    @Override
+    public void enterSafetyLockdown() {
+        RevocationDispatch dispatch;
+        synchronized (this) {
+            if (safetyLocked) {
+                dispatch = beginDispatchLocked(lastSafetyRevocation);
+            } else {
+                safetyLocked = true;
+                lastSafetyRevocation = advanceEpochAndClearLocked(ActionRevocationReason.SAFETY_LOCKDOWN);
+                dispatch = beginDispatchLocked(lastSafetyRevocation);
+            }
+        }
+        notifyRevocation(dispatch);
+    }
+
+    @Override
+    public void leaveSafetyLockdown() {
+        RevocationDispatch dispatch;
+        synchronized (this) {
+            if (!safetyLocked) {
+                return;
+            }
+            ActionRevocation revocation = advanceEpochAndClearLocked(ActionRevocationReason.SAFETY_LOCKDOWN_RELEASED);
             safetyLocked = false;
+            lastSafetyRevocation = null;
+            dispatch = beginDispatchLocked(revocation);
         }
+        notifyRevocation(dispatch);
     }
 
     private synchronized boolean isValid(Lease lease) {
@@ -100,15 +135,55 @@ public final class InMemoryActionBroker implements ActionBroker {
         lease.closed = true;
     }
 
-    private void advanceEpochAndClear() {
+    private RevocationDispatch beginRevocation(ActionRevocationReason reason) {
+        synchronized (this) {
+            return beginDispatchLocked(advanceEpochAndClearLocked(reason));
+        }
+    }
+
+    private ActionRevocation advanceEpochAndClearLocked(ActionRevocationReason reason) {
         if (epoch == Long.MAX_VALUE) {
             throw new IllegalStateException("action epoch exhausted");
         }
+        long revokedEpoch = epoch;
         for (Lease lease : new HashSet<>(leasesByCapability.values())) {
             lease.closed = true;
         }
         leasesByCapability.clear();
         epoch++;
+        return new ActionRevocation(revokedEpoch, epoch, reason);
+    }
+
+    private RevocationDispatch beginDispatchLocked(ActionRevocation revocation) {
+        if (revocation == null) {
+            throw new IllegalStateException("safety revocation state is unavailable");
+        }
+        revocationTransitionsInProgress++;
+        return new RevocationDispatch(revocation, new ArrayList<>(revocationListeners));
+    }
+
+    private void notifyRevocation(RevocationDispatch dispatch) {
+        Throwable firstFailure = null;
+        try {
+            for (ActionRevocationListener listener : dispatch.listeners) {
+                try {
+                    listener.onActionEpochRevoked(dispatch.revocation);
+                } catch (RuntimeException | LinkageError failure) {
+                    if (firstFailure == null) {
+                        firstFailure = failure;
+                    } else {
+                        firstFailure.addSuppressed(failure);
+                    }
+                }
+            }
+        } finally {
+            synchronized (this) {
+                revocationTransitionsInProgress--;
+            }
+        }
+        if (firstFailure != null) {
+            throw new IllegalStateException("one or more action revocation listeners failed", firstFailure);
+        }
     }
 
     private static String normalizeOwner(String owner) {
@@ -127,6 +202,17 @@ public final class InMemoryActionBroker implements ActionBroker {
             throw new IllegalArgumentException("action capabilities must not contain null");
         }
         return EnumSet.copyOf(requestedCapabilities);
+    }
+
+    private static final class RevocationDispatch {
+
+        private final ActionRevocation revocation;
+        private final List<ActionRevocationListener> listeners;
+
+        private RevocationDispatch(ActionRevocation revocation, List<ActionRevocationListener> listeners) {
+            this.revocation = revocation;
+            this.listeners = listeners;
+        }
     }
 
     private static final class Lease implements ActionLease {

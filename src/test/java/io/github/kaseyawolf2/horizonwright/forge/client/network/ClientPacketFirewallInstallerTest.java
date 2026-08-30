@@ -1,0 +1,84 @@
+package io.github.kaseyawolf2.horizonwright.forge.client.network;
+
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
+
+import java.util.EnumSet;
+import java.util.List;
+
+import net.minecraft.network.NetworkManager;
+
+import org.junit.Test;
+
+import io.github.kaseyawolf2.horizonwright.core.action.ActionCapability;
+import io.github.kaseyawolf2.horizonwright.core.action.ActionLease;
+import io.github.kaseyawolf2.horizonwright.core.action.ActionSessionGuard;
+import io.github.kaseyawolf2.horizonwright.core.action.InMemoryActionBroker;
+import io.netty.channel.ChannelInboundHandlerAdapter;
+import io.netty.channel.embedded.EmbeddedChannel;
+
+public class ClientPacketFirewallInstallerTest {
+
+    @Test
+    public void installsBeforePacketHandlerAndRecoversFromUnexpectedRemoval() {
+        ActionSessionGuard guard = new ActionSessionGuard();
+        ClientPacketFirewallInstaller installer = new ClientPacketFirewallInstaller(guard);
+        NetworkManager manager = new NetworkManager(true);
+        EmbeddedChannel channel = new EmbeddedChannel(new ChannelInboundHandlerAdapter());
+        channel.pipeline()
+            .addLast("packet_handler", new ChannelInboundHandlerAdapter());
+
+        installer.ensureInstalled(manager, channel);
+        channel.runPendingTasks();
+
+        assertEquals(ClientPacketFirewallInstaller.State.INSTALLED, installer.getState());
+        assertTrue(installer.isReady());
+        List<String> names = channel.pipeline()
+            .names();
+        assertTrue(names.indexOf("horizonwright_action_firewall") < names.indexOf("packet_handler"));
+
+        channel.pipeline()
+            .remove("horizonwright_action_firewall");
+        assertEquals(ClientPacketFirewallInstaller.State.ABSENT, installer.getState());
+        assertFalse(guard.isReadyForSession());
+
+        installer.ensureInstalled(manager, channel);
+        channel.runPendingTasks();
+        assertEquals(ClientPacketFirewallInstaller.State.INSTALLED, installer.getState());
+        channel.finish();
+    }
+
+    @Test
+    public void retriesUntilPacketHandlerExistsAndRunsTheDrainBarrier() {
+        ActionSessionGuard guard = new ActionSessionGuard();
+        ClientPacketFirewallInstaller installer = new ClientPacketFirewallInstaller(guard);
+        NetworkManager manager = new NetworkManager(true);
+        EmbeddedChannel channel = new EmbeddedChannel(new ChannelInboundHandlerAdapter());
+
+        installer.ensureInstalled(manager, channel);
+        channel.runPendingTasks();
+        assertEquals(ClientPacketFirewallInstaller.State.WAITING_FOR_PIPELINE, installer.getState());
+        assertFalse(guard.isReadyForSession());
+
+        channel.pipeline()
+            .addLast("packet_handler", new ChannelInboundHandlerAdapter());
+        installer.ensureInstalled(manager, channel);
+        channel.runPendingTasks();
+        assertEquals(ClientPacketFirewallInstaller.State.INSTALLED, installer.getState());
+
+        InMemoryActionBroker broker = new InMemoryActionBroker();
+        ActionLease lease = broker.tryAcquire("navigation", EnumSet.of(ActionCapability.MOVEMENT))
+            .get();
+        guard.begin(lease);
+        guard.quarantine(lease);
+        guard.end(lease);
+        assertEquals(ActionSessionGuard.Mode.QUARANTINED, guard.getMode());
+
+        installer.ensureInstalled(manager, channel);
+        channel.runPendingTasks();
+        assertEquals(ActionSessionGuard.Mode.PLAYER, guard.getMode());
+        assertTrue(guard.isReadyForSession());
+        channel.finish();
+    }
+}

@@ -13,6 +13,7 @@ import io.github.kaseyawolf2.horizonwright.forge.CommonProxy;
     modid = HorizonwrightMod.MOD_ID,
     name = HorizonwrightMod.NAME,
     version = Tags.VERSION,
+    dependencies = "after:baritone",
     acceptedMinecraftVersions = "[1.7.10]",
     acceptableRemoteVersions = "*")
 public final class HorizonwrightMod {

@@ -1,4 +1,5 @@
 .gradle/
+.tmp/
 .idea/
 .vscode/
 build/
