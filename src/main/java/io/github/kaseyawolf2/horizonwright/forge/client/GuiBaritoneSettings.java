@@ -22,7 +22,6 @@ public final class GuiBaritoneSettings extends GuiScreen {
     private static final int RESET_VALUE = 6;
     private static final int TOGGLE_VALUE = 7;
     private static final int SETTING_BUTTON_BASE = 100;
-    private static final int SETTINGS_PER_PAGE = 7;
 
     private final GuiScreen dashboard;
     private final BaritoneSettingsCatalog catalog;
@@ -35,11 +34,17 @@ public final class GuiBaritoneSettings extends GuiScreen {
     private GuiButton toggleButton;
     private List<BaritoneSettingsCatalog.Entry> matches = Collections.emptyList();
     private String selectedName;
-    private String status = "Select a setting to inspect or edit it.";
+    private String status = "Select a setting on the left.";
     private int page;
     private int left;
     private int top;
     private int panelWidth;
+    private int panelHeight;
+    private int listWidth;
+    private int detailsLeft;
+    private int detailsWidth;
+    private int contentTop;
+    private int settingsPerPage;
 
     public GuiBaritoneSettings(GuiScreen dashboard) {
         this(dashboard, BaritoneSettingsCatalog.installed());
@@ -56,9 +61,16 @@ public final class GuiBaritoneSettings extends GuiScreen {
     @Override
     public void initGui() {
         Keyboard.enableRepeatEvents(true);
-        panelWidth = Math.min(560, width - 24);
+        panelWidth = Math.min(900, width - 24);
+        panelHeight = Math.min(520, height - 20);
         left = (width - panelWidth) / 2;
-        top = Math.max(10, (height - 330) / 2);
+        top = (height - panelHeight) / 2;
+        contentTop = top + 70;
+        listWidth = Math.max(240, Math.min(360, (panelWidth - 40) / 2));
+        detailsLeft = left + 20 + listWidth;
+        detailsWidth = left + panelWidth - 12 - detailsLeft;
+        settingsPerPage = Math.max(6, Math.min(14, (panelHeight - 130) / 22));
+
         buttonList.clear();
         buttonList.add(new GuiButton(BACK_TAB, left + 12, top + 10, 92, 20, "Dashboard"));
         GuiButton selectedTab = new GuiButton(BARITONE_TAB, left + 110, top + 10, 110, 20, "Baritone config");
@@ -69,23 +81,35 @@ public final class GuiBaritoneSettings extends GuiScreen {
         searchField.setMaxStringLength(120);
         searchField.setFocused(true);
 
-        for (int index = 0; index < SETTINGS_PER_PAGE; index++) {
-            buttonList.add(
-                new GuiButton(SETTING_BUTTON_BASE + index, left + 12, top + 68 + index * 22, panelWidth - 24, 20, ""));
+        for (int index = 0; index < settingsPerPage; index++) {
+            buttonList
+                .add(new GuiButton(SETTING_BUTTON_BASE + index, left + 12, contentTop + index * 22, listWidth, 20, ""));
         }
-        previousButton = new GuiButton(PREVIOUS_PAGE, left + 12, top + 226, 72, 20, "Previous");
-        nextButton = new GuiButton(NEXT_PAGE, left + 90, top + 226, 72, 20, "Next");
-        applyButton = new GuiButton(APPLY_VALUE, left + panelWidth - 230, top + 294, 66, 20, "Apply");
-        resetButton = new GuiButton(RESET_VALUE, left + panelWidth - 158, top + 294, 66, 20, "Reset");
-        toggleButton = new GuiButton(TOGGLE_VALUE, left + panelWidth - 86, top + 294, 74, 20, "Toggle");
+
+        int pagerY = contentTop + settingsPerPage * 22 + 4;
+        previousButton = new GuiButton(PREVIOUS_PAGE, left + 12, pagerY, 86, 20, "Previous");
+        nextButton = new GuiButton(NEXT_PAGE, left + 104, pagerY, 86, 20, "Next");
+
+        int editorY = top + panelHeight - 58;
+        valueField = new GuiTextField(fontRendererObj, detailsLeft + 8, editorY, detailsWidth - 16, 18);
+        valueField.setMaxStringLength(4096);
+        int actionY = top + panelHeight - 30;
+        int actionWidth = Math.max(54, (detailsWidth - 28) / 3);
+        applyButton = new GuiButton(APPLY_VALUE, detailsLeft + 8, actionY, actionWidth, 20, "Apply");
+        resetButton = new GuiButton(RESET_VALUE, detailsLeft + 12 + actionWidth, actionY, actionWidth, 20, "Reset");
+        toggleButton = new GuiButton(
+            TOGGLE_VALUE,
+            detailsLeft + 16 + actionWidth * 2,
+            actionY,
+            actionWidth,
+            20,
+            "Toggle");
         buttonList.add(previousButton);
         buttonList.add(nextButton);
         buttonList.add(applyButton);
         buttonList.add(resetButton);
         buttonList.add(toggleButton);
 
-        valueField = new GuiTextField(fontRendererObj, left + 12, top + 270, panelWidth - 24, 18);
-        valueField.setMaxStringLength(4096);
         refreshMatches();
     }
 
@@ -116,7 +140,7 @@ public final class GuiBaritoneSettings extends GuiScreen {
             refreshButtons();
             return;
         }
-        if (button.id >= SETTING_BUTTON_BASE && button.id < SETTING_BUTTON_BASE + SETTINGS_PER_PAGE) {
+        if (button.id >= SETTING_BUTTON_BASE && button.id < SETTING_BUTTON_BASE + settingsPerPage) {
             selectVisible(button.id - SETTING_BUTTON_BASE);
             return;
         }
@@ -130,7 +154,7 @@ public final class GuiBaritoneSettings extends GuiScreen {
                 status = "Saved " + changed.getName() + ".";
             } else if (button.id == RESET_VALUE) {
                 changed = catalog.reset(selectedName);
-                status = "Reset " + changed.getName() + " to its default.";
+                status = "Reset to default: " + changed.getDefaultValue();
             } else if (button.id == TOGGLE_VALUE) {
                 changed = catalog.toggle(selectedName);
                 status = "Saved " + changed.getName() + ".";
@@ -170,34 +194,75 @@ public final class GuiBaritoneSettings extends GuiScreen {
     @Override
     public void drawScreen(int mouseX, int mouseY, float partialTicks) {
         drawDefaultBackground();
-        drawRect(left, top, left + panelWidth, top + 322, 0xE010141B);
+        drawRect(left, top, left + panelWidth, top + panelHeight, 0xE010141B);
         drawCenteredString(fontRendererObj, "Baritone configuration", width / 2, top + 16, 0xFFF0C674);
         if (searchField.getText()
             .isEmpty() && !searchField.isFocused()) {
             drawString(fontRendererObj, "Search settings...", left + 16, top + 47, 0xFF777777);
         }
         searchField.drawTextBox();
-        int pageCount = Math.max(1, (matches.size() + SETTINGS_PER_PAGE - 1) / SETTINGS_PER_PAGE);
+
+        int pagerY = contentTop + settingsPerPage * 22 + 4;
+        int pageCount = Math.max(1, (matches.size() + settingsPerPage - 1) / settingsPerPage);
         drawString(
             fontRendererObj,
             matches.size() + " settings  |  page " + (page + 1) + "/" + pageCount,
-            left + 170,
-            top + 232,
+            left + 198,
+            pagerY + 6,
             0xFFB8C8DE);
+
+        drawRect(detailsLeft, contentTop, detailsLeft + detailsWidth, top + panelHeight - 66, 0x801A222D);
         BaritoneSettingsCatalog.Entry selected = selectedEntry();
         if (selected == null) {
-            drawString(fontRendererObj, "No setting selected", left + 12, top + 253, 0xFFAAAAAA);
-        } else {
-            String flags = selected.isJavaOnly() ? "  [Java-only, read-only]" : "";
+            drawString(fontRendererObj, "Select a setting", detailsLeft + 10, contentTop + 10, 0xFFF0C674);
             drawString(
                 fontRendererObj,
-                truncate(selected.getName() + " : " + selected.getType() + flags, 80),
-                left + 12,
-                top + 253,
-                selected.isJavaOnly() ? 0xFFFFAA66 : 0xFFB8C8DE);
+                fit("Its current value, default, and type will appear here.", detailsWidth - 20),
+                detailsLeft + 10,
+                contentTop + 28,
+                0xFFAAAAAA);
+        } else {
+            int textWidth = detailsWidth - 20;
+            drawString(
+                fontRendererObj,
+                fit(selected.getName(), textWidth),
+                detailsLeft + 10,
+                contentTop + 10,
+                0xFFF0C674);
+            drawString(
+                fontRendererObj,
+                fit("Type: " + selected.getType(), textWidth),
+                detailsLeft + 10,
+                contentTop + 30,
+                0xFFB8C8DE);
+            drawString(
+                fontRendererObj,
+                fit("Current: " + selected.getCurrentValue(), textWidth),
+                detailsLeft + 10,
+                contentTop + 50,
+                0xFFFFFFFF);
+            drawString(
+                fontRendererObj,
+                fit("Default: " + selected.getDefaultValue(), textWidth),
+                detailsLeft + 10,
+                contentTop + 70,
+                0xFFAAAAAA);
+            if (selected.isJavaOnly()) {
+                drawString(
+                    fontRendererObj,
+                    "Java-only setting (read-only)",
+                    detailsLeft + 10,
+                    contentTop + 94,
+                    0xFFFFAA66);
+            }
         }
+        drawString(
+            fontRendererObj,
+            fit(status, detailsWidth - 20),
+            detailsLeft + 10,
+            top + panelHeight - 80,
+            0xFFB8C8DE);
         valueField.drawTextBox();
-        drawString(fontRendererObj, truncate(status, 84), left + 12, top + 299, 0xFFB8C8DE);
         super.drawScreen(mouseX, mouseY, partialTicks);
     }
 
@@ -208,14 +273,14 @@ public final class GuiBaritoneSettings extends GuiScreen {
 
     private void refreshMatches() {
         matches = catalog.search(searchField == null ? "" : searchField.getText());
-        int pageCount = Math.max(1, (matches.size() + SETTINGS_PER_PAGE - 1) / SETTINGS_PER_PAGE);
+        int pageCount = Math.max(1, (matches.size() + settingsPerPage - 1) / settingsPerPage);
         page = Math.max(0, Math.min(page, pageCount - 1));
         refreshButtons();
     }
 
     private void refreshButtons() {
-        int start = page * SETTINGS_PER_PAGE;
-        for (int index = 0; index < SETTINGS_PER_PAGE; index++) {
+        int start = page * settingsPerPage;
+        for (int index = 0; index < settingsPerPage; index++) {
             GuiButton button = button(SETTING_BUTTON_BASE + index);
             int matchIndex = start + index;
             boolean visible = matchIndex < matches.size();
@@ -223,18 +288,18 @@ public final class GuiBaritoneSettings extends GuiScreen {
             button.enabled = visible;
             if (visible) {
                 BaritoneSettingsCatalog.Entry entry = matches.get(matchIndex);
-                button.displayString = truncate(
-                    entry.getName() + " = " + entry.getCurrentValue() + (entry.isJavaOnly() ? "  [read-only]" : ""),
-                    78);
+                String suffix = entry.isJavaOnly() ? "  [read-only]"
+                    : entry.isBooleanValue() ? " = " + entry.getCurrentValue() : "";
+                button.displayString = fit(entry.getName() + suffix, listWidth - 12);
             }
         }
         previousButton.enabled = page > 0;
-        nextButton.enabled = (page + 1) * SETTINGS_PER_PAGE < matches.size();
+        nextButton.enabled = (page + 1) * settingsPerPage < matches.size();
         refreshEditorControls();
     }
 
     private void selectVisible(int visibleIndex) {
-        int matchIndex = page * SETTINGS_PER_PAGE + visibleIndex;
+        int matchIndex = page * settingsPerPage + visibleIndex;
         if (matchIndex < 0 || matchIndex >= matches.size()) {
             return;
         }
@@ -242,7 +307,7 @@ public final class GuiBaritoneSettings extends GuiScreen {
         selectedName = entry.getName();
         valueField.setText(entry.getCurrentValue());
         valueField.setFocused(!entry.isJavaOnly());
-        status = "Default: " + entry.getDefaultValue();
+        status = entry.isJavaOnly() ? "This value is controlled by Java code." : "Edit below, then Apply.";
         refreshEditorControls();
     }
 
@@ -277,17 +342,22 @@ public final class GuiBaritoneSettings extends GuiScreen {
         throw new IllegalStateException("missing GUI button " + id);
     }
 
+    private String fit(String value, int maximumWidth) {
+        if (value == null || fontRendererObj.getStringWidth(value) <= maximumWidth) {
+            return value;
+        }
+        String ellipsis = "...";
+        int end = value.length();
+        while (end > 0 && fontRendererObj.getStringWidth(value.substring(0, end) + ellipsis) > maximumWidth) {
+            end--;
+        }
+        return value.substring(0, end) + ellipsis;
+    }
+
     private static String safeMessage(RuntimeException failure) {
         String message = failure.getMessage();
         return message == null || message.trim()
             .isEmpty() ? failure.getClass()
                 .getSimpleName() : message;
-    }
-
-    private static String truncate(String value, int maximumLength) {
-        if (value == null || value.length() <= maximumLength) {
-            return value;
-        }
-        return value.substring(0, maximumLength - 3) + "...";
     }
 }

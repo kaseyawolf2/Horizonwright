@@ -17,19 +17,20 @@ public final class BaritoneInstallationInspector {
 
     public static final String EXPECTED_MOD_ID = "baritone";
     /** Exact value exposed by the pinned JAR's Forge ModContainer. */
-    public static final String EXPECTED_VERSION = "1.2.19-mc1.7.10";
-    /** Source-control tag for the same pinned bytes; Forge omits the leading {@code v}. */
-    public static final String EXPECTED_TAG = "v1.2.19-mc1.7.10";
+    public static final String EXPECTED_VERSION = "1.2.19-mc1.7.10-1-7-10-forge+fcbbd4882c-dirty";
+    /** Build metadata embedded in the pinned JAR; Forge omits the leading {@code v}. */
+    public static final String EXPECTED_BUILD = "v1.2.19-mc1.7.10-1-7-10-forge+fcbbd4882c-dirty";
+    public static final String EXPECTED_ARTIFACT = "baritone-v1.2.19-mc1.7.10-1-7-10-forge+fcbbd4882c.jar";
     public static final String EXPECTED_PROVIDER = "baritone.BaritoneProvider";
     public static final String EXPECTED_COMMIT = "fcbbd4882cc7d846a8e613dea4b50203e1fb4ebc";
-    public static final String REFERENCE_SHA256 = "F644AC987BAE86863122853AF1E47AE1298C485B4BAC1F3C4FAB98CE3AAD3C1D";
+    public static final String REFERENCE_SHA256 = "CC24115B0B61C14678E3634E9257E1E155E1EB6CA570ACCB7D10622F9D4FFF0E";
     public static final String API_RESOURCE = "baritone/api/BaritoneAPI.class";
     public static final String PROVIDER_RESOURCE = "META-INF/services/baritone.api.IBaritoneProvider";
 
     private static final String UNKNOWN_SOURCE = "Baritone source not discovered";
-    private static final String REPLACEMENT_ROUTE = "Install vendor/baritone/baritone-v1.2.19-mc1.7.10.jar "
-        + "or rebuild it exactly from commit "
-        + EXPECTED_COMMIT
+    private static final String REPLACEMENT_ROUTE = "Install vendor/baritone/" + EXPECTED_ARTIFACT
+        + " with SHA-256 "
+        + REFERENCE_SHA256
         + ".";
 
     public BaritoneInstallationStatus inspect(Snapshot snapshot) {
@@ -119,7 +120,7 @@ public final class BaritoneInstallationInspector {
             if (snapshot.isDeobfuscatedEnvironment()) {
                 return BaritoneInstallationStatus.available(
                     false,
-                    "Baritone " + EXPECTED_TAG
+                    "Baritone " + EXPECTED_BUILD
                         + " passed structural validation from deobfuscated directory "
                         + source.getDescription()
                         + "; referenceBytes=false because a directory has no single JAR hash.",
@@ -144,7 +145,7 @@ public final class BaritoneInstallationInspector {
         if (REFERENCE_SHA256.equals(source.getSha256())) {
             return BaritoneInstallationStatus.available(
                 true,
-                "Baritone " + EXPECTED_TAG
+                "Baritone " + EXPECTED_BUILD
                     + " passed structural validation; source SHA-256 "
                     + source.getSha256()
                     + " matches the pinned reference bytes.",
@@ -155,7 +156,7 @@ public final class BaritoneInstallationInspector {
         if (snapshot.isDeobfuscatedEnvironment()) {
             return BaritoneInstallationStatus.available(
                 false,
-                "Baritone " + EXPECTED_TAG
+                "Baritone " + EXPECTED_BUILD
                     + " passed structural validation in a deobfuscated/remapped development environment; source SHA-256 "
                     + source.getSha256()
                     + " differs from reference "

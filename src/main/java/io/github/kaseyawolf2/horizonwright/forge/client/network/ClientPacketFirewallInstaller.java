@@ -129,6 +129,14 @@ public final class ClientPacketFirewallInstaller implements OutboundPacketFirewa
         return state == State.INSTALLED && actionSessionGuard.isReadyForSession();
     }
 
+    /**
+     * Returns whether the packet boundary is installed, including while an old automation session is draining.
+     * Runtime cleanup must keep ticking during that drain or the producer and firewall would wait on each other.
+     */
+    public boolean isInstalled() {
+        return state == State.INSTALLED;
+    }
+
     private void scheduleInstallLocked(Registration registration) {
         if (registration.installAttempts >= MAX_INSTALL_ATTEMPTS) {
             state = State.FAILED;

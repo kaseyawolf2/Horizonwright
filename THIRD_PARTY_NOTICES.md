@@ -24,30 +24,29 @@ build.
 - Wrapper JAR SHA-256:
   `b3a875ddc1f044746e1b1a55f645584505f4a10438c1afea9f15e92a7c42ec13`
 
-## Baritone v1.2.19-mc1.7.10
+## Baritone enhanced Minecraft 1.7.10 build
 
 - Official upstream: https://github.com/cabaletta/baritone
 - Minecraft 1.7.10 fork: https://github.com/kaseyawolf2/baritone
 - Official `v1.2.19` base commit:
   `d9cb2d91a06501c5bcba2181509d0df80361f413`
-- Clean snapshot commit: `fcbbd4882cc7d846a8e613dea4b50203e1fb4ebc`
+- Build commit identity: `fcbbd4882cc7d846a8e613dea4b50203e1fb4ebc`
 - License: LGPL-3.0-or-later
 - Use: exact, hash-verified `devOnlyNonPublishable` compile/local-development
   input and separately installed runtime for the private navigation adapter.
 - Binary SHA-256:
-  `f644ac987bae86863122853af1e47ae1298c485b4bac1f3c4fab98ce3aad3c1d`
-- Complete source snapshot SHA-256:
-  `31f6f0efa564c7b8cd2e79ca76adf216601f7218ff5776df15bfcaf6db1d2659`
+  `cc24115b0b61c14678e3634e9257e1e155e1eb6ca570accb7d10622f9d4fff0e`
+- Corresponding sources JAR SHA-256:
+  `09e503b929c7d5d0ea6f298f0284ee7891aabd2ff2c7405c170b01449e47e700`
 - Complete GPLv3 text SHA-256:
   `3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986`
 - Corresponding source and license record: `vendor/baritone/`
 
-The snapshot is 47 commits later than the official base. Its commit and local
-tag were not published by the fork remote when captured, so the vendored full
-source snapshot is the authoritative source record. Horizonwright does not
-embed, publish, or redistribute Baritone. The complete GPLv3 text incorporated
-by LGPLv3 is preserved as `vendor/baritone/COPYING-GPL-3.0`; both upstream
-license files are also preserved.
+The exact enhanced binary and its corresponding Gradle sources artifact are
+vendored by hash. Horizonwright does not embed, publish, or redistribute
+Baritone. The complete GPLv3 text incorporated by LGPLv3 is preserved as
+`vendor/baritone/COPYING-GPL-3.0`; both upstream license files are also
+preserved.
 
 Horizonwright can be rebuilt against an interface-compatible modified
 Baritone. Byte-different Baritone artifacts are unvalidated and must leave

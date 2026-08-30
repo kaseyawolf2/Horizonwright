@@ -237,7 +237,7 @@ public final class ClientBootstrap {
             return;
         }
         packetFirewall.ensureInstalled();
-        if (packetFirewall.isReady()) {
+        if (packetFirewall.isInstalled()) {
             runtimeSessions.clientTick(activeIdentity, connectionToken);
         }
     }

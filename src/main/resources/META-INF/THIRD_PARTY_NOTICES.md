@@ -22,14 +22,14 @@ Horizonwright's original source is licensed under the MIT License.
 - Wrapper JAR SHA-256:
   `b3a875ddc1f044746e1b1a55f645584505f4a10438c1afea9f15e92a7c42ec13`
 
-## Baritone v1.2.19-mc1.7.10
+## Baritone enhanced Minecraft 1.7.10 build
 
 - Official upstream: https://github.com/cabaletta/baritone
-- Clean 1.7.10 snapshot commit:
+- Build commit identity:
   `fcbbd4882cc7d846a8e613dea4b50203e1fb4ebc`
 - License: LGPL-3.0-or-later
 - Validated binary SHA-256:
-  `f644ac987bae86863122853af1e47ae1298c485b4bac1f3c4fab98ce3aad3c1d`
+  `cc24115b0b61c14678e3634e9257e1e155e1eb6ca570accb7d10622f9d4fff0e`
 - Complete GPLv3 text SHA-256:
   `3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986`
 - Complete corresponding source, LGPL/GPL license material, and checksums:

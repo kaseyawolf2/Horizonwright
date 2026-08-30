@@ -18,10 +18,13 @@ because its classes are present.
 
 ## Decision
 
-Require a separate, exact-version Baritone JAR at runtime. The selected build
-is `v1.2.19-mc1.7.10` at clean snapshot commit
-`fcbbd4882cc7d846a8e613dea4b50203e1fb4ebc`, with production binary SHA-256
-`f644ac987bae86863122853af1e47ae1298c485b4bac1f3c4fab98ce3aad3c1d`.
+Require a separate, exact-version Baritone JAR at runtime. The user-selected
+enhanced build is
+`baritone-v1.2.19-mc1.7.10-1-7-10-forge+fcbbd4882c.jar`, with production
+binary SHA-256
+`cc24115b0b61c14678e3634e9257e1e155e1eb6ca570accb7d10622f9d4fff0e`.
+The clean external filename contains compiled local improvements; its embedded
+Gradle version deliberately retains the source tree's `-dirty` marker.
 
 The binary is also declared as `devOnlyNonPublishable` so the adapter can
 compile and local development runs can load it. It is never embedded, shaded,
@@ -33,8 +36,8 @@ launch without Baritone, but its navigation capability remains unavailable.
 Before loading any Baritone API type, the installation probe requires:
 
 - exactly one loaded `baritone` mod container;
-- Forge manifest version `1.2.19-mc1.7.10` (source tag
-  `v1.2.19-mc1.7.10`);
+- Forge manifest version
+  `1.2.19-mc1.7.10-1-7-10-forge+fcbbd4882c-dirty`;
 - exactly one `baritone/api/BaritoneAPI.class` resource;
 - exactly one provider resource containing only `baritone.BaritoneProvider`;
 - a readable source artifact; and
@@ -66,15 +69,12 @@ mutation fails the route rather than broadening its lease.
 - Official `v1.2.19` base commit:
   `d9cb2d91a06501c5bcba2181509d0df80361f413`
 - Minecraft 1.7.10 fork: <https://github.com/kaseyawolf2/baritone>
-- Clean snapshot commit: `fcbbd4882cc7d846a8e613dea4b50203e1fb4ebc`
-- Local tag: `v1.2.19-mc1.7.10`
-- Distance from official base: 47 commits
-- Complete source snapshot SHA-256:
-  `31f6f0efa564c7b8cd2e79ca76adf216601f7218ff5776df15bfcaf6db1d2659`
+- Build commit identity: `fcbbd4882cc7d846a8e613dea4b50203e1fb4ebc`
+- Corresponding Gradle sources artifact SHA-256:
+  `09e503b929c7d5d0ea6f298f0284ee7891aabd2ff2c7405c170b01449e47e700`
 
-The snapshot commit and tag were not published by the fork remote when
-captured. The vendored complete source snapshot is the authoritative durable
-source record.
+The vendored binary and corresponding Gradle sources artifact are the
+authoritative durable compatibility record for this enhanced build.
 
 Baritone is LGPL-3.0-or-later. `vendor/baritone/` preserves the corresponding
 source, LGPL text, upstream `LICENSE-Part-2.jpg`, complete GPLv3 text, and
@@ -90,8 +90,8 @@ record, and safety tests before production navigation is enabled.
 
 ## Verification
 
-`verifyBaritoneArtifacts` hashes the binary, complete source snapshot, sources
-JAR, licenses, and checksum manifest. `assemble` and `check` depend on it.
+`verifyBaritoneArtifacts` hashes the binary, corresponding sources JAR,
+licenses, and checksum manifest. `assemble` and `check` depend on it.
 Architecture tests keep Baritone imports inside the adapter package and inspect
 the production Horizonwright JAR for class collisions.
 

@@ -16,7 +16,7 @@ import io.github.kaseyawolf2.horizonwright.navigation.baritone.BaritoneInstallat
 
 public class BaritoneInstallationInspectorTest {
 
-    private static final String SOURCE = "mods/baritone-v1.2.19-mc1.7.10.jar";
+    private static final String SOURCE = "mods/" + BaritoneInstallationInspector.EXPECTED_ARTIFACT;
     private static final String REMAPPED_SHA = "1111111111111111111111111111111111111111111111111111111111111111";
 
     private final BaritoneInstallationInspector inspector = new BaritoneInstallationInspector();
@@ -130,10 +130,10 @@ public class BaritoneInstallationInspectorTest {
     }
 
     @Test
-    public void pinnedJarManifestVersionWithoutGitTagPrefixIsAccepted() {
+    public void pinnedJarManifestVersionWithoutLeadingVIsAccepted() {
         ModCandidate actualManifest = new ModCandidate(
             BaritoneInstallationInspector.EXPECTED_MOD_ID,
-            "1.2.19-mc1.7.10",
+            BaritoneInstallationInspector.EXPECTED_VERSION,
             referenceSource());
 
         BaritoneInstallationStatus status = inspector.inspect(validSnapshot(actualManifest, false));
@@ -142,14 +142,14 @@ public class BaritoneInstallationInspectorTest {
         assertTrue(status.isReferenceBytes());
         assertTrue(
             status.getDiagnostic()
-                .contains("v1.2.19-mc1.7.10"));
+                .contains(BaritoneInstallationInspector.EXPECTED_BUILD));
     }
 
     @Test
-    public void gitTagSpellingIsNotMistakenForTheForgeManifestVersion() {
+    public void embeddedBuildSpellingIsNotMistakenForTheForgeManifestVersion() {
         ModCandidate tagSpelling = new ModCandidate(
             BaritoneInstallationInspector.EXPECTED_MOD_ID,
-            BaritoneInstallationInspector.EXPECTED_TAG,
+            BaritoneInstallationInspector.EXPECTED_BUILD,
             referenceSource());
 
         BaritoneInstallationStatus status = inspector.inspect(validSnapshot(tagSpelling, false));
@@ -157,7 +157,7 @@ public class BaritoneInstallationInspectorTest {
         assertFalse(status.isAvailable());
         assertTrue(
             status.getDiagnostic()
-                .contains("expected '1.2.19-mc1.7.10'"));
+                .contains("expected '" + BaritoneInstallationInspector.EXPECTED_VERSION + "'"));
     }
 
     @Test
@@ -176,7 +176,7 @@ public class BaritoneInstallationInspectorTest {
                 .contains(REMAPPED_SHA));
         assertTrue(
             status.getDiagnostic()
-                .contains("rebuild it exactly from commit"));
+                .contains(BaritoneInstallationInspector.EXPECTED_ARTIFACT));
     }
 
     @Test

@@ -41,7 +41,9 @@ On Linux or macOS:
 Shipping and development JARs are written only to `build/libs`. The build has
 no dependency on the neighboring Baritone Backport checkout.
 
-The exact `vendor/baritone/baritone-v1.2.19-mc1.7.10.jar` input is declared as
+The exact
+`vendor/baritone/baritone-v1.2.19-mc1.7.10-1-7-10-forge+fcbbd4882c.jar`
+input is declared as
 `devOnlyNonPublishable`: it is available for compilation and local development
 runs but is not copied into Horizonwright's production JAR or published
 metadata. It is the separately installed runtime dependency selected by the
@@ -57,10 +59,13 @@ Verification can also be run directly:
 
 At runtime, Horizonwright validates that exactly one Baritone mod, API class,
 and provider exist and that the production JAR's version and SHA-256 match the
-recorded build before loading any Baritone API type. The source tag is
-`v1.2.19-mc1.7.10`; that JAR exposes Forge mod version
-`1.2.19-mc1.7.10` without the tag's leading `v`. Missing, duplicate, or
-changed installations leave navigation unavailable with a diagnostic.
+recorded build before loading any Baritone API type. The selected clean-named
+JAR embeds build version
+`v1.2.19-mc1.7.10-1-7-10-forge+fcbbd4882c-dirty` and exposes it through Forge
+without the leading `v`. Its SHA-256 is
+`cc24115b0b61c14678e3634e9257e1e155e1eb6ca570accb7d10622f9d4fff0e`.
+Missing, duplicate, or changed installations leave navigation unavailable with
+a diagnostic.
 Horizonwright source can still be rebuilt against an interface-compatible
 modified Baritone; enabling changed production bytes requires deliberate review
 and an updated compatibility record.
@@ -83,6 +88,8 @@ was installed for this test.
   impose the old 128-block smoke-test radius.
 - Use `/hw navcancel` to cancel the current navigation request and release
   inputs.
+- Active and queued goals are saved to the enrolled world profile on exit and
+  automatically restored when that same world is rejoined.
 - Use `/hw stop` to stop Horizonwright automation. It revokes automation leases
   and drains already-queued automation packets, but does not lock direct player
   movement, mining, inventory use, or unrelated mods.

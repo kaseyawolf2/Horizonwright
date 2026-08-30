@@ -35,10 +35,9 @@ snapshot in `vendor/baritone/` is now the authoritative record.
 | Official `v1.2.19` base | `d9cb2d91a06501c5bcba2181509d0df80361f413` |
 | Minecraft 1.7.10 fork | `https://github.com/kaseyawolf2/baritone` |
 | Clean snapshot | `fcbbd4882cc7d846a8e613dea4b50203e1fb4ebc` |
-| Local tag | `v1.2.19-mc1.7.10` |
-| Distance from base | 47 commits |
-| Binary SHA-256 | `f644ac987bae86863122853af1e47ae1298c485b4bac1f3c4fab98ce3aad3c1d` |
-| Full source snapshot SHA-256 | `31f6f0efa564c7b8cd2e79ca76adf216601f7218ff5776df15bfcaf6db1d2659` |
+| Embedded build version | `v1.2.19-mc1.7.10-1-7-10-forge+fcbbd4882c-dirty` |
+| Binary SHA-256 | `cc24115b0b61c14678e3634e9257e1e155e1eb6ca570accb7d10622f9d4fff0e` |
+| Sources JAR SHA-256 | `09e503b929c7d5d0ea6f298f0284ee7891aabd2ff2c7405c170b01449e47e700` |
 | License | LGPL-3.0-or-later; complete LGPL/GPL material and fastutil's Apache-2.0 license are in `vendor/baritone/` |
 
 The snapshot commit and tag were local-only when captured. Do not invent a
@@ -52,7 +51,7 @@ remote commit URL for them.
 | Baritone API and navigation engine | `SEPARATE_RUNTIME`, `PORT_WITH_ATTRIBUTION` | Exact binary is a hash-verified `devOnlyNonPublishable` compile input and separately installed runtime; no Baritone class ships inside Horizonwright. |
 | Baritone launch hooks and mixins | `SEPARATE_RUNTIME` | They remain owned by the separate Baritone mod and never bootstrap Horizonwright. |
 | Baritone commands, process ownership, and runtime state | `LEAVE_BEHIND` | Horizonwright's controller, scheduler, action broker, and safety state own work; only a private adapter process is registered. |
-| Neighbor-checkout feature patches | `LEAVE_BEHIND` | Dirty or untracked work is never a build or source input. |
+| User-selected enhanced Baritone feature patches | `SEPARATE_RUNTIME` | Exact reviewed binary/source artifacts are vendored by hash; the mutable neighboring checkout is never a dynamic build input. |
 | Circle/cylinder geometry | `REIMPLEMENT` | Pure geometry with golden fixtures; no copied implementation. |
 | Farming and CropsNH behavior | `REIMPLEMENT` | Use exact-version public APIs and independently recorded ordinary-crop fixtures. |
 | GT prospecting grid calculations | `REIMPLEMENT` | Use coordinate fixtures and an independent implementation. |

@@ -42,7 +42,7 @@ public final class BaritoneNavigationBackend implements NavigationBackend, Actio
     private final ActionSessionGuard actionSessionGuard;
     private final HorizonwrightBaritoneProcess process;
     private volatile BackendAvailability availability = BackendAvailability
-        .available("Baritone v1.2.19-mc1.7.10 ready (movement/look only)");
+        .available("Baritone enhanced build fcbbd4882c ready (movement/look only)");
     private Handle active;
     private PendingCleanup pendingCleanup;
 

@@ -6,7 +6,8 @@ slow. Automated GUI control is reserved for infrequent release checkpoints.
 ## Milestone 0 navigation checkpoint
 
 1. Build and install the production Horizonwright JAR plus the exact separate
-   `vendor/baritone/baritone-v1.2.19-mc1.7.10.jar` into the isolated instance.
+   `vendor/baritone/baritone-v1.2.19-mc1.7.10-1-7-10-forge+fcbbd4882c.jar`
+   into the isolated instance.
    Confirm there is exactly one Horizonwright JAR and one Baritone JAR in
    `.minecraft/mods`.
 2. Launch through `GTNH-2.9.0-Beta2-Horizonwright.lnk` and maximize Minecraft.
@@ -21,7 +22,7 @@ slow. Automated GUI control is reserved for infrequent release checkpoints.
    select the same profile without asking for enrollment again.
 6. Press `H` and confirm the dashboard reports:
    - action epoch `1` and zero leases while idle;
-   - Baritone `v1.2.19-mc1.7.10` ready;
+   - Baritone enhanced build `fcbbd4882c` ready;
    - safety ready; and
    - unattended operation disabled.
    Open the **Baritone** tab, search for `allowSprint`, select it, and confirm
@@ -42,7 +43,11 @@ slow. Automated GUI control is reserved for infrequent release checkpoints.
 10. Face another clear stretch and run `/hw goto ~12 ~ ~ 1`, then promptly run
    `/hw navcancel`. Confirm status reaches `CANCELLED`, motion stops, and no key
    remains stuck.
-11. Start another clear route and run `/hw stop`. Confirm automation stops, the
+11. Start a longer clear route, save and leave the world while it is active,
+    then rejoin the same enrolled world. Confirm the same goal is restored and
+    resumes from the player's current position rather than disappearing or
+    creating a duplicate.
+12. Start another clear route and run `/hw stop`. Confirm automation stops, the
     dashboard reports `AUTOMATION STOPPED`, and a new `/hw goto` is refused.
     Then verify ordinary player movement, manual block breaking, the `E`
     inventory, and unrelated mod UI/network behavior still work. Run `/hw reset`
@@ -50,13 +55,13 @@ slow. Automated GUI control is reserved for infrequent release checkpoints.
     the suspended route resumes. The dashboard's task-control button must also
     read `Resume task` when that route is the sole resumable task. Do not use an
     actual death to test this manual-stop checkpoint.
-12. Create two resumable routes. Run `/hw resume` without an ID and confirm both
+13. Create two resumable routes. Run `/hw resume` without an ID and confirm both
     chat choices are clickable and show hover details; click one and confirm
     only that exact task resumes. Repeat with two resumable routes from the
     dashboard and confirm **Choose task** opens a selection popup instead of
     guessing.
-13. Save and quit to title, then exit Minecraft cleanly.
-14. Report completion, cancellation, automation-stop/reset, hotbar, long-route,
+14. Save and quit to title, then exit Minecraft cleanly.
+15. Report completion, cancellation, automation-stop/reset, hotbar, long-route,
     inventory-menu, and world-mutation
     results. Check the log for Horizonwright packet denials: no Forge, custom,
     unclassified, or non-packet traffic may be denied merely because it is

@@ -75,6 +75,8 @@ public class ClientPacketFirewallInstallerTest {
         guard.quarantine(lease);
         guard.end(lease);
         assertEquals(ActionSessionGuard.Mode.QUARANTINED, guard.getMode());
+        assertTrue(installer.isInstalled());
+        assertFalse(installer.isReady());
 
         installer.ensureInstalled(manager, channel);
         channel.runPendingTasks();
