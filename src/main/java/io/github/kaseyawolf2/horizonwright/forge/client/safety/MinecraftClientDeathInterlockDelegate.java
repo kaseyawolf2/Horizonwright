@@ -22,9 +22,10 @@ public final class MinecraftClientDeathInterlockDelegate implements ClientDeathI
 
     @Override
     public void onCriticalRestrictionsEntered() {
+        // Critical health is automation-owner scoped. Revocation tells each producer to release
+        // its own controls without swallowing keys which the physical player is holding.
         runtime.getActionBroker()
             .revokeAll();
-        scheduleInputCleanup();
     }
 
     @Override
