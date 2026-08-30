@@ -1,5 +1,7 @@
 package io.github.kaseyawolf2.horizonwright.forge.client;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 
 import net.minecraft.command.CommandBase;
@@ -13,6 +15,7 @@ import io.github.kaseyawolf2.horizonwright.HorizonwrightRuntime.RuntimeSnapshot;
 import io.github.kaseyawolf2.horizonwright.core.navigation.NavigationProgress;
 import io.github.kaseyawolf2.horizonwright.core.task.ControllerSnapshot;
 import io.github.kaseyawolf2.horizonwright.core.task.TaskLane;
+import io.github.kaseyawolf2.horizonwright.core.task.TaskResumeCandidates;
 import io.github.kaseyawolf2.horizonwright.core.task.TaskSnapshot;
 
 public final class HorizonwrightClientCommand extends CommandBase {
@@ -30,7 +33,7 @@ public final class HorizonwrightClientCommand extends CommandBase {
 
     @Override
     public String getCommandUsage(ICommandSender sender) {
-        return "/hw [panel|status|task [id]|goto <x> <y> <z> [tolerance]|pause [id]|resume <id>|cancel <id>|navcancel|dryrun [on|off]|stop|reset]";
+        return "/hw [panel|status|task [id]|goto <x> <y> <z> [tolerance]|pause [id]|resume [id]|cancel <id>|navcancel|dryrun [on|off]|stop|reset]";
     }
 
     @Override
@@ -109,6 +112,40 @@ public final class HorizonwrightClientCommand extends CommandBase {
         return true;
     }
 
+    @Override
+    public List<String> addTabCompletionOptions(ICommandSender sender, String[] arguments) {
+        if (arguments.length == 1) {
+            return getListOfStringsMatchingLastWord(
+                arguments,
+                "panel",
+                "status",
+                "task",
+                "goto",
+                "pause",
+                "resume",
+                "cancel",
+                "navcancel",
+                "dryrun",
+                "stop",
+                "reset");
+        }
+        if (arguments.length != 2) {
+            return null;
+        }
+        ControllerSnapshot snapshot = runtime.controllerSnapshot();
+        if ("resume".equalsIgnoreCase(arguments[0])) {
+            return getListOfStringsFromIterableMatchingLastWord(arguments, taskIds(resumeCandidates(snapshot)));
+        }
+        if ("pause".equalsIgnoreCase(arguments[0]) || "cancel".equalsIgnoreCase(arguments[0])
+            || "task".equalsIgnoreCase(arguments[0])) {
+            return getListOfStringsFromIterableMatchingLastWord(arguments, taskIds(snapshot.getTasks()));
+        }
+        if ("dryrun".equalsIgnoreCase(arguments[0])) {
+            return getListOfStringsMatchingLastWord(arguments, "on", "off");
+        }
+        return null;
+    }
+
     private void startNavigation(ICommandSender sender, String[] arguments) {
         if (arguments.length != 4 && arguments.length != 5) {
             sender.addChatMessage(new ChatComponentText(EnumChatFormatting.RED + getCommandUsage(sender)));
@@ -164,7 +201,8 @@ public final class HorizonwrightClientCommand extends CommandBase {
                     + (runtimeSnapshot.isDryRun() ? ", DRY-RUN" : "")
                     + ", "
                     + runtimeSnapshot.getNavigationDiagnostic()
-                    + navigationSuffix(runtimeSnapshot.getNavigationProgress())));
+                    + navigationSuffix(runtimeSnapshot.getNavigationProgress())
+                    + resumeSuffix(controller)));
     }
 
     private void resetAutomation(ICommandSender sender) {
@@ -174,7 +212,7 @@ public final class HorizonwrightClientCommand extends CommandBase {
                 new ChatComponentText(
                     reset
                         ? EnumChatFormatting.GREEN
-                            + "Horizonwright automation re-armed; blocked tasks still require explicit resume."
+                            + "Horizonwright automation re-armed. Use /hw resume to continue the suspended task."
                         : EnumChatFormatting.GRAY + "Horizonwright has no manual automation stop to reset."));
         } catch (RuntimeException failure) {
             sender.addChatMessage(
@@ -227,7 +265,8 @@ public final class HorizonwrightClientCommand extends CommandBase {
     }
 
     private void controlTask(ICommandSender sender, String[] arguments, Control control) {
-        if ((control == Control.PAUSE && arguments.length > 2) || (control != Control.PAUSE && arguments.length != 2)) {
+        if ((control == Control.PAUSE && arguments.length > 2) || (control == Control.RESUME && arguments.length > 2)
+            || (control == Control.CANCEL && arguments.length != 2)) {
             sender.addChatMessage(new ChatComponentText(EnumChatFormatting.RED + getCommandUsage(sender)));
             return;
         }
@@ -243,12 +282,32 @@ public final class HorizonwrightClientCommand extends CommandBase {
                 result = paused.get();
             } else if (control == Control.PAUSE) {
                 result = runtime.pauseTask(arguments[1]);
+            } else if (control == Control.RESUME && arguments.length == 1) {
+                TaskResumeCandidates candidates = TaskResumeCandidates.from(
+                    runtime.controllerSnapshot()
+                        .getTasks());
+                Optional<TaskSnapshot> only = candidates.onlyCandidate();
+                if (!only.isPresent()) {
+                    showResumeChoice(sender, candidates);
+                    return;
+                }
+                result = runtime.resumeTask(
+                    only.get()
+                        .getSpec()
+                        .getId());
             } else if (control == Control.RESUME) {
                 result = runtime.resumeTask(arguments[1]);
             } else {
                 result = runtime.cancelTask(arguments[1]);
             }
-            sender.addChatMessage(new ChatComponentText(formatTask(result)));
+            sender.addChatMessage(
+                new ChatComponentText(
+                    control == Control.RESUME ? EnumChatFormatting.GREEN + "Resumed "
+                        + result.getSpec()
+                            .getId()
+                        + EnumChatFormatting.GRAY
+                        + " - "
+                        + result.getDetail() : formatTask(result)));
         } catch (RuntimeException failure) {
             sender.addChatMessage(
                 new ChatComponentText(EnumChatFormatting.RED + "Task control failed safely: " + failure.getMessage()));
@@ -296,6 +355,56 @@ public final class HorizonwrightClientCommand extends CommandBase {
             return "";
         }
         return ", " + progress.getRequestId() + " " + progress.getState() + " (" + progress.getDetail() + ")";
+    }
+
+    private static String resumeSuffix(ControllerSnapshot snapshot) {
+        TaskResumeCandidates candidates = TaskResumeCandidates.from(snapshot.getTasks());
+        if (candidates.isEmpty()) {
+            return "";
+        }
+        if (candidates.size() == 1) {
+            return ", resumable=" + candidates.onlyCandidate()
+                .get()
+                .getSpec()
+                .getId() + " (use /hw resume)";
+        }
+        return ", " + candidates.size() + " resumable tasks (use /hw resume)";
+    }
+
+    private static void showResumeChoice(ICommandSender sender, TaskResumeCandidates candidates) {
+        if (candidates.isEmpty()) {
+            sender.addChatMessage(
+                new ChatComponentText(EnumChatFormatting.GRAY + "Horizonwright has no suspended task to resume."));
+            return;
+        }
+        sender.addChatMessage(
+            new ChatComponentText(EnumChatFormatting.YELLOW + "Several Horizonwright tasks can resume; choose one:"));
+        for (TaskSnapshot candidate : candidates.asList()) {
+            sender.addChatMessage(
+                new ChatComponentText(
+                    EnumChatFormatting.AQUA + "/hw resume "
+                        + candidate.getSpec()
+                            .getId()
+                        + EnumChatFormatting.GRAY
+                        + " ("
+                        + candidate.getState()
+                        + ")"));
+        }
+    }
+
+    private static Iterable<TaskSnapshot> resumeCandidates(ControllerSnapshot snapshot) {
+        return TaskResumeCandidates.from(snapshot.getTasks())
+            .asList();
+    }
+
+    private static Iterable<String> taskIds(Iterable<TaskSnapshot> tasks) {
+        List<String> ids = new ArrayList<>();
+        for (TaskSnapshot task : tasks) {
+            ids.add(
+                task.getSpec()
+                    .getId());
+        }
+        return ids;
     }
 
     private static int nonTerminalCount(ControllerSnapshot snapshot) {

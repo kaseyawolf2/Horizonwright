@@ -11,6 +11,7 @@ import io.github.kaseyawolf2.horizonwright.core.navigation.NavigationProgress;
 import io.github.kaseyawolf2.horizonwright.core.task.BlockedReason;
 import io.github.kaseyawolf2.horizonwright.core.task.ControllerSnapshot;
 import io.github.kaseyawolf2.horizonwright.core.task.TaskLane;
+import io.github.kaseyawolf2.horizonwright.core.task.TaskResumeCandidates;
 import io.github.kaseyawolf2.horizonwright.core.task.TaskSnapshot;
 
 public final class GuiHorizonwrightDashboard extends GuiScreen {
@@ -24,7 +25,7 @@ public final class GuiHorizonwrightDashboard extends GuiScreen {
     private int left;
     private int top;
     private int panelWidth;
-    private GuiButton pauseButton;
+    private GuiButton taskControlButton;
     private GuiButton dryRunButton;
     private GuiButton automationStopButton;
     private String operatorMessage = "";
@@ -40,10 +41,10 @@ public final class GuiHorizonwrightDashboard extends GuiScreen {
         left = (width - panelWidth) / 2;
         top = Math.max(8, (height - 274) / 2);
 
-        pauseButton = new GuiButton(PAUSE_BUTTON, left + 12, top + 232, 92, 20, "Pause active");
+        taskControlButton = new GuiButton(PAUSE_BUTTON, left + 12, top + 232, 92, 20, "Pause active");
         dryRunButton = new GuiButton(DRY_RUN_BUTTON, left + 110, top + 232, 92, 20, "Dry-run: off");
         automationStopButton = new GuiButton(AUTOMATION_STOP_BUTTON, left + 208, top + 232, 118, 20, "Stop automation");
-        buttonList.add(pauseButton);
+        buttonList.add(taskControlButton);
         buttonList.add(dryRunButton);
         buttonList.add(automationStopButton);
         buttonList.add(new GuiButton(CLOSE_BUTTON, left + panelWidth - 82, top + 232, 70, 20, "Close"));
@@ -69,10 +70,22 @@ public final class GuiHorizonwrightDashboard extends GuiScreen {
             }
         } else if (button.id == PAUSE_BUTTON) {
             try {
-                operatorMessage = runtime.pauseActiveTask()
-                    .isPresent() ? "Active task is pausing at a safe point." : "No active task to pause.";
+                ControllerSnapshot controller = runtime.controllerSnapshot();
+                if (controller.getActiveTaskId()
+                    .isPresent()) {
+                    operatorMessage = runtime.pauseActiveTask()
+                        .isPresent() ? "Active task is pausing at a safe point." : "No active task to pause.";
+                } else {
+                    OptionalTaskResume resume = onlyResumeCandidate(controller);
+                    operatorMessage = resume.task == null ? resume.diagnostic
+                        : "Resumed " + runtime.resumeTask(
+                            resume.task.getSpec()
+                                .getId())
+                            .getSpec()
+                            .getId() + ".";
+                }
             } catch (RuntimeException failure) {
-                operatorMessage = "Pause failed safely: " + failure.getMessage();
+                operatorMessage = "Task control failed safely: " + failure.getMessage();
             }
         } else if (button.id == DRY_RUN_BUTTON) {
             try {
@@ -103,8 +116,12 @@ public final class GuiHorizonwrightDashboard extends GuiScreen {
                     .orElse(null)
                 : null;
         TaskSnapshot blockedTask = firstBlocked(controller);
+        TaskResumeCandidates resumeCandidates = TaskResumeCandidates.from(controller.getTasks());
 
-        pauseButton.enabled = !locked && activeTask != null;
+        taskControlButton.enabled = !locked && (activeTask != null || resumeCandidates.size() == 1);
+        taskControlButton.displayString = activeTask != null ? "Pause active"
+            : resumeCandidates.size() == 1 ? "Resume task"
+                : resumeCandidates.isEmpty() ? "No task to resume" : "Choose via /hw";
         dryRunButton.enabled = !locked;
         dryRunButton.displayString = snapshot.isDryRun() ? "Dry-run: ON" : "Dry-run: off";
         automationStopButton.enabled = !deathLocked;
@@ -241,5 +258,30 @@ public final class GuiHorizonwrightDashboard extends GuiScreen {
             : task.getSpec()
                 .getId() + ": "
                 + reason.getDetail();
+    }
+
+    private static OptionalTaskResume onlyResumeCandidate(ControllerSnapshot controller) {
+        TaskResumeCandidates candidates = TaskResumeCandidates.from(controller.getTasks());
+        if (candidates.size() == 1) {
+            return new OptionalTaskResume(
+                candidates.onlyCandidate()
+                    .get(),
+                "");
+        }
+        return new OptionalTaskResume(
+            null,
+            candidates.isEmpty() ? "No suspended task to resume."
+                : "Several tasks can resume; use /hw resume to choose one.");
+    }
+
+    private static final class OptionalTaskResume {
+
+        private final TaskSnapshot task;
+        private final String diagnostic;
+
+        private OptionalTaskResume(TaskSnapshot task, String diagnostic) {
+            this.task = task;
+            this.diagnostic = diagnostic;
+        }
     }
 }
