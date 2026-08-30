@@ -17,6 +17,8 @@ import io.github.kaseyawolf2.horizonwright.core.safety.death.ConnectionIdentity;
 import io.github.kaseyawolf2.horizonwright.core.safety.death.DeathSafetyPolicy;
 import io.github.kaseyawolf2.horizonwright.core.safety.death.DeathSafetySnapshot;
 import io.github.kaseyawolf2.horizonwright.core.safety.death.GraveActivationAttempt;
+import io.github.kaseyawolf2.horizonwright.core.safety.death.GraveActivationPermit;
+import io.github.kaseyawolf2.horizonwright.core.safety.death.GraveIdentity;
 import io.github.kaseyawolf2.horizonwright.forge.client.network.DeathSafetyPacketBridge;
 import io.github.kaseyawolf2.horizonwright.forge.client.network.DeathSafetyPacketBridgeFactory;
 import io.github.kaseyawolf2.horizonwright.forge.client.network.DeathSafetyPacketContext;
@@ -43,10 +45,14 @@ final class LiveClientDeathSafetyBoundary implements RuntimeSessionDeathStateBou
     private final LiveDeathSafetyControls controls;
     private final ClientDeathSafetyRuntime deathSafety;
     private final RetirementListener retirementListener;
+    private final OpenBlocksGraveTileReader graveTileReader = new OpenBlocksGraveTileReader();
+    private final GraveActivationPacketMatcher graveActivationPacketMatcher = new GraveActivationPacketMatcher();
 
     private UnresolvedDeathState unresolvedDeath;
     private long clientTick;
     private volatile double maximumHealth = 20.0D;
+    private volatile GraveActivationPacketSnapshot graveActivationPacketSnapshot;
+    private boolean graveAdapterFailureLogged;
     private boolean restored;
     private boolean disconnected;
     private boolean closed;
@@ -90,9 +96,11 @@ final class LiveClientDeathSafetyBoundary implements RuntimeSessionDeathStateBou
         Minecraft minecraft = requireJoinedClientThread();
         maximumHealth = positiveMaximumHealth(minecraft.thePlayer.getMaxHealth());
         long tick = advanceClientTick();
-        deathSafety.clientTick(tick);
+        DeathSafetySnapshot snapshot = deathSafety.clientTick(tick);
+        refreshGraveActivationPacketSnapshot(minecraft, snapshot);
         if (controls.consumeUnavailableRecoveryRequest()) {
             deathSafety.failUnavailableRecoveryNavigation(tick);
+            graveActivationPacketSnapshot = null;
         }
     }
 
@@ -105,6 +113,7 @@ final class LiveClientDeathSafetyBoundary implements RuntimeSessionDeathStateBou
         try {
             deathSafety.disconnect(advanceClientTick());
         } finally {
+            graveActivationPacketSnapshot = null;
             disconnected = true;
         }
     }
@@ -170,9 +179,7 @@ final class LiveClientDeathSafetyBoundary implements RuntimeSessionDeathStateBou
         if (packet == null) {
             throw new IllegalArgumentException("grave activation packet must not be null");
         }
-        // OpenBlocks grave identity matching is intentionally not guessed. Until its tested adapter is attached,
-        // generic use packets continue through the ordinary action gate and no exact-grave permit is fabricated.
-        return Optional.empty();
+        return graveActivationPacketMatcher.match(packet, graveActivationPacketSnapshot);
     }
 
     @Override
@@ -205,6 +212,7 @@ final class LiveClientDeathSafetyBoundary implements RuntimeSessionDeathStateBou
             }
         }
         closed = true;
+        graveActivationPacketSnapshot = null;
         retirementListener.onRetired(this);
         if (failure != null) {
             throw failure;
@@ -234,6 +242,53 @@ final class LiveClientDeathSafetyBoundary implements RuntimeSessionDeathStateBou
             throw new IllegalStateException("death-safety client tick overflow");
         }
         return ++clientTick;
+    }
+
+    private void refreshGraveActivationPacketSnapshot(Minecraft minecraft, DeathSafetySnapshot snapshot) {
+        Optional<GraveActivationPermit> activePermit = snapshot.getGraveActivationPermit();
+        if (!activePermit.isPresent()) {
+            graveActivationPacketSnapshot = null;
+            return;
+        }
+        GraveActivationPermit permit = activePermit.get();
+        GraveIdentity expected = permit.getGraveIdentity();
+        if (minecraft.theWorld.provider.dimensionId != expected.getPosition()
+            .getDimensionId()) {
+            graveActivationPacketSnapshot = null;
+            return;
+        }
+        try {
+            Optional<OpenBlocksGraveTileEvidence> evidence = graveTileReader.read(
+                minecraft.theWorld.getTileEntity(
+                    expected.getPosition()
+                        .getX(),
+                    expected.getPosition()
+                        .getY(),
+                    expected.getPosition()
+                        .getZ()),
+                expected.getPosition());
+            if (!evidence.isPresent() || !expected.equals(
+                evidence.get()
+                    .getIdentity())) {
+                graveActivationPacketSnapshot = null;
+                return;
+            }
+            graveActivationPacketSnapshot = new GraveActivationPacketSnapshot(
+                permit,
+                evidence.get()
+                    .getIdentity(),
+                minecraft.theWorld.provider.dimensionId,
+                minecraft.thePlayer.getHeldItem() == null,
+                minecraft.thePlayer.isSneaking());
+        } catch (IllegalStateException unsupportedAdapter) {
+            graveActivationPacketSnapshot = null;
+            if (!graveAdapterFailureLogged) {
+                graveAdapterFailureLogged = true;
+                HorizonwrightMod.LOG.error(
+                    "OpenBlocks grave adapter became unavailable; exact grave activation remains denied",
+                    unsupportedAdapter);
+            }
+        }
     }
 
     private static Minecraft requireJoinedClientThread() {

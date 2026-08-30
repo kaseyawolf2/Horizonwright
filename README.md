@@ -11,8 +11,12 @@ independent Forge entry point, dashboard, resumable task controller, per-world
 atomic persistence, exact hash-verified Baritone adapter, synchronous input
 revocation, and a noninterfering outbound action boundary. The death-safety
 kernel is now attached to live health, connection, persistence, respawn, and
-packet boundaries; exact OpenBlocks grave identification and automatic
-recovery remain incomplete. Unattended operation remains disabled.
+packet boundaries. The version-isolated OpenBlocks adapter now decodes only
+the owner and empty-state fields that OpenBlocks 1.12.18-GTNH actually syncs
+to clients, and exact activation packets are matched solely against immutable
+Minecraft-thread evidence. Bounded grave discovery, conservative content
+reconstruction, and automatic recovery remain incomplete. Unattended
+operation remains disabled.
 
 ## Pinned target
 
