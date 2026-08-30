@@ -1,0 +1,7 @@
+# First five targets and successor cursor fields for center (-16,-16), radius 2.
+x	y	z	nextChunkX	nextChunkZ	nextBand	nextOffset
+-17	5	-17	-2	-1	14	0
+-18	5	-16	-2	-1	15	0
+-17	5	-16	-2	-1	15	1
+-17	5	-15	-1	-2	0	14
+-16	5	-18	-1	-2	0	15
