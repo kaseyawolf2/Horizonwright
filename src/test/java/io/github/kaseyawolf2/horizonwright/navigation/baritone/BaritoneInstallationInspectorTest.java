@@ -140,7 +140,9 @@ public class BaritoneInstallationInspectorTest {
 
         assertTrue(status.isAvailable());
         assertTrue(status.isReferenceBytes());
-        assertTrue(status.getDiagnostic().contains("v1.2.19-mc1.7.10"));
+        assertTrue(
+            status.getDiagnostic()
+                .contains("v1.2.19-mc1.7.10"));
     }
 
     @Test
@@ -153,7 +155,9 @@ public class BaritoneInstallationInspectorTest {
         BaritoneInstallationStatus status = inspector.inspect(validSnapshot(tagSpelling, false));
 
         assertFalse(status.isAvailable());
-        assertTrue(status.getDiagnostic().contains("expected '1.2.19-mc1.7.10'"));
+        assertTrue(
+            status.getDiagnostic()
+                .contains("expected '1.2.19-mc1.7.10'"));
     }
 
     @Test
