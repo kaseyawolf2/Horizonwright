@@ -1,5 +1,6 @@
 package io.github.kaseyawolf2.horizonwright.forge.client.network;
 
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
@@ -8,13 +9,16 @@ import java.util.EnumSet;
 
 import net.minecraft.network.play.client.C03PacketPlayer;
 import net.minecraft.network.play.client.C07PacketPlayerDigging;
+import net.minecraft.network.play.client.C17PacketCustomPayload;
 
 import org.junit.Test;
 
+import cpw.mods.fml.common.network.internal.FMLProxyPacket;
 import io.github.kaseyawolf2.horizonwright.core.action.ActionCapability;
 import io.github.kaseyawolf2.horizonwright.core.action.ActionLease;
 import io.github.kaseyawolf2.horizonwright.core.action.ActionSessionGuard;
 import io.github.kaseyawolf2.horizonwright.core.action.InMemoryActionBroker;
+import io.netty.buffer.Unpooled;
 import io.netty.channel.embedded.EmbeddedChannel;
 
 public class OutboundPacketFirewallTest {
@@ -48,6 +52,32 @@ public class OutboundPacketFirewallTest {
         C03PacketPlayer.C04PacketPlayerPosition playerMovement = position(3.0D);
         assertTrue(channel.writeOutbound(playerMovement));
         assertSame(playerMovement, channel.readOutbound());
+        channel.finish();
+    }
+
+    @Test
+    public void unknownTrafficPassesByIdentityWithoutPoisoningAnActiveSession() {
+        InMemoryActionBroker broker = new InMemoryActionBroker();
+        ActionLease lease = broker.tryAcquire("navigation", EnumSet.of(ActionCapability.MOVEMENT))
+            .get();
+        ActionSessionGuard guard = new ActionSessionGuard();
+        guard.markFirewallInstalled();
+        guard.begin(lease);
+        EmbeddedChannel channel = new EmbeddedChannel(new OutboundPacketFirewall(guard));
+        Object opaqueNonPacket = new Object();
+        FMLProxyPacket arbitraryProxy = new FMLProxyPacket(Unpooled.wrappedBuffer(new byte[] { 7 }), "MutatingMod");
+        C17PacketCustomPayload customPayload = new C17PacketCustomPayload("HW|UNKNOWN", new byte[] { 1 });
+
+        assertTrue(channel.writeOutbound(opaqueNonPacket));
+        assertSame(opaqueNonPacket, channel.readOutbound());
+        assertTrue(channel.writeOutbound(arbitraryProxy));
+        assertSame(arbitraryProxy, channel.readOutbound());
+        assertTrue(channel.writeOutbound(customPayload));
+        assertSame(customPayload, channel.readOutbound());
+        assertEquals(0L, guard.getBlockedActionCount());
+
+        arbitraryProxy.payload()
+            .release();
         channel.finish();
     }
 

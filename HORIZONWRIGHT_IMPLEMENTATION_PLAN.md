@@ -220,8 +220,10 @@ On the first latch:
 
 - Guard all relevant `PlayerControllerMP` entry points for block damage/destruction, right-use, item use, entity attack/interaction, window clicks, enchanting, slot changes, and item dropping.
 - Add an actual outbound network-write firewall so a packet queued before the latch is still rejected when written afterward.
-- While dead, allow only audited connection maintenance, transaction cleanup, block-break abort/release-use cleanup, and exactly one `C16 PERFORM_RESPAWN`.
-- Block entity interaction, digging start/finish, block/item use, held-item changes, animation, inventory clicks, creative/enchant/sign/custom action traffic, and unaudited mod payloads.
+- Apply the firewall only to packet semantics Horizonwright has explicitly integrated and regression-tested. Unknown or unintegrated network traffic passes through unchanged and cannot poison an action session.
+- While dead, gate understood action traffic so only audited connection maintenance, transaction cleanup, block-break abort/release-use cleanup, and exactly one `C16 PERFORM_RESPAWN` remain available.
+- Block understood entity interaction, digging start/finish, block/item use, held-item changes, animation, inventory clicks, creative/enchant/sign traffic, and explicitly integrated custom actions when their required authority is absent.
+- Treat Forge/custom/mod payloads as observe-only until an exact-version integration defines their semantics and tests both allowed and denied behavior. Horizonwright must never become a compatibility allowlist for unrelated mods.
 - Apply the same gate to Thaumcraft scans, aspect packets, note use, node draining, pedestal operations, and research containers.
 
 ### Respawn and grave recovery

@@ -14,7 +14,7 @@ public final class PacketActionRequirement {
         MAINTENANCE,
         SAFE_RELEASE,
         CAPABILITY,
-        UNKNOWN_ACTION
+        OBSERVE_ONLY
     }
 
     private static final PacketActionRequirement UNRESTRICTED = new PacketActionRequirement(
@@ -49,12 +49,12 @@ public final class PacketActionRequirement {
             Kind.SAFE_RELEASE);
     }
 
-    public static PacketActionRequirement unknownAction(String description) {
+    public static PacketActionRequirement observeOnly(String description) {
         return new PacketActionRequirement(
             Collections.<ActionCapability>emptySet(),
             false,
             requireDescription(description),
-            Kind.UNKNOWN_ACTION);
+            Kind.OBSERVE_ONLY);
     }
 
     public static PacketActionRequirement allOf(String description, ActionCapability first,
@@ -76,7 +76,7 @@ public final class PacketActionRequirement {
     }
 
     public boolean isRestricted() {
-        return kind == Kind.CAPABILITY || kind == Kind.UNKNOWN_ACTION;
+        return kind == Kind.CAPABILITY;
     }
 
     public Set<ActionCapability> getCapabilities() {
@@ -92,11 +92,8 @@ public final class PacketActionRequirement {
     }
 
     public ActionAuthorizationDecision evaluate(ActionSessionGuard guard) {
-        if (kind == Kind.MAINTENANCE || kind == Kind.SAFE_RELEASE) {
+        if (kind != Kind.CAPABILITY) {
             return ActionAuthorizationDecision.PLAYER_PASSTHROUGH;
-        }
-        if (kind == Kind.UNKNOWN_ACTION) {
-            return guard.authorizeUnknownAction();
         }
         return requireAll ? guard.authorizeAll(capabilities) : guard.authorizeAny(capabilities);
     }

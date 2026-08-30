@@ -25,6 +25,7 @@ import net.minecraft.network.play.client.C15PacketClientSettings;
 import net.minecraft.network.play.client.C16PacketClientStatus;
 import net.minecraft.network.play.client.C17PacketCustomPayload;
 
+import cpw.mods.fml.common.network.internal.FMLProxyPacket;
 import io.github.kaseyawolf2.horizonwright.core.action.ActionCapability;
 
 public final class OutboundPacketClassifier {
@@ -33,7 +34,10 @@ public final class OutboundPacketClassifier {
 
     public static PacketActionRequirement classify(Object message) {
         if (!(message instanceof Packet)) {
-            return PacketActionRequirement.unknownAction("unknown non-packet outbound message");
+            return PacketActionRequirement.observeOnly("unknown non-packet outbound message");
+        }
+        if (message instanceof FMLProxyPacket) {
+            return classifyFmlProxyPacket((FMLProxyPacket) message);
         }
         if (message instanceof C00PacketKeepAlive || message instanceof C0FPacketConfirmTransaction
             || message instanceof C14PacketTabComplete
@@ -45,7 +49,7 @@ public final class OutboundPacketClassifier {
         }
         if (message instanceof C01PacketChatMessage) {
             String text = ((C01PacketChatMessage) message).func_149439_c();
-            return text != null && text.startsWith("/") ? PacketActionRequirement.unknownAction("server command")
+            return text != null && text.startsWith("/") ? PacketActionRequirement.observeOnly("server command")
                 : PacketActionRequirement.unrestricted();
         }
         if (message instanceof C16PacketClientStatus) {
@@ -112,11 +116,31 @@ public final class OutboundPacketClassifier {
         }
         if (message instanceof C17PacketCustomPayload) {
             String channel = ((C17PacketCustomPayload) message).func_149559_c();
-            return PacketActionRequirement.unknownAction("custom payload " + String.valueOf(channel));
+            return PacketActionRequirement.observeOnly("custom payload " + String.valueOf(channel));
         }
-        return PacketActionRequirement.unknownAction(
+        return PacketActionRequirement.observeOnly(
             "unclassified packet " + message.getClass()
                 .getName());
+    }
+
+    private static PacketActionRequirement classifyFmlProxyPacket(FMLProxyPacket packet) {
+        String channel = packet.channel();
+        // Waila's 1.7.10 client channel only requests read-only block/entity metadata for the overlay. The three FML
+        // channels below are Forge's own registration and handshake control plane. Every other mod channel remains
+        // observe-only until an explicit, tested integration classifies its semantics.
+        if ("Waila".equals(channel) || "REGISTER".equals(channel)
+            || "UNREGISTER".equals(channel)
+            || "FML|HS".equals(channel)) {
+            return PacketActionRequirement.unrestricted();
+        }
+        return PacketActionRequirement.observeOnly("FML proxy channel '" + printableChannel(channel) + "'");
+    }
+
+    private static String printableChannel(String channel) {
+        return channel == null ? "<null>"
+            : channel.replace('\r', '?')
+                .replace('\n', '?')
+                .replace('\t', '?');
     }
 
     private static PacketActionRequirement classifyDigging(C07PacketPlayerDigging packet) {
@@ -130,11 +154,7 @@ public final class OutboundPacketClassifier {
         if (status == 3 || status == 4) {
             return PacketActionRequirement.allOf("inventory drop", ActionCapability.CONTAINER);
         }
-        return PacketActionRequirement.anyOf(
-            "unknown digging action",
-            ActionCapability.DIG,
-            ActionCapability.CONTAINER,
-            ActionCapability.HELD_USE);
+        return PacketActionRequirement.observeOnly("unknown digging action " + status);
     }
 
     private static PacketActionRequirement classifyEntityAction(C0BPacketEntityAction packet) {
@@ -148,7 +168,7 @@ public final class OutboundPacketClassifier {
         if (action >= 1 && action <= 6) {
             return PacketActionRequirement.allOf("movement state", ActionCapability.MOVEMENT);
         }
-        return PacketActionRequirement.unknownAction("unknown entity action " + action);
+        return PacketActionRequirement.observeOnly("unknown entity action " + action);
     }
 
     private static PacketActionRequirement classifyRidingInput(C0CPacketInput packet) {

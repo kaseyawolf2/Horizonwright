@@ -103,7 +103,8 @@ gravestone regression suite passes.
 
 See [the implementation plan](HORIZONWRIGHT_IMPLEMENTATION_PLAN.md),
 [the architecture boundary](docs/adr/0001-greenfield-boundaries.md), and
-[the Baritone packaging ADR](docs/adr/0002-baritone-packaging.md), and the
+[the Baritone packaging ADR](docs/adr/0002-baritone-packaging.md),
+[the network noninterference ADR](docs/adr/0003-network-noninterference.md), and the
 [reuse register](docs/reuse-register.md) for current scope and decisions.
 Use [the manual smoke-test checklist](docs/manual-smoke-test.md) for future
 client validation.

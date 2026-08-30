@@ -21,11 +21,13 @@ import net.minecraft.network.play.client.C17PacketCustomPayload;
 
 import org.junit.Test;
 
+import cpw.mods.fml.common.network.internal.FMLProxyPacket;
 import io.github.kaseyawolf2.horizonwright.core.action.ActionAuthorizationDecision;
 import io.github.kaseyawolf2.horizonwright.core.action.ActionCapability;
 import io.github.kaseyawolf2.horizonwright.core.action.ActionLease;
 import io.github.kaseyawolf2.horizonwright.core.action.ActionSessionGuard;
 import io.github.kaseyawolf2.horizonwright.core.action.InMemoryActionBroker;
+import io.netty.buffer.Unpooled;
 
 public class OutboundPacketClassifierTest {
 
@@ -119,18 +121,55 @@ public class OutboundPacketClassifierTest {
         assertAllowed(guard, stopFlying);
 
         assertRevoked(guard, new C0CPacketInput(0.0F, 1.0F, false, false));
-        assertRevoked(guard, new C17PacketCustomPayload("HW|MUTATE", new byte[] { 1 }));
+        assertAllowed(guard, new C17PacketCustomPayload("HW|MUTATE", new byte[] { 1 }));
         C13PacketPlayerAbilities startFlying = new C13PacketPlayerAbilities();
         startFlying.func_149483_b(true);
         assertRevoked(guard, startFlying);
     }
 
     @Test
-    public void unknownAndPreviouslyMissingMutationPacketsFailClosedDuringASession() {
+    public void onlyPositivelyClassifiedMutationPacketsAreGated() {
         ActionSessionGuard guard = activeGuard(EnumSet.of(ActionCapability.MOVEMENT, ActionCapability.LOOK));
 
         assertBlocked(guard, new C11PacketEnchantItem(1, 2));
-        assertBlocked(guard, new C17PacketCustomPayload("MC|ItemName", new byte[] { 1 }));
+        assertObserved(guard, new C17PacketCustomPayload("MC|ItemName", new byte[] { 1 }));
+        assertObserved(guard, new C07PacketPlayerDigging(99, 1, 64, 1, 1));
+    }
+
+    @Test
+    public void auditedWailaAndForgeMaintenanceProxyChannelsRemainAvailable() {
+        ActionSessionGuard guard = activeGuard(EnumSet.of(ActionCapability.MOVEMENT, ActionCapability.LOOK));
+        FMLProxyPacket waila = proxy("Waila", 1);
+        FMLProxyPacket register = proxy("REGISTER", 1);
+        FMLProxyPacket handshake = proxy("FML|HS", 1);
+        try {
+            assertAllowed(guard, waila);
+            assertAllowed(guard, register);
+            assertAllowed(guard, handshake);
+        } finally {
+            waila.payload()
+                .release();
+            register.payload()
+                .release();
+            handshake.payload()
+                .release();
+        }
+    }
+
+    @Test
+    public void arbitraryFmlProxyChannelIsNamedAndObservedWithoutInterference() {
+        ActionSessionGuard guard = activeGuard(EnumSet.of(ActionCapability.MOVEMENT, ActionCapability.LOOK));
+        FMLProxyPacket arbitrary = proxy("MutatingMod", 7);
+        try {
+            PacketActionRequirement requirement = OutboundPacketClassifier.classify(arbitrary);
+
+            assertEquals(PacketActionRequirement.Kind.OBSERVE_ONLY, requirement.getKind());
+            assertEquals("FML proxy channel 'MutatingMod'", requirement.getDescription());
+            assertEquals(ActionAuthorizationDecision.PLAYER_PASSTHROUGH, requirement.evaluate(guard));
+        } finally {
+            arbitrary.payload()
+                .release();
+        }
     }
 
     private static void assertBlocked(ActionSessionGuard guard, Object packet) {
@@ -154,6 +193,12 @@ public class OutboundPacketClassifierTest {
                 .evaluate(guard));
     }
 
+    private static void assertObserved(ActionSessionGuard guard, Object packet) {
+        PacketActionRequirement requirement = OutboundPacketClassifier.classify(packet);
+        assertEquals(PacketActionRequirement.Kind.OBSERVE_ONLY, requirement.getKind());
+        assertEquals(ActionAuthorizationDecision.PLAYER_PASSTHROUGH, requirement.evaluate(guard));
+    }
+
     private static ActionSessionGuard activeGuard(EnumSet<ActionCapability> capabilities) {
         InMemoryActionBroker broker = new InMemoryActionBroker();
         ActionLease lease = broker.tryAcquire("test", capabilities)
@@ -170,5 +215,13 @@ public class OutboundPacketClassifierTest {
         actionField.setAccessible(true);
         actionField.setInt(packet, action);
         return packet;
+    }
+
+    private static FMLProxyPacket proxy(String channel, int... payload) {
+        byte[] bytes = new byte[payload.length];
+        for (int index = 0; index < payload.length; index++) {
+            bytes[index] = (byte) payload[index];
+        }
+        return new FMLProxyPacket(Unpooled.wrappedBuffer(bytes), channel);
     }
 }
