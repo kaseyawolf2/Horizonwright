@@ -1,0 +1,13 @@
+package io.github.kaseyawolf2.horizonwright.core.safety.death;
+
+public enum GraveActivationDecision {
+    AUTHORIZED_AND_CONSUMED,
+    REJECTED_STALE_CONNECTION,
+    REJECTED_STALE_EVENT,
+    REJECTED_STALE_DEATH_EPOCH,
+    REJECTED_NO_PERMIT,
+    REJECTED_WRONG_PERMIT,
+    REJECTED_WRONG_GRAVE,
+    REJECTED_UNSAFE_POSTURE,
+    REJECTED_ALREADY_CONSUMED
+}
