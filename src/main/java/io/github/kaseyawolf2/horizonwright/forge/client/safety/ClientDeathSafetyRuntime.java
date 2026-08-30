@@ -13,6 +13,7 @@ import io.github.kaseyawolf2.horizonwright.core.safety.death.DeathSafetyPolicy;
 import io.github.kaseyawolf2.horizonwright.core.safety.death.DeathSafetySnapshot;
 import io.github.kaseyawolf2.horizonwright.core.safety.death.DeathSafetyUpdate;
 import io.github.kaseyawolf2.horizonwright.core.safety.death.DeathSignal;
+import io.github.kaseyawolf2.horizonwright.core.safety.death.RecoveryNavigationStatus;
 import io.github.kaseyawolf2.horizonwright.core.safety.death.RespawnObservation;
 
 /** Live per-connection composition for client snapshots, redundant death signals, and exact packet gates. */
@@ -155,6 +156,35 @@ public final class ClientDeathSafetyRuntime {
                 graveActivationWriteGate = null;
             }
         }
+    }
+
+    /** Fails safely into manual hold when no tested recovery-navigation adapter is available. */
+    public synchronized DeathSafetyUpdate failUnavailableRecoveryNavigation(long clientTick) {
+        DeathSafetyConnectionCoordinator.Session active = requireSession();
+        DeathSafetySnapshot current = active.getController()
+            .snapshot();
+        if (!current.getRecoveryNavigationRequest()
+            .isPresent()) {
+            throw new IllegalStateException("no recovery-navigation request is active");
+        }
+        Minecraft minecraft = Minecraft.getMinecraft();
+        if (!minecraft.func_152345_ab() || minecraft.thePlayer == null || minecraft.theWorld == null) {
+            throw new IllegalStateException("recovery-navigation fallback requires a joined client thread");
+        }
+        MinecraftClientDeathContextSource source = new MinecraftClientDeathContextSource(minecraft, runtime);
+        DeathSafetyUpdate update = active.getController()
+            .onRecoveryNavigation(
+                active.getStamps()
+                    .next(clientTick),
+                current.getDeathEpoch(),
+                RecoveryObservationFactory.navigation(
+                    RecoveryNavigationStatus.FAILED,
+                    source.getPlayerPosition(),
+                    source.getInventorySnapshot(),
+                    false,
+                    false));
+        directives.process(update, effects);
+        return update;
     }
 
     public synchronized boolean hasActiveSession() {

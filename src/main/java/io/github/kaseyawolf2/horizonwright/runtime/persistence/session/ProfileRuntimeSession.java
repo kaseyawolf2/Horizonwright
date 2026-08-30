@@ -181,6 +181,12 @@ public final class ProfileRuntimeSession implements AutoCloseable {
             : new RuntimeSessionException("active runtime failed", initialFailure);
 
         try {
+            retiringRuntime.prepareDisconnect();
+        } catch (RuntimeException disconnectFailure) {
+            terminalFailure = append(terminalFailure, "connection safety retirement failed", disconnectFailure);
+        }
+
+        try {
             long writtenAtEpochMillis = clock.nowEpochMillis();
             if (writtenAtEpochMillis < 0L) {
                 throw new IllegalStateException("runtime session clock returned a negative timestamp");

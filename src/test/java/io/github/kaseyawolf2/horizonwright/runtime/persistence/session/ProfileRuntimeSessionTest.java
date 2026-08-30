@@ -75,8 +75,9 @@ public class ProfileRuntimeSessionTest {
 
         assertEquals(1, persistence.saveCount);
         assertEquals(8L, persistence.savedConnectionEpoch);
+        assertEquals(1, factory.runtime.disconnectCount);
         assertEquals(1, factory.runtime.closeCount);
-        assertEquals(Arrays.asList("load", "create", "restore", "tick", "save", "close"), events);
+        assertEquals(Arrays.asList("load", "create", "restore", "tick", "disconnect", "save", "close"), events);
     }
 
     @Test
@@ -94,8 +95,9 @@ public class ProfileRuntimeSessionTest {
 
         assertEquals(RuntimeSessionState.RETIRED, session.getState());
         assertEquals(1, persistence.saveCount);
+        assertEquals(1, factory.runtime.disconnectCount);
         assertEquals(1, factory.runtime.closeCount);
-        assertEquals(Arrays.asList("load", "create", "restore", "save", "close"), events);
+        assertEquals(Arrays.asList("load", "create", "restore", "disconnect", "save", "close"), events);
     }
 
     @Test
@@ -291,6 +293,7 @@ public class ProfileRuntimeSessionTest {
         private final TaskOrchestrator controller = controller();
         private int restoreCount;
         private int tickCount;
+        private int disconnectCount;
         private int closeCount;
 
         private RecordingRuntime(List<String> events, boolean failRestore) {
@@ -312,6 +315,12 @@ public class ProfileRuntimeSessionTest {
         public void clientTick() {
             events.add("tick");
             tickCount++;
+        }
+
+        @Override
+        public void prepareDisconnect() {
+            events.add("disconnect");
+            disconnectCount++;
         }
 
         @Override

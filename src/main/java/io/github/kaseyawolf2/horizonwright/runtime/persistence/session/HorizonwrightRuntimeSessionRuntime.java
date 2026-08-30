@@ -16,6 +16,7 @@ public final class HorizonwrightRuntimeSessionRuntime implements RuntimeSessionR
 
     private boolean restoreAttempted;
     private boolean restored;
+    private boolean disconnectPrepared;
     private boolean closed;
 
     HorizonwrightRuntimeSessionRuntime(HorizonwrightRuntime runtime, RuntimeSessionConnection connection,
@@ -57,7 +58,18 @@ public final class HorizonwrightRuntimeSessionRuntime implements RuntimeSessionR
         if (!environment.isConnected()) {
             throw new IllegalStateException("an active runtime session requires a connected schedule environment");
         }
+        deathState.clientTick();
         runtime.clientTick(environment);
+    }
+
+    @Override
+    public synchronized void prepareDisconnect() {
+        ensureRestored();
+        if (disconnectPrepared) {
+            return;
+        }
+        deathState.disconnect();
+        disconnectPrepared = true;
     }
 
     @Override
@@ -83,7 +95,35 @@ public final class HorizonwrightRuntimeSessionRuntime implements RuntimeSessionR
             return;
         }
         closed = true;
-        runtime.close();
+        RuntimeException failure = null;
+        if (restored && !disconnectPrepared) {
+            try {
+                deathState.disconnect();
+            } catch (RuntimeException disconnectFailure) {
+                failure = disconnectFailure;
+            }
+        }
+        try {
+            deathState.close();
+        } catch (RuntimeException closeFailure) {
+            if (failure == null) {
+                failure = closeFailure;
+            } else {
+                failure.addSuppressed(closeFailure);
+            }
+        }
+        try {
+            runtime.close();
+        } catch (RuntimeException runtimeFailure) {
+            if (failure == null) {
+                failure = runtimeFailure;
+            } else {
+                failure.addSuppressed(runtimeFailure);
+            }
+        }
+        if (failure != null) {
+            throw failure;
+        }
     }
 
     private void ensureRestored() {

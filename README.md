@@ -5,13 +5,14 @@ is intended to own long-running task orchestration, safety, logistics,
 persistence, and its local dashboard while treating navigation as a private,
 replaceable capability.
 
-The repository is currently at the **Milestone 0 safe-navigation checkpoint**.
-It contains the independent Forge entry point, dashboard, pure-Java action and
-navigation contracts, deterministic fixtures, an exact hash-verified Baritone
-snapshot, a real private Baritone adapter, synchronous input revocation, and an
-outbound action firewall. The automated checks are implemented; a physical
-GTNH navigation smoke test remains before Milestone 0 is accepted. Unattended
-operation remains disabled.
+The repository has completed the **Milestone 1 task-control vertical slice**
+and is integrating **Milestone 2 item-preservation safety**. It contains the
+independent Forge entry point, dashboard, resumable task controller, per-world
+atomic persistence, exact hash-verified Baritone adapter, synchronous input
+revocation, and a noninterfering outbound action boundary. The death-safety
+kernel is now attached to live health, connection, persistence, respawn, and
+packet boundaries; exact OpenBlocks grave identification and automatic
+recovery remain incomplete. Unattended operation remains disabled.
 
 ## Pinned target
 
@@ -61,8 +62,8 @@ At runtime, Horizonwright validates that exactly one Baritone mod, API class,
 and provider exist and that the production JAR's version and SHA-256 match the
 recorded build before loading any Baritone API type. The selected clean-named
 JAR embeds build version
-`v1.2.19-mc1.7.10-1-7-10-forge+fcbbd4882c-dirty` and exposes it through Forge
-without the leading `v`. Its SHA-256 is
+`v1.2.19-mc1.7.10-1-7-10-forge+fcbbd4882c-dirty`; Forge 1.7.10 normalizes its
+loaded `ModContainer` version to `1.2.19-mc1.7.10`. Its SHA-256 is
 `cc24115b0b61c14678e3634e9257e1e155e1eb6ca570accb7d10622f9d4fff0e`.
 Missing, duplicate, or changed installations leave navigation unavailable with
 a diagnostic.

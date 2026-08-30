@@ -1,0 +1,274 @@
+package io.github.kaseyawolf2.horizonwright.forge.client.safety;
+
+import java.util.Optional;
+
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.entity.EntityClientPlayerMP;
+import net.minecraft.network.NetworkManager;
+import net.minecraft.network.play.client.C08PacketPlayerBlockPlacement;
+
+import io.github.kaseyawolf2.horizonwright.HorizonwrightMod;
+import io.github.kaseyawolf2.horizonwright.HorizonwrightRuntime;
+import io.github.kaseyawolf2.horizonwright.core.persistence.HorizonwrightPersistenceStore;
+import io.github.kaseyawolf2.horizonwright.core.persistence.UnresolvedDeathState;
+import io.github.kaseyawolf2.horizonwright.core.persistence.WorldProfileIdentity;
+import io.github.kaseyawolf2.horizonwright.core.persistence.death.UnresolvedDeathPersistenceAdapter;
+import io.github.kaseyawolf2.horizonwright.core.safety.death.ConnectionIdentity;
+import io.github.kaseyawolf2.horizonwright.core.safety.death.DeathSafetyPolicy;
+import io.github.kaseyawolf2.horizonwright.core.safety.death.DeathSafetySnapshot;
+import io.github.kaseyawolf2.horizonwright.core.safety.death.GraveActivationAttempt;
+import io.github.kaseyawolf2.horizonwright.forge.client.network.DeathSafetyPacketBridge;
+import io.github.kaseyawolf2.horizonwright.forge.client.network.DeathSafetyPacketBridgeFactory;
+import io.github.kaseyawolf2.horizonwright.forge.client.network.DeathSafetyPacketContext;
+import io.github.kaseyawolf2.horizonwright.forge.client.network.GateBackedDeathSafetyPacketBridge;
+import io.github.kaseyawolf2.horizonwright.forge.client.network.RetirementAwareDeathSafetyPacketBridge;
+import io.github.kaseyawolf2.horizonwright.runtime.persistence.TaskControllerPersistenceCoordinator;
+import io.github.kaseyawolf2.horizonwright.runtime.persistence.TaskControllerPersistenceException;
+import io.github.kaseyawolf2.horizonwright.runtime.persistence.session.RuntimeSessionConnection;
+import io.github.kaseyawolf2.horizonwright.runtime.persistence.session.RuntimeSessionDeathStateBoundary;
+import io.netty.channel.Channel;
+
+/** Live, durable death-safety owner shared by one runtime session and its exact Netty packet boundary. */
+final class LiveClientDeathSafetyBoundary implements RuntimeSessionDeathStateBoundary, DeathSafetyDurableState,
+    DeathSafetyPacketBridgeFactory, DeathSafetyPacketContext {
+
+    interface RetirementListener {
+
+        void onRetired(LiveClientDeathSafetyBoundary boundary);
+    }
+
+    private final HorizonwrightRuntime runtime;
+    private final RuntimeSessionConnection connection;
+    private final TaskControllerPersistenceCoordinator persistence;
+    private final LiveDeathSafetyControls controls;
+    private final ClientDeathSafetyRuntime deathSafety;
+    private final RetirementListener retirementListener;
+
+    private UnresolvedDeathState unresolvedDeath;
+    private long clientTick;
+    private volatile double maximumHealth = 20.0D;
+    private boolean restored;
+    private boolean disconnected;
+    private boolean closed;
+
+    LiveClientDeathSafetyBoundary(HorizonwrightRuntime runtime, RuntimeSessionConnection connection,
+        HorizonwrightPersistenceStore store, DeathSafetyPolicy policy, RetirementListener retirementListener) {
+        if (runtime == null || connection == null || store == null || policy == null || retirementListener == null) {
+            throw new IllegalArgumentException("live death-safety boundary dependencies must not be null");
+        }
+        this.runtime = runtime;
+        this.connection = connection;
+        this.retirementListener = retirementListener;
+        persistence = new TaskControllerPersistenceCoordinator(store, connection.getIdentity());
+        controls = new LiveDeathSafetyControls(runtime);
+        deathSafety = new ClientDeathSafetyRuntime(runtime, policy, this, controls.createEffect());
+    }
+
+    @Override
+    public synchronized void restore(UnresolvedDeathState state) {
+        ensureOpen();
+        if (restored) {
+            throw new IllegalStateException("live death-safety state has already been restored");
+        }
+        Minecraft minecraft = requireJoinedClientThread();
+        MinecraftClientDeathContextSource source = new MinecraftClientDeathContextSource(minecraft, runtime);
+        EntityClientPlayerMP player = minecraft.thePlayer;
+        maximumHealth = positiveMaximumHealth(player.getMaxHealth());
+        ConnectionIdentity identity = connectionIdentity(source.getPlayerIdentity());
+        if (state == null) {
+            deathSafety.openFresh(identity);
+        } else {
+            deathSafety.restore(state, identity);
+        }
+        unresolvedDeath = state;
+        restored = true;
+    }
+
+    @Override
+    public synchronized void clientTick() {
+        ensureActive();
+        Minecraft minecraft = requireJoinedClientThread();
+        maximumHealth = positiveMaximumHealth(minecraft.thePlayer.getMaxHealth());
+        long tick = advanceClientTick();
+        deathSafety.clientTick(tick);
+        if (controls.consumeUnavailableRecoveryRequest()) {
+            deathSafety.failUnavailableRecoveryNavigation(tick);
+        }
+    }
+
+    @Override
+    public synchronized void disconnect() {
+        ensureRestored();
+        if (disconnected) {
+            return;
+        }
+        try {
+            deathSafety.disconnect(advanceClientTick());
+        } finally {
+            disconnected = true;
+        }
+    }
+
+    @Override
+    public synchronized UnresolvedDeathState snapshot() {
+        ensureRestored();
+        return unresolvedDeath;
+    }
+
+    @Override
+    public synchronized void persistUnresolvedDeath(DeathSafetySnapshot snapshot) {
+        if (snapshot == null) {
+            throw new IllegalArgumentException("death-safety snapshot must not be null");
+        }
+        ensureOpen();
+        UnresolvedDeathState replacement = UnresolvedDeathPersistenceAdapter
+            .captureCheckpoint(snapshot, unresolvedDeath, System.currentTimeMillis());
+        save(replacement);
+        unresolvedDeath = replacement;
+    }
+
+    @Override
+    public synchronized void clearResolvedDeath() {
+        ensureOpen();
+        save(null);
+        unresolvedDeath = null;
+    }
+
+    @Override
+    public synchronized DeathSafetyPacketBridge open(NetworkManager manager, Channel channel) {
+        if (manager == null || channel == null) {
+            throw new IllegalArgumentException("network manager and channel must not be null");
+        }
+        ensureActive();
+        return new RetirementAwareDeathSafetyPacketBridge(
+            new GateBackedDeathSafetyPacketBridge(
+                deathSafety.getInboundHealthHook(),
+                deathSafety.getRespawnWriteGate(),
+                deathSafety.getGraveActivationWriteGate(),
+                this),
+            this::isPacketBoundaryActive);
+    }
+
+    @Override
+    public synchronized long getClientTick() {
+        return clientTick;
+    }
+
+    @Override
+    public double getMaximumHealth() {
+        return maximumHealth;
+    }
+
+    @Override
+    public synchronized long getActiveDeathEpoch() {
+        return deathSafety.hasActiveSession() ? deathSafety.snapshot()
+            .getDeathEpoch() : 0L;
+    }
+
+    @Override
+    public Optional<GraveActivationAttempt> matchGraveActivation(C08PacketPlayerBlockPlacement packet) {
+        if (packet == null) {
+            throw new IllegalArgumentException("grave activation packet must not be null");
+        }
+        // OpenBlocks grave identity matching is intentionally not guessed. Until its tested adapter is attached,
+        // generic use packets continue through the ordinary action gate and no exact-grave permit is fabricated.
+        return Optional.empty();
+    }
+
+    @Override
+    public synchronized void onBoundaryUnavailable(boolean transportClosed) {
+        if (closed || disconnected) {
+            return;
+        }
+        if (transportClosed) {
+            disconnect();
+            return;
+        }
+        runtime.getActionBroker()
+            .revokeAll();
+        HorizonwrightMod.LOG.error(
+            "Death-safety packet boundary became unavailable; Horizonwright automation stopped while unrelated "
+                + "network traffic remains untouched");
+    }
+
+    @Override
+    public synchronized void close() {
+        if (closed) {
+            return;
+        }
+        RuntimeException failure = null;
+        if (restored && !disconnected) {
+            try {
+                disconnect();
+            } catch (RuntimeException disconnectFailure) {
+                failure = disconnectFailure;
+            }
+        }
+        closed = true;
+        retirementListener.onRetired(this);
+        if (failure != null) {
+            throw failure;
+        }
+    }
+
+    private ConnectionIdentity connectionIdentity(String playerIdentity) {
+        WorldProfileIdentity identity = connection.getIdentity();
+        return new ConnectionIdentity(
+            connection.getConnectionEpoch(),
+            identity.getServerAddress(),
+            identity.getWorldFingerprint(),
+            playerIdentity);
+    }
+
+    private void save(UnresolvedDeathState state) {
+        try {
+            persistence
+                .save(System.currentTimeMillis(), connection.getConnectionEpoch(), state, runtime.getController());
+        } catch (TaskControllerPersistenceException failure) {
+            throw new IllegalStateException("could not atomically persist live death-safety state", failure);
+        }
+    }
+
+    private long advanceClientTick() {
+        if (clientTick == Long.MAX_VALUE) {
+            throw new IllegalStateException("death-safety client tick overflow");
+        }
+        return ++clientTick;
+    }
+
+    private static Minecraft requireJoinedClientThread() {
+        Minecraft minecraft = Minecraft.getMinecraft();
+        if (!minecraft.func_152345_ab() || minecraft.theWorld == null || minecraft.thePlayer == null) {
+            throw new IllegalStateException("live death safety requires a joined Minecraft client thread");
+        }
+        return minecraft;
+    }
+
+    private static double positiveMaximumHealth(double value) {
+        return Double.isFinite(value) && value > 0.0D ? value : 20.0D;
+    }
+
+    private void ensureActive() {
+        ensureRestored();
+        if (disconnected) {
+            throw new IllegalStateException("live death-safety connection is retired");
+        }
+    }
+
+    private synchronized boolean isPacketBoundaryActive() {
+        return restored && !disconnected && !closed;
+    }
+
+    private void ensureRestored() {
+        ensureOpen();
+        if (!restored) {
+            throw new IllegalStateException("live death-safety state has not been restored");
+        }
+    }
+
+    private void ensureOpen() {
+        if (closed) {
+            throw new IllegalStateException("live death-safety boundary is closed");
+        }
+    }
+}

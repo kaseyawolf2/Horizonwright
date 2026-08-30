@@ -33,4 +33,23 @@ public final class RefusingUnresolvedDeathStateBoundary implements RuntimeSessio
         }
         return null;
     }
+
+    @Override
+    public synchronized void clientTick() {
+        requireRestored();
+    }
+
+    @Override
+    public synchronized void disconnect() {
+        requireRestored();
+    }
+
+    @Override
+    public synchronized void close() {}
+
+    private void requireRestored() {
+        if (!restored) {
+            throw new IllegalStateException("unresolved-death state has not been restored");
+        }
+    }
 }

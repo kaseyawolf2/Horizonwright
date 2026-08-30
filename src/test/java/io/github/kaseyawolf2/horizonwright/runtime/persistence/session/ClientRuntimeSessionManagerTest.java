@@ -300,7 +300,8 @@ public class ClientRuntimeSessionManagerTest {
         private int createCount;
 
         @Override
-        public RuntimeSessionDeathStateBoundary create(RuntimeSessionConnection connection) {
+        public RuntimeSessionDeathStateBoundary create(HorizonwrightRuntime runtime,
+            RuntimeSessionConnection connection) {
             createCount++;
             return new RuntimeSessionDeathStateBoundary() {
 
@@ -312,9 +313,18 @@ public class ClientRuntimeSessionManagerTest {
                 }
 
                 @Override
+                public void clientTick() {}
+
+                @Override
+                public void disconnect() {}
+
+                @Override
                 public UnresolvedDeathState snapshot() {
                     return state;
                 }
+
+                @Override
+                public void close() {}
             };
         }
     }

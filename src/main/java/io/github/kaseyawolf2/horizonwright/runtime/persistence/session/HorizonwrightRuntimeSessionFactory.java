@@ -22,14 +22,11 @@ public final class HorizonwrightRuntimeSessionFactory implements RuntimeSessionR
         if (connection == null) {
             throw new IllegalArgumentException("connection must not be null");
         }
-        RuntimeSessionDeathStateBoundary deathState = deathStateFactory.create(connection);
+        HorizonwrightRuntime runtime = HorizonwrightRuntime.createSession();
+        RuntimeSessionDeathStateBoundary deathState = deathStateFactory.create(runtime, connection);
         if (deathState == null) {
             throw new IllegalStateException("death state factory returned null");
         }
-        return new HorizonwrightRuntimeSessionRuntime(
-            HorizonwrightRuntime.createSession(),
-            connection,
-            environmentSource,
-            deathState);
+        return new HorizonwrightRuntimeSessionRuntime(runtime, connection, environmentSource, deathState);
     }
 }

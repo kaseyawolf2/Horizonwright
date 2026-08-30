@@ -19,6 +19,9 @@ public interface RuntimeSessionRuntime extends AutoCloseable {
 
     void clientTick();
 
+    /** Retires connection-bound safety sources before the final atomic save. */
+    void prepareDisconnect();
+
     IHorizonwrightController getController();
 
     UnresolvedDeathState snapshotUnresolvedDeathState();

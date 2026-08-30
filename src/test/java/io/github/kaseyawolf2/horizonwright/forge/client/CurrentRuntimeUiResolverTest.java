@@ -221,7 +221,7 @@ public class CurrentRuntimeUiResolverTest {
         return new ClientRuntimeSessionManager(
             new HorizonwrightRuntimeSessionFactory(
                 connection -> ScheduleEnvironment.disconnected(),
-                connection -> null),
+                (runtime, connection) -> null),
             identity -> null,
             () -> 0L);
     }

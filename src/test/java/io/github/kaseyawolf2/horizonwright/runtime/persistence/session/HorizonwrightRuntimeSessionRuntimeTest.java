@@ -96,7 +96,7 @@ public class HorizonwrightRuntimeSessionRuntimeTest {
         }
 
         runtime.clientTick();
-        assertEquals(Arrays.asList("death-restore", "environment"), events);
+        assertEquals(Arrays.asList("death-restore", "environment", "death-tick"), events);
         assertEquals(1, deaths.boundaries.get(0).restoreCount);
         assertEquals(0, deaths.boundaries.get(0).snapshotCount);
         assertEquals(null, runtime.snapshotUnresolvedDeathState());
@@ -195,7 +195,8 @@ public class HorizonwrightRuntimeSessionRuntimeTest {
         }
 
         @Override
-        public RuntimeSessionDeathStateBoundary create(RuntimeSessionConnection connection) {
+        public RuntimeSessionDeathStateBoundary create(HorizonwrightRuntime runtime,
+            RuntimeSessionConnection connection) {
             RecordingDeathBoundary boundary = new RecordingDeathBoundary(events);
             boundaries.add(boundary);
             return boundary;
@@ -221,9 +222,24 @@ public class HorizonwrightRuntimeSessionRuntimeTest {
         }
 
         @Override
+        public void clientTick() {
+            events.add("death-tick");
+        }
+
+        @Override
+        public void disconnect() {
+            events.add("death-disconnect");
+        }
+
+        @Override
         public UnresolvedDeathState snapshot() {
             snapshotCount++;
             return state;
+        }
+
+        @Override
+        public void close() {
+            events.add("death-close");
         }
     }
 }
