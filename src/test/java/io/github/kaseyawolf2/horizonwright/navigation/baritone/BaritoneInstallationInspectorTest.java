@@ -130,13 +130,13 @@ public class BaritoneInstallationInspectorTest {
     }
 
     @Test
-    public void pinnedJarManifestVersionWithoutLeadingVIsAccepted() {
-        ModCandidate actualManifest = new ModCandidate(
+    public void pinnedJarForgeNormalizedVersionIsAccepted() {
+        ModCandidate forgeNormalized = new ModCandidate(
             BaritoneInstallationInspector.EXPECTED_MOD_ID,
             BaritoneInstallationInspector.EXPECTED_VERSION,
             referenceSource());
 
-        BaritoneInstallationStatus status = inspector.inspect(validSnapshot(actualManifest, false));
+        BaritoneInstallationStatus status = inspector.inspect(validSnapshot(forgeNormalized, false));
 
         assertTrue(status.isAvailable());
         assertTrue(status.isReferenceBytes());

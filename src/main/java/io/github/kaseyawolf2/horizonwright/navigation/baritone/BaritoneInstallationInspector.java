@@ -16,9 +16,9 @@ import java.util.Locale;
 public final class BaritoneInstallationInspector {
 
     public static final String EXPECTED_MOD_ID = "baritone";
-    /** Exact value exposed by the pinned JAR's Forge ModContainer. */
-    public static final String EXPECTED_VERSION = "1.2.19-mc1.7.10-1-7-10-forge+fcbbd4882c-dirty";
-    /** Build metadata embedded in the pinned JAR; Forge omits the leading {@code v}. */
+    /** Exact value exposed by the pinned JAR's Forge ModContainer after Forge normalizes its metadata. */
+    public static final String EXPECTED_VERSION = "1.2.19-mc1.7.10";
+    /** Full build metadata embedded in the pinned JAR's {@code mcmod.info}. */
     public static final String EXPECTED_BUILD = "v1.2.19-mc1.7.10-1-7-10-forge+fcbbd4882c-dirty";
     public static final String EXPECTED_ARTIFACT = "baritone-v1.2.19-mc1.7.10-1-7-10-forge+fcbbd4882c.jar";
     public static final String EXPECTED_PROVIDER = "baritone.BaritoneProvider";
