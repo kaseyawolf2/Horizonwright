@@ -130,6 +130,33 @@ public class BaritoneInstallationInspectorTest {
     }
 
     @Test
+    public void pinnedJarManifestVersionWithoutGitTagPrefixIsAccepted() {
+        ModCandidate actualManifest = new ModCandidate(
+            BaritoneInstallationInspector.EXPECTED_MOD_ID,
+            "1.2.19-mc1.7.10",
+            referenceSource());
+
+        BaritoneInstallationStatus status = inspector.inspect(validSnapshot(actualManifest, false));
+
+        assertTrue(status.isAvailable());
+        assertTrue(status.isReferenceBytes());
+        assertTrue(status.getDiagnostic().contains("v1.2.19-mc1.7.10"));
+    }
+
+    @Test
+    public void gitTagSpellingIsNotMistakenForTheForgeManifestVersion() {
+        ModCandidate tagSpelling = new ModCandidate(
+            BaritoneInstallationInspector.EXPECTED_MOD_ID,
+            BaritoneInstallationInspector.EXPECTED_TAG,
+            referenceSource());
+
+        BaritoneInstallationStatus status = inspector.inspect(validSnapshot(tagSpelling, false));
+
+        assertFalse(status.isAvailable());
+        assertTrue(status.getDiagnostic().contains("expected '1.2.19-mc1.7.10'"));
+    }
+
+    @Test
     public void differentProductionHashIsUnavailable() {
         ModCandidate candidate = candidate(SourceArtifact.regularFile(SOURCE, REMAPPED_SHA));
 

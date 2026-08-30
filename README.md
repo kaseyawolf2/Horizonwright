@@ -57,7 +57,9 @@ Verification can also be run directly:
 
 At runtime, Horizonwright validates that exactly one Baritone mod, API class,
 and provider exist and that the production JAR's version and SHA-256 match the
-recorded build before loading any Baritone API type. Missing, duplicate, or
+recorded build before loading any Baritone API type. The source tag is
+`v1.2.19-mc1.7.10`; that JAR exposes Forge mod version
+`1.2.19-mc1.7.10` without the tag's leading `v`. Missing, duplicate, or
 changed installations leave navigation unavailable with a diagnostic.
 Horizonwright source can still be rebuilt against an interface-compatible
 modified Baritone; enabling changed production bytes requires deliberate review

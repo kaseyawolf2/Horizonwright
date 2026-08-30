@@ -13,6 +13,7 @@ not embedded in a Horizonwright JAR or declared in published metadata.
 - Minecraft 1.7.10 fork: <https://github.com/kaseyawolf2/baritone>
 - Clean snapshot commit: `fcbbd4882cc7d846a8e613dea4b50203e1fb4ebc`
 - Local lightweight tag: `v1.2.19-mc1.7.10`
+- Forge `ModContainer` version exposed by that JAR: `1.2.19-mc1.7.10`
 - Relationship to the official base: 47 commits later
 
 At the time of capture, the clean snapshot commit and local tag were not

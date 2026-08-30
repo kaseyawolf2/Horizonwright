@@ -16,7 +16,10 @@ import java.util.Locale;
 public final class BaritoneInstallationInspector {
 
     public static final String EXPECTED_MOD_ID = "baritone";
-    public static final String EXPECTED_VERSION = "v1.2.19-mc1.7.10";
+    /** Exact value exposed by the pinned JAR's Forge ModContainer. */
+    public static final String EXPECTED_VERSION = "1.2.19-mc1.7.10";
+    /** Source-control tag for the same pinned bytes; Forge omits the leading {@code v}. */
+    public static final String EXPECTED_TAG = "v1.2.19-mc1.7.10";
     public static final String EXPECTED_PROVIDER = "baritone.BaritoneProvider";
     public static final String EXPECTED_COMMIT = "fcbbd4882cc7d846a8e613dea4b50203e1fb4ebc";
     public static final String REFERENCE_SHA256 = "F644AC987BAE86863122853AF1E47AE1298C485B4BAC1F3C4FAB98CE3AAD3C1D";
@@ -116,7 +119,7 @@ public final class BaritoneInstallationInspector {
             if (snapshot.isDeobfuscatedEnvironment()) {
                 return BaritoneInstallationStatus.available(
                     false,
-                    "Baritone " + EXPECTED_VERSION
+                    "Baritone " + EXPECTED_TAG
                         + " passed structural validation from deobfuscated directory "
                         + source.getDescription()
                         + "; referenceBytes=false because a directory has no single JAR hash.",
@@ -141,7 +144,7 @@ public final class BaritoneInstallationInspector {
         if (REFERENCE_SHA256.equals(source.getSha256())) {
             return BaritoneInstallationStatus.available(
                 true,
-                "Baritone " + EXPECTED_VERSION
+                "Baritone " + EXPECTED_TAG
                     + " passed structural validation; source SHA-256 "
                     + source.getSha256()
                     + " matches the pinned reference bytes.",
@@ -152,7 +155,7 @@ public final class BaritoneInstallationInspector {
         if (snapshot.isDeobfuscatedEnvironment()) {
             return BaritoneInstallationStatus.available(
                 false,
-                "Baritone " + EXPECTED_VERSION
+                "Baritone " + EXPECTED_TAG
                     + " passed structural validation in a deobfuscated/remapped development environment; source SHA-256 "
                     + source.getSha256()
                     + " differs from reference "

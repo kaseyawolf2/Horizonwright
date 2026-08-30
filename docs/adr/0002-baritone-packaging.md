@@ -33,7 +33,8 @@ launch without Baritone, but its navigation capability remains unavailable.
 Before loading any Baritone API type, the installation probe requires:
 
 - exactly one loaded `baritone` mod container;
-- version `v1.2.19-mc1.7.10`;
+- Forge manifest version `1.2.19-mc1.7.10` (source tag
+  `v1.2.19-mc1.7.10`);
 - exactly one `baritone/api/BaritoneAPI.class` resource;
 - exactly one provider resource containing only `baritone.BaritoneProvider`;
 - a readable source artifact; and
