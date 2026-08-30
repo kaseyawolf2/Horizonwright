@@ -6,6 +6,7 @@ import org.gradle.api.DefaultTask
 import org.gradle.api.GradleException
 import org.gradle.api.file.DirectoryProperty
 import org.gradle.api.file.RegularFileProperty
+import org.gradle.api.provider.ListProperty
 import org.gradle.api.provider.MapProperty
 import org.gradle.api.tasks.Input
 import org.gradle.api.tasks.InputDirectory
@@ -31,9 +32,13 @@ abstract class VerifyPinnedArtifacts : DefaultTask() {
     @get:Input
     abstract val expectedHashes: MapProperty<String, String>
 
+    @get:Input
+    abstract val normalizedTextArtifacts: ListProperty<String>
+
     @TaskAction
     fun verify() {
         val expected = expectedHashes.get().toSortedMap()
+        val normalizedText = normalizedTextArtifacts.get().toSet()
         val directory = artifactDirectory.get().asFile
 
         expected.forEach { (name, expectedHash) ->
@@ -42,7 +47,7 @@ abstract class VerifyPinnedArtifacts : DefaultTask() {
                 throw GradleException("Missing pinned artifact: ${artifact.absolutePath}")
             }
 
-            val actualHash = sha256(artifact)
+            val actualHash = sha256(artifact, name in normalizedText)
             if (actualHash != expectedHash) {
                 throw GradleException(
                     "SHA-256 mismatch for $name: expected $expectedHash but found $actualHash"
@@ -61,16 +66,23 @@ abstract class VerifyPinnedArtifacts : DefaultTask() {
         }
     }
 
-    private fun sha256(file: java.io.File): String {
+    private fun sha256(file: java.io.File, normalizeLineEndings: Boolean): String {
         val digest = MessageDigest.getInstance("SHA-256")
-        file.inputStream().buffered().use { input ->
-            val buffer = ByteArray(8192)
-            while (true) {
-                val count = input.read(buffer)
-                if (count < 0) {
-                    break
+        if (normalizeLineEndings) {
+            val canonicalText = file.readText(Charsets.UTF_8)
+                .replace("\r\n", "\n")
+                .replace("\r", "\n")
+            digest.update(canonicalText.toByteArray(Charsets.UTF_8))
+        } else {
+            file.inputStream().buffered().use { input ->
+                val buffer = ByteArray(8192)
+                while (true) {
+                    val count = input.read(buffer)
+                    if (count < 0) {
+                        break
+                    }
+                    digest.update(buffer, 0, count)
                 }
-                digest.update(buffer, 0, count)
             }
         }
         return digest.digest().joinToString(separator = "") { byte ->
@@ -151,7 +163,7 @@ abstract class VerifyProductionArtifactIsolation : DefaultTask() {
 
 val pinnedBaritoneHashes = linkedMapOf(
     "COPYING-GPL-3.0" to "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986",
-    "LICENSE-LGPL-3.0-or-later" to "f831e7eed577481687a9bc0b48024e5e40b6f655fcde073ede964b50be5d55d9",
+    "LICENSE-LGPL-3.0-or-later" to "a5681bf9b05db14d86776930017c647ad9e6e56ff6bbcfdf21e5848288dfaf1b",
     "LICENSE-Part-2.jpg" to "e3ba782078d7a75fa36f57d2fb1df31d03d361f0bc2daef60612dd6098775400",
     "LICENSE-fastutil-Apache-2.0" to "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
     "baritone-v1.2.19-mc1.7.10-source-snapshot.zip" to
@@ -168,6 +180,13 @@ val verifyBaritoneArtifacts by tasks.registering(VerifyPinnedArtifacts::class) {
     artifactDirectory.set(layout.projectDirectory.dir("vendor/baritone"))
     checksumManifest.set(layout.projectDirectory.file("vendor/baritone/SHA256SUMS"))
     expectedHashes.set(pinnedBaritoneHashes)
+    normalizedTextArtifacts.set(
+        listOf(
+            "COPYING-GPL-3.0",
+            "LICENSE-LGPL-3.0-or-later",
+            "LICENSE-fastutil-Apache-2.0",
+        )
+    )
 }
 
 val verifyBuildJvm by tasks.registering(VerifyBuildJvm::class) {

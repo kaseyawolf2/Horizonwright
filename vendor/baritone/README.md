@@ -29,7 +29,7 @@ directory are the durable in-repository record.
 | `baritone-v1.2.19-mc1.7.10-sources.jar` | IDE/source attachment assembled from the clean snapshot | `806d0e1f1b52ec0a33d2409861ee1503ece493058c0a2c627d237fccfdc89021` |
 | `baritone-v1.2.19-mc1.7.10-source-snapshot.zip` | Complete corresponding source/build snapshot | `31f6f0efa564c7b8cd2e79ca76adf216601f7218ff5776df15bfcaf6db1d2659` |
 | `COPYING-GPL-3.0` | Complete GPLv3 text incorporated by LGPLv3 | `3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986` |
-| `LICENSE-LGPL-3.0-or-later` | LGPL v3 license text preserved from the snapshot | `f831e7eed577481687a9bc0b48024e5e40b6f655fcde073ede964b50be5d55d9` |
+| `LICENSE-LGPL-3.0-or-later` | LGPL v3 license text preserved from the snapshot (canonical LF text hash) | `a5681bf9b05db14d86776930017c647ad9e6e56ff6bbcfdf21e5848288dfaf1b` |
 | `LICENSE-Part-2.jpg` | Second upstream license file preserved from the snapshot | `e3ba782078d7a75fa36f57d2fb1df31d03d361f0bc2daef60612dd6098775400` |
 | `LICENSE-fastutil-Apache-2.0` | Complete Apache 2.0 text from fastutil 8.5.13's authoritative repository | `cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30` |
 
@@ -49,7 +49,8 @@ not copy those classes into its own production JAR.
 
 Run `./gradlew verifyBaritoneArtifacts` (or `gradlew.bat` on Windows). Both
 `assemble` and `check` depend on this verification. The task hashes every
-listed binary, source, and license artifact and also requires `SHA256SUMS` to
+listed binary and source artifact byte-for-byte, hashes text license artifacts
+after canonicalizing line endings to LF, and also requires `SHA256SUMS` to
 match the hashes pinned in `build.gradle.kts`.
 
 Do not replace any file independently. A candidate update must change the
