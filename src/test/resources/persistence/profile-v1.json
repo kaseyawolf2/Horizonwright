@@ -1,0 +1,63 @@
+{
+  "schemaVersion": 1,
+  "documentKind": "profile",
+  "writtenAtEpochMillis": 1700000005000,
+  "identity": {
+    "profileId": "gtnh-main",
+    "displayName": "GTNH Main",
+    "serverAddress": "gtnh.example.test:25565",
+    "worldFingerprint": "sha256:world-beta",
+    "createdAtEpochMillis": 1699999990000
+  },
+  "reassociations": [
+    {
+      "previousServerAddress": "gtnh.example.test:25565",
+      "previousWorldFingerprint": "sha256:world-alpha",
+      "newServerAddress": "gtnh.example.test:25565",
+      "newWorldFingerprint": "sha256:world-beta",
+      "confirmationId": "reset-2026-08-30",
+      "confirmedAtEpochMillis": 1700000000000,
+      "userConfirmed": true
+    }
+  ],
+  "namedLocations": [
+    {
+      "id": "home",
+      "displayName": "Home",
+      "dimensionId": 0,
+      "x": 12,
+      "y": 70,
+      "z": -24
+    },
+    {
+      "id": "moon-base",
+      "displayName": "Moon Base",
+      "dimensionId": -27,
+      "x": 4,
+      "y": 80,
+      "z": 9
+    }
+  ],
+  "namedRoutes": [
+    {
+      "id": "home-to-moon",
+      "displayName": "Home to Moon",
+      "nodes": [
+        {
+          "dimensionId": 0,
+          "x": 12,
+          "y": 70,
+          "z": -24,
+          "label": "home"
+        },
+        {
+          "dimensionId": -27,
+          "x": 4,
+          "y": 80,
+          "z": 9,
+          "label": "moon-base"
+        }
+      ]
+    }
+  ]
+}

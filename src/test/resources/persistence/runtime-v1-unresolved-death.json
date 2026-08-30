@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 1,
+  "documentKind": "runtime",
+  "writtenAtEpochMillis": 1700000015000,
+  "profileId": "gtnh-main",
+  "serverAddress": "gtnh.example.test:25565",
+  "worldFingerprint": "sha256:world-beta",
+  "unresolvedDeathState": {
+    "deathEpoch": 41,
+    "deathConnectionEpoch": 7,
+    "lastObservedConnectionEpoch": 9,
+    "recordedAtClientTick": 1200,
+    "recordedAtEpochMillis": 1700000010000,
+    "serverIdentity": "gtnh.example.test:25565",
+    "worldIdentity": "sha256:world-beta",
+    "deathLocation": {
+      "dimensionId": 0,
+      "x": 101,
+      "y": 63,
+      "z": -55
+    },
+    "oldPlayerIdentity": "uuid:00000000-0000-0000-0000-000000000041",
+    "activeTaskId": "excavate-main-shaft",
+    "preDeathInventoryFingerprint": "sha256:inventory-before-death",
+    "deathSignal": "LETHAL_HEALTH_PACKET",
+    "safetyState": "MANUAL_HOLD",
+    "recoveryPhase": "MANUAL_HOLD",
+    "respawnRequestConsumed": true,
+    "manualHoldReason": "GRAVE_MISSING",
+    "connectedAtCheckpoint": true,
+    "healthyStableTicks": 0,
+    "respawnStableTicks": 20,
+    "graveState": {
+      "graveTileIdentity": null,
+      "gravePosition": null,
+      "stableTicks": 0,
+      "activationPermitId": 0,
+      "activationPermitConnectionEpoch": 0,
+      "activationPermitDeathEpoch": 0,
+      "activationConsumed": false
+    }
+  }
+}

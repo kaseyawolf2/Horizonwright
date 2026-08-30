@@ -1,0 +1,166 @@
+package io.github.kaseyawolf2.horizonwright.core.persistence;
+
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Objects;
+import java.util.Set;
+
+public final class ProfileEnvelope {
+
+    private final int schemaVersion;
+    private final String documentKind;
+    private final long writtenAtEpochMillis;
+    private final WorldProfileIdentity identity;
+    private final List<ProfileReassociation> reassociations;
+    private final List<NamedLocation> namedLocations;
+    private final List<NamedRoute> namedRoutes;
+
+    public ProfileEnvelope(long writtenAtEpochMillis, WorldProfileIdentity identity,
+        List<ProfileReassociation> reassociations, List<NamedLocation> namedLocations, List<NamedRoute> namedRoutes) {
+        this(
+            PersistenceSchema.CURRENT_VERSION,
+            PersistenceSchema.PROFILE_DOCUMENT_KIND,
+            writtenAtEpochMillis,
+            identity,
+            reassociations,
+            namedLocations,
+            namedRoutes);
+    }
+
+    private ProfileEnvelope(int schemaVersion, String documentKind, long writtenAtEpochMillis,
+        WorldProfileIdentity identity, List<ProfileReassociation> reassociations, List<NamedLocation> namedLocations,
+        List<NamedRoute> namedRoutes) {
+        this.schemaVersion = schemaVersion;
+        this.documentKind = documentKind;
+        this.writtenAtEpochMillis = writtenAtEpochMillis;
+        this.identity = identity;
+        this.reassociations = immutableCopy(reassociations, "reassociations");
+        this.namedLocations = immutableCopy(namedLocations, "namedLocations");
+        this.namedRoutes = immutableCopy(namedRoutes, "namedRoutes");
+        validate();
+    }
+
+    public int getSchemaVersion() {
+        return schemaVersion;
+    }
+
+    public String getDocumentKind() {
+        return documentKind;
+    }
+
+    public long getWrittenAtEpochMillis() {
+        return writtenAtEpochMillis;
+    }
+
+    public WorldProfileIdentity getIdentity() {
+        return identity;
+    }
+
+    public List<ProfileReassociation> getReassociations() {
+        return Collections.unmodifiableList(reassociations);
+    }
+
+    public List<NamedLocation> getNamedLocations() {
+        return Collections.unmodifiableList(namedLocations);
+    }
+
+    public List<NamedRoute> getNamedRoutes() {
+        return Collections.unmodifiableList(namedRoutes);
+    }
+
+    void validate() {
+        if (schemaVersion != PersistenceSchema.CURRENT_VERSION) {
+            throw new IllegalArgumentException("profile schemaVersion must be " + PersistenceSchema.CURRENT_VERSION);
+        }
+        if (!PersistenceSchema.PROFILE_DOCUMENT_KIND.equals(documentKind)) {
+            throw new IllegalArgumentException(
+                "documentKind must be '" + PersistenceSchema.PROFILE_DOCUMENT_KIND + "'");
+        }
+        PersistenceValidation.requireNonNegative(writtenAtEpochMillis, "profile writtenAtEpochMillis");
+        if (identity == null) {
+            throw new IllegalArgumentException("profile identity must not be null");
+        }
+        identity.validate();
+        if (writtenAtEpochMillis < identity.getCreatedAtEpochMillis()) {
+            throw new IllegalArgumentException("profile writtenAtEpochMillis predates identity creation");
+        }
+
+        PersistenceValidation.requireList(reassociations, "profile reassociations");
+        validateReassociationChain();
+        PersistenceValidation.requireUniqueIds(namedLocations, "profile namedLocations");
+        for (NamedLocation location : namedLocations) {
+            location.validate();
+        }
+        PersistenceValidation.requireUniqueIds(namedRoutes, "profile namedRoutes");
+        for (NamedRoute route : namedRoutes) {
+            route.validate();
+        }
+    }
+
+    private void validateReassociationChain() {
+        ProfileReassociation previous = null;
+        long lastConfirmation = -1L;
+        Set<String> confirmationIds = new HashSet<>();
+        for (ProfileReassociation reassociation : reassociations) {
+            reassociation.validate();
+            if (!confirmationIds.add(reassociation.getConfirmationId())) {
+                throw new IllegalArgumentException(
+                    "profile reassociations contain duplicate confirmationId '" + reassociation.getConfirmationId()
+                        + "'");
+            }
+            if (reassociation.getConfirmedAtEpochMillis() < identity.getCreatedAtEpochMillis()) {
+                throw new IllegalArgumentException("profile reassociation predates identity creation");
+            }
+            if (reassociation.getConfirmedAtEpochMillis() < lastConfirmation) {
+                throw new IllegalArgumentException("profile reassociations must be chronological");
+            }
+            if (reassociation.getConfirmedAtEpochMillis() > writtenAtEpochMillis) {
+                throw new IllegalArgumentException("profile reassociation occurs after writtenAtEpochMillis");
+            }
+            if (previous != null
+                && !reassociation.startsAt(previous.getNewServerAddress(), previous.getNewWorldFingerprint())) {
+                throw new IllegalArgumentException("profile reassociations must form one continuous identity chain");
+            }
+            lastConfirmation = reassociation.getConfirmedAtEpochMillis();
+            previous = reassociation;
+        }
+        if (previous != null && !previous.endsAt(identity.getServerAddress(), identity.getWorldFingerprint())) {
+            throw new IllegalArgumentException("latest reassociation must end at the current profile world identity");
+        }
+    }
+
+    private static <T> List<T> immutableCopy(List<T> values, String field) {
+        return Collections.unmodifiableList(new ArrayList<>(PersistenceValidation.requireList(values, field)));
+    }
+
+    @Override
+    public boolean equals(Object other) {
+        if (this == other) {
+            return true;
+        }
+        if (!(other instanceof ProfileEnvelope)) {
+            return false;
+        }
+        ProfileEnvelope that = (ProfileEnvelope) other;
+        return schemaVersion == that.schemaVersion && writtenAtEpochMillis == that.writtenAtEpochMillis
+            && Objects.equals(documentKind, that.documentKind)
+            && Objects.equals(identity, that.identity)
+            && Objects.equals(reassociations, that.reassociations)
+            && Objects.equals(namedLocations, that.namedLocations)
+            && Objects.equals(namedRoutes, that.namedRoutes);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(
+            schemaVersion,
+            documentKind,
+            writtenAtEpochMillis,
+            identity,
+            reassociations,
+            namedLocations,
+            namedRoutes);
+    }
+}
