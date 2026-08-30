@@ -13,9 +13,41 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import org.junit.Test;
 
+import io.github.kaseyawolf2.horizonwright.core.action.ActionRevocation;
+import io.github.kaseyawolf2.horizonwright.core.action.ActionRevocationReason;
 import io.github.kaseyawolf2.horizonwright.core.action.InMemoryActionBroker;
 
 public class TaskOrchestratorPersistenceAndSchedulingTest {
+
+    @Test(timeout = 1_000L)
+    public void largePersistedEpochRestoresInOneBoundedBrokerTransition() {
+        InMemoryActionBroker broker = new InMemoryActionBroker();
+        List<ActionRevocation> revocations = new ArrayList<>();
+        broker.addRevocationListener(revocations::add);
+        TaskOrchestrator orchestrator = new TaskOrchestrator(
+            new FakeClock(),
+            (spec,
+                checkpoint) -> context -> StepResult
+                    .completed(context.getActionEpoch(), context.getCheckpoint(), "done"),
+            broker);
+
+        ControllerSnapshot restored = orchestrator.restoreState(
+            new TaskControllerState(
+                Long.MAX_VALUE - 2L,
+                Collections.<RestoredTaskSnapshot>emptyList(),
+                SchedulerSnapshot.empty()));
+
+        assertEquals(
+            Long.MAX_VALUE - 1L,
+            restored.getActionAuthority()
+                .getEpoch());
+        assertEquals(1, revocations.size());
+        assertEquals(
+            ActionRevocationReason.RESTORE_EPOCH_ADVANCE,
+            revocations.get(0)
+                .getReason());
+        orchestrator.close();
+    }
 
     @Test
     public void dueScheduledChorePreemptsFallbackAtTheSameMonitorFreeTickBoundary() {
@@ -246,6 +278,11 @@ public class TaskOrchestratorPersistenceAndSchedulingTest {
             1);
         assertIllegalArgument(
             () -> new TaskControllerState(Collections.singletonList(positionOne), SchedulerSnapshot.empty()));
+        assertIllegalArgument(
+            () -> new TaskControllerState(
+                Long.MAX_VALUE - 1L,
+                Collections.<RestoredTaskSnapshot>emptyList(),
+                SchedulerSnapshot.empty()));
         assertIllegalArgument(
             () -> new RestoredTaskSnapshot(
                 TaskSpec.of("bad", "test", "Bad", TaskLane.CHORE),

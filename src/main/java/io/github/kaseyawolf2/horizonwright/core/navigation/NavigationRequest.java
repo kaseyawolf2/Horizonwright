@@ -8,7 +8,6 @@ public final class NavigationRequest {
     public static final int MAX_Y = 255;
     public static final int MAX_ABS_COORDINATE = 29_999_984;
     public static final int MAX_TOLERANCE = 8;
-    public static final int MAX_DISTANCE_BLOCKS = 128;
     public static final long MAX_RUNTIME_NANOS = TimeUnit.MINUTES.toNanos(5L);
 
     private final String requestId;

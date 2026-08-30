@@ -262,6 +262,24 @@ public class ExcavationReducerTest {
                 ExcavationSuspensionReason.NONE));
     }
 
+    @Test
+    public void completedCheckpointCannotAlsoClaimSuspension() {
+        CylinderExcavationSpec spec = new CylinderExcavationSpec(0, 0, 0, 0, 5, 5, ExcavationMode.CLEAN_VOLUME);
+        ExcavationFrontier complete = CylinderExcavationGeometry
+            .nextBatch(spec, CylinderExcavationGeometry.initialFrontier(spec), 1)
+            .getNextFrontier();
+
+        assertThrows(
+            IllegalArgumentException.class,
+            () -> ExcavationCheckpoint.restore(
+                spec,
+                2L,
+                3L,
+                complete,
+                new ExcavationProgress(1L, 1L, 0L, 0L, 0L, 0L),
+                ExcavationSuspensionReason.PREEMPTED));
+    }
+
     private static CylinderExcavationSpec managedSpec(int radius) {
         return new CylinderExcavationSpec(0, -16, -16, radius, 5, 5, ExcavationMode.MANAGED_QUARRY);
     }

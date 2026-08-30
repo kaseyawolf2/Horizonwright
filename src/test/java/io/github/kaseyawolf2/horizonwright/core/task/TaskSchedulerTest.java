@@ -164,6 +164,84 @@ public class TaskSchedulerTest {
     }
 
     @Test
+    public void restorePreservesConnectedEdgeWithoutChargingOfflineProcessTime() {
+        TaskScheduler original = new TaskScheduler();
+        original.submit(interval("restart", 100L, 100L, TaskLane.CHORE, 0));
+        original.submit(
+            ScheduleRule.worldTimeWindow(
+                "restart-window",
+                ScheduledTaskSpec.of("watch", "Restart watch", TaskLane.CHORE),
+                1_000,
+                2_000,
+                Collections.<String>emptySet(),
+                0,
+                true));
+        original.evaluate(0L, world(500L), false, Collections.<String>emptySet());
+        original.evaluate(50L, world(500L), false, Collections.<String>emptySet());
+        SchedulerSnapshot persisted = original.snapshot();
+        assertTrue(persisted.wasConnectedAtSnapshot());
+        assertEquals(50L, persisted.getConnectedElapsedMillis());
+
+        TaskScheduler restored = new TaskScheduler();
+        restored.restore(persisted);
+
+        assertTrue(
+            restored.snapshot()
+                .wasConnectedAtSnapshot());
+        assertEquals(
+            50L,
+            restored.snapshot()
+                .getConnectedElapsedMillis());
+        assertTrue(evaluate(restored, 10_000L, ScheduleEnvironment.disconnected(), false).isEmpty());
+        assertFalse(
+            restored.snapshot()
+                .wasConnectedAtSnapshot());
+        assertEquals(
+            50L,
+            restored.snapshot()
+                .getConnectedElapsedMillis());
+        long afterFiveDays = 5L * ScheduleRule.WORLD_DAY_TICKS + 5_000L;
+        List<ScheduledTaskRequest> catchUp = restored.evaluate(
+            20_000L,
+            ScheduleEnvironment.connected(afterFiveDays, Collections.<String>emptySet()),
+            false,
+            Collections.<String>emptySet());
+        assertEquals(1, catchUp.size());
+        assertEquals(
+            "restart-window",
+            catchUp.get(0)
+                .getScheduleId());
+        assertTrue(
+            catchUp.get(0)
+                .isCatchUp());
+        assertTrue(
+            restored
+                .evaluate(
+                    20_000L,
+                    ScheduleEnvironment.connected(afterFiveDays, Collections.<String>emptySet()),
+                    false,
+                    Collections.<String>emptySet())
+                .isEmpty());
+        assertTrue(
+            restored
+                .evaluate(
+                    20_049L,
+                    ScheduleEnvironment.connected(afterFiveDays, Collections.<String>emptySet()),
+                    false,
+                    Collections.<String>emptySet())
+                .isEmpty());
+        assertEquals(
+            1,
+            restored
+                .evaluate(
+                    20_050L,
+                    ScheduleEnvironment.connected(afterFiveDays, Collections.<String>emptySet()),
+                    false,
+                    Collections.<String>emptySet())
+                .size());
+    }
+
+    @Test
     public void occupiedOccurrencesAreConsumedWithoutCreatingBacklog() {
         TaskScheduler scheduler = new TaskScheduler();
         scheduler.submit(interval("cleanup", 100L, 100L, TaskLane.CHORE, 0));

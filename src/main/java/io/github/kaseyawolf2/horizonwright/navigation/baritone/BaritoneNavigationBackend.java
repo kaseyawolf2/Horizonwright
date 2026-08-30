@@ -33,6 +33,8 @@ import io.github.kaseyawolf2.horizonwright.core.navigation.NavigationState;
 
 public final class BaritoneNavigationBackend implements NavigationBackend, ActionRevocationListener {
 
+    static final int MAX_CLEANUP_ATTEMPTS = 3;
+
     private static final EnumSet<ActionCapability> REQUIRED_CAPABILITIES = EnumSet
         .of(ActionCapability.MOVEMENT, ActionCapability.LOOK);
 
@@ -40,9 +42,9 @@ public final class BaritoneNavigationBackend implements NavigationBackend, Actio
     private final ActionSessionGuard actionSessionGuard;
     private final HorizonwrightBaritoneProcess process;
     private volatile BackendAvailability availability = BackendAvailability
-        .available("Baritone v1.2.19-mc1.7.10 ready (bounded movement only)");
+        .available("Baritone v1.2.19-mc1.7.10 ready (movement/look only)");
     private Handle active;
-    private Handle pendingCleanup;
+    private PendingCleanup pendingCleanup;
 
     BaritoneNavigationBackend(IBaritone baritone, ActionSessionGuard actionSessionGuard) {
         if (baritone == null || actionSessionGuard == null) {
@@ -110,10 +112,9 @@ public final class BaritoneNavigationBackend implements NavigationBackend, Actio
 
     @Override
     public void clientTick() {
-        Handle cleanup;
+        PendingCleanup cleanup;
         synchronized (this) {
             cleanup = pendingCleanup;
-            pendingCleanup = null;
         }
         if (cleanup != null) {
             cleanupTerminal(cleanup);
@@ -197,13 +198,14 @@ public final class BaritoneNavigationBackend implements NavigationBackend, Actio
             handle.detail = detail;
             active = null;
             process.deactivate(handle);
-            pendingCleanup = handle;
+            pendingCleanup = new PendingCleanup(handle);
             return true;
         }
     }
 
-    private void cleanupTerminal(Handle handle) {
+    private void cleanupTerminal(PendingCleanup cleanup) {
         requireClientThread();
+        Handle handle = cleanup.handle;
         boolean stopped = false;
         RuntimeException cleanupFailure = null;
         try {
@@ -243,13 +245,39 @@ public final class BaritoneNavigationBackend implements NavigationBackend, Actio
         }
         if (stopped && cleanupFailure == null) {
             actionSessionGuard.end(handle.movementLease);
+            clearPendingCleanup(cleanup);
             return;
         }
         String detail = cleanupFailure == null ? "Baritone still owns a path after force cancellation"
             : "Baritone cleanup failed: " + cleanupFailure.getMessage();
-        availability = BackendAvailability.unavailable(detail);
+        boolean exhausted;
+        synchronized (this) {
+            if (pendingCleanup != cleanup) {
+                return;
+            }
+            exhausted = cleanup.retryBudget.recordFailureAndIsExhausted();
+            detail = "Baritone cleanup attempt " + cleanup.retryBudget
+                .getFailureCount() + "/" + MAX_CLEANUP_ATTEMPTS + " failed: " + detail;
+            availability = BackendAvailability.unavailable(detail);
+        }
         handle.detail = detail;
-        throw cleanupFailure == null ? new IllegalStateException(detail) : cleanupFailure;
+        if (!exhausted) {
+            HorizonwrightMod.LOG.warn("{}; retrying on the next client tick", detail);
+            return;
+        }
+
+        HorizonwrightMod.LOG.error(
+            "{}; Horizonwright navigation remains disabled and the player packet quarantine will be released",
+            detail,
+            cleanupFailure);
+        actionSessionGuard.end(handle.movementLease);
+        clearPendingCleanup(cleanup);
+    }
+
+    private synchronized void clearPendingCleanup(PendingCleanup cleanup) {
+        if (pendingCleanup == cleanup) {
+            pendingCleanup = null;
+        }
     }
 
     private void clearInputs() {
@@ -313,17 +341,6 @@ public final class BaritoneNavigationBackend implements NavigationBackend, Actio
                     + " differs from current dimension "
                     + currentDimension);
         }
-        long dx = (long) request.getX() - baritone.getPlayerContext()
-            .playerFeet().x;
-        long dy = (long) request.getY() - baritone.getPlayerContext()
-            .playerFeet().y;
-        long dz = (long) request.getZ() - baritone.getPlayerContext()
-            .playerFeet().z;
-        long maxDistance = NavigationRequest.MAX_DISTANCE_BLOCKS;
-        if (dx * dx + dy * dy + dz * dz > maxDistance * maxDistance) {
-            throw new IllegalArgumentException(
-                "navigation target is more than " + NavigationRequest.MAX_DISTANCE_BLOCKS + " blocks away");
-        }
     }
 
     private static void requireClientThread() {
@@ -370,6 +387,40 @@ public final class BaritoneNavigationBackend implements NavigationBackend, Actio
         boolean isTerminal() {
             return state == NavigationState.COMPLETED || state == NavigationState.CANCELLED
                 || state == NavigationState.FAILED;
+        }
+    }
+
+    static final class CleanupRetryBudget {
+
+        private final int maximumAttempts;
+        private int failureCount;
+
+        CleanupRetryBudget(int maximumAttempts) {
+            if (maximumAttempts < 1) {
+                throw new IllegalArgumentException("maximumAttempts must be positive");
+            }
+            this.maximumAttempts = maximumAttempts;
+        }
+
+        boolean recordFailureAndIsExhausted() {
+            if (failureCount < maximumAttempts) {
+                failureCount++;
+            }
+            return failureCount >= maximumAttempts;
+        }
+
+        int getFailureCount() {
+            return failureCount;
+        }
+    }
+
+    private static final class PendingCleanup {
+
+        private final Handle handle;
+        private final CleanupRetryBudget retryBudget = new CleanupRetryBudget(MAX_CLEANUP_ATTEMPTS);
+
+        private PendingCleanup(Handle handle) {
+            this.handle = handle;
         }
     }
 }

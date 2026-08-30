@@ -25,6 +25,7 @@ public final class TaskScheduler {
     private long lastObservedMillis = Long.MIN_VALUE;
     private long lastWorldTimeTicks = ScheduleEnvironment.UNKNOWN_WORLD_TIME;
     private boolean previouslyConnected;
+    private boolean reconnectPendingAfterRestore;
     private boolean restorePerformed;
 
     public ScheduleSnapshot submit(ScheduleRule rule) {
@@ -99,7 +100,7 @@ public final class TaskScheduler {
         return new SchedulerSnapshot(connectedElapsedMillis, lastWorldTimeTicks, previouslyConnected, snapshots);
     }
 
-    /** Restores into a new, empty scheduler and deliberately resets the process-local clock edge. */
+    /** Restores into a new, empty scheduler without counting process downtime as connected time. */
     public void restore(SchedulerSnapshot snapshot) {
         if (snapshot == null) {
             throw new IllegalArgumentException("snapshot must not be null");
@@ -110,7 +111,8 @@ public final class TaskScheduler {
         restorePerformed = true;
         connectedElapsedMillis = snapshot.getConnectedElapsedMillis();
         lastWorldTimeTicks = snapshot.getLastWorldTimeTicks();
-        previouslyConnected = false;
+        previouslyConnected = snapshot.wasConnectedAtSnapshot();
+        reconnectPendingAfterRestore = snapshot.wasConnectedAtSnapshot();
         for (ScheduleSnapshot saved : snapshot.getSchedules()) {
             ScheduleRecord record = new ScheduleRecord(saved);
             schedules.put(record.rule.getId(), record);
@@ -122,7 +124,8 @@ public final class TaskScheduler {
             && lastObservedMillis == Long.MIN_VALUE
             && connectedElapsedMillis == 0L
             && lastWorldTimeTicks == ScheduleEnvironment.UNKNOWN_WORLD_TIME
-            && !previouslyConnected;
+            && !previouslyConnected
+            && !reconnectPendingAfterRestore;
     }
 
     List<ScheduledTaskRequest> evaluate(long nowMillis, ScheduleEnvironment environment, boolean controllerIdle,
@@ -143,6 +146,8 @@ public final class TaskScheduler {
             connectedElapsedMillis = safeAdd(connectedElapsedMillis, nowMillis - lastObservedMillis);
         }
 
+        boolean restoreReconnect = reconnectPendingAfterRestore && environment.isConnected();
+        boolean reconnectObserved = environment.isReconnected() || restoreReconnect;
         long previousWorldTime = lastWorldTimeTicks;
         List<DueRule> due = new ArrayList<>();
         for (ScheduleRecord record : schedules.values()) {
@@ -154,12 +159,19 @@ public final class TaskScheduler {
                 .containsAll(record.rule.getRequiredConditions());
             switch (record.rule.getTrigger()) {
                 case CONNECTED_INTERVAL:
-                    evaluateConnectedInterval(record, environment, conditionsMet, occupiedScheduleIds, due);
+                    evaluateConnectedInterval(
+                        record,
+                        environment,
+                        reconnectObserved,
+                        conditionsMet,
+                        occupiedScheduleIds,
+                        due);
                     break;
                 case WORLD_TIME_WINDOW:
                     evaluateWorldWindow(
                         record,
                         environment,
+                        reconnectObserved,
                         previousWorldTime,
                         conditionsMet,
                         occupiedScheduleIds,
@@ -219,6 +231,9 @@ public final class TaskScheduler {
 
         lastObservedMillis = nowMillis;
         previouslyConnected = environment.isConnected();
+        if (environment.isConnected()) {
+            reconnectPendingAfterRestore = false;
+        }
         if (environment.hasWorldTime()) {
             lastWorldTimeTicks = environment.getWorldTimeTicks();
         }
@@ -226,18 +241,18 @@ public final class TaskScheduler {
     }
 
     private void evaluateConnectedInterval(ScheduleRecord record, ScheduleEnvironment environment,
-        boolean conditionsMet, Set<String> occupiedScheduleIds, List<DueRule> due) {
+        boolean reconnectObserved, boolean conditionsMet, Set<String> occupiedScheduleIds, List<DueRule> due) {
         if (!environment.isConnected() || connectedElapsedMillis < record.nextConnectedDueMillis) {
             return;
         }
         advanceConnectedDue(record);
         if (conditionsMet && !occupiedScheduleIds.contains(record.rule.getId())) {
-            due.add(new DueRule(record, environment.isReconnected()));
+            due.add(new DueRule(record, reconnectObserved));
         }
     }
 
-    private void evaluateWorldWindow(ScheduleRecord record, ScheduleEnvironment environment, long previousWorldTime,
-        boolean conditionsMet, Set<String> occupiedScheduleIds, List<DueRule> due) {
+    private void evaluateWorldWindow(ScheduleRecord record, ScheduleEnvironment environment, boolean reconnectObserved,
+        long previousWorldTime, boolean conditionsMet, Set<String> occupiedScheduleIds, List<DueRule> due) {
         if (!environment.isConnected() || !environment.hasWorldTime()) {
             return;
         }
@@ -253,7 +268,7 @@ public final class TaskScheduler {
             return;
         }
 
-        if (!environment.isReconnected() || !record.rule.isCatchUpAfterReconnect()
+        if (!reconnectObserved || !record.rule.isCatchUpAfterReconnect()
             || !conditionsMet
             || previousWorldTime == ScheduleEnvironment.UNKNOWN_WORLD_TIME
             || worldTime <= previousWorldTime) {

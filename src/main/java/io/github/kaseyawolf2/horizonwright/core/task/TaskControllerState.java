@@ -19,8 +19,9 @@ public final class TaskControllerState {
     }
 
     public TaskControllerState(long lastActionEpoch, List<RestoredTaskSnapshot> tasks, SchedulerSnapshot scheduler) {
-        if (lastActionEpoch < 0L || lastActionEpoch == Long.MAX_VALUE) {
-            throw new IllegalArgumentException("lastActionEpoch must be non-negative and advanceable");
+        if (lastActionEpoch < 0L || lastActionEpoch >= Long.MAX_VALUE - 1L) {
+            throw new IllegalArgumentException(
+                "lastActionEpoch must be non-negative and leave a subsequently advanceable epoch");
         }
         if (tasks == null) {
             throw new IllegalArgumentException("tasks must not be null");

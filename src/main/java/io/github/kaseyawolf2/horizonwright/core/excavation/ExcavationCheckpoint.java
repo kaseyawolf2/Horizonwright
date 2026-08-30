@@ -43,8 +43,8 @@ public final class ExcavationCheckpoint {
 
     public static ExcavationCheckpoint restore(CylinderExcavationSpec spec, long taskRevision, long actionEpoch,
         ExcavationFrontier frontier, ExcavationProgress progress, ExcavationSuspensionReason suspensionReason) {
-        if (spec == null || progress == null) {
-            throw new IllegalArgumentException("spec and progress must not be null");
+        if (spec == null || progress == null || suspensionReason == null) {
+            throw new IllegalArgumentException("spec, progress, and suspensionReason must not be null");
         }
         CylinderExcavationGeometry.validate(spec, frontier);
         if (progress.getTotal() != spec.getVolume()) {
@@ -55,6 +55,9 @@ public final class ExcavationCheckpoint {
         }
         if (frontier.isComplete() != (progress.getRemaining() == 0L)) {
             throw new IllegalArgumentException("complete frontier and remaining progress disagree");
+        }
+        if (frontier.isComplete() && suspensionReason != ExcavationSuspensionReason.NONE) {
+            throw new IllegalArgumentException("a completed excavation cannot also be suspended");
         }
         return new ExcavationCheckpoint(
             spec.getGeometryKey(),

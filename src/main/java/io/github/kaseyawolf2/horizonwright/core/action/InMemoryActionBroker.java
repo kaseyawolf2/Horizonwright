@@ -18,15 +18,17 @@ public final class InMemoryActionBroker implements ActionBroker {
     private long epoch = 1L;
     private long nextLeaseId = 1L;
     private boolean safetyLocked;
+    private boolean automationLocked;
     private int revocationTransitionsInProgress;
     private ActionRevocation lastSafetyRevocation;
+    private ActionRevocation lastAutomationRevocation;
 
     @Override
     public synchronized Optional<ActionLease> tryAcquire(String owner, Set<ActionCapability> requestedCapabilities) {
         String normalizedOwner = normalizeOwner(owner);
         EnumSet<ActionCapability> capabilities = copyCapabilities(requestedCapabilities);
 
-        if (safetyLocked || revocationTransitionsInProgress > 0) {
+        if (safetyLocked || automationLocked || revocationTransitionsInProgress > 0) {
             return Optional.empty();
         }
         for (ActionCapability capability : capabilities) {
@@ -49,7 +51,17 @@ public final class InMemoryActionBroker implements ActionBroker {
 
     @Override
     public synchronized boolean isSafetyLocked() {
+        return safetyLocked || automationLocked;
+    }
+
+    @Override
+    public synchronized boolean isDeathSafetyLocked() {
         return safetyLocked;
+    }
+
+    @Override
+    public synchronized boolean isAutomationLocked() {
+        return automationLocked;
     }
 
     @Override
@@ -58,7 +70,7 @@ public final class InMemoryActionBroker implements ActionBroker {
         for (Map.Entry<ActionCapability, Lease> entry : leasesByCapability.entrySet()) {
             owners.put(entry.getKey(), entry.getValue().owner);
         }
-        return new ActionBrokerSnapshot(epoch, safetyLocked, owners);
+        return new ActionBrokerSnapshot(epoch, automationLocked, safetyLocked, owners);
     }
 
     @Override
@@ -79,6 +91,59 @@ public final class InMemoryActionBroker implements ActionBroker {
     @Override
     public void revokeAll() {
         notifyRevocation(beginRevocation(ActionRevocationReason.EXPLICIT_REVOCATION));
+    }
+
+    @Override
+    public void advanceEpochPast(long floor) {
+        if (floor < 0L || floor >= Long.MAX_VALUE - 1L) {
+            throw new IllegalArgumentException("epoch floor must leave a subsequently advanceable epoch");
+        }
+        RevocationDispatch dispatch;
+        synchronized (this) {
+            if (epoch > floor) {
+                return;
+            }
+            if (safetyLocked || automationLocked
+                || revocationTransitionsInProgress > 0
+                || !leasesByCapability.isEmpty()) {
+                throw new IllegalStateException("persisted epoch restoration requires a fresh, unlocked broker");
+            }
+            long revokedEpoch = epoch;
+            epoch = floor + 1L;
+            dispatch = beginDispatchLocked(
+                new ActionRevocation(revokedEpoch, epoch, ActionRevocationReason.RESTORE_EPOCH_ADVANCE));
+        }
+        notifyRevocation(dispatch);
+    }
+
+    @Override
+    public void enterAutomationLockdown() {
+        RevocationDispatch dispatch;
+        synchronized (this) {
+            if (automationLocked) {
+                dispatch = beginDispatchLocked(lastAutomationRevocation);
+            } else {
+                automationLocked = true;
+                lastAutomationRevocation = advanceEpochAndClearLocked(ActionRevocationReason.AUTOMATION_STOP);
+                dispatch = beginDispatchLocked(lastAutomationRevocation);
+            }
+        }
+        notifyRevocation(dispatch);
+    }
+
+    @Override
+    public void leaveAutomationLockdown() {
+        RevocationDispatch dispatch;
+        synchronized (this) {
+            if (!automationLocked) {
+                return;
+            }
+            ActionRevocation revocation = advanceEpochAndClearLocked(ActionRevocationReason.AUTOMATION_REARMED);
+            automationLocked = false;
+            lastAutomationRevocation = null;
+            dispatch = beginDispatchLocked(revocation);
+        }
+        notifyRevocation(dispatch);
     }
 
     @Override
@@ -112,7 +177,7 @@ public final class InMemoryActionBroker implements ActionBroker {
     }
 
     private synchronized boolean isValid(Lease lease) {
-        if (lease.closed || safetyLocked || lease.epoch != epoch) {
+        if (lease.closed || safetyLocked || automationLocked || lease.epoch != epoch) {
             return false;
         }
         for (ActionCapability capability : lease.capabilities) {

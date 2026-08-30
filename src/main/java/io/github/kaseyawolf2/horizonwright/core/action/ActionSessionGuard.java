@@ -217,15 +217,12 @@ public final class ActionSessionGuard implements ActionRevocationListener {
                 : ActionAuthorizationDecision.BLOCKED_MISSING_CAPABILITY;
     }
 
-    /** Unknown action-bearing packets are allowed only during direct player control. */
+    /**
+     * Unknown or unintegrated traffic is outside Horizonwright's authority and
+     * must always pass through without affecting action-session state.
+     */
     public synchronized ActionAuthorizationDecision authorizeUnknownAction() {
-        if (mode == Mode.PLAYER) {
-            return ActionAuthorizationDecision.PLAYER_PASSTHROUGH;
-        }
-        if (mode == Mode.ACTIVE && activeLease != null && activeLease.isValid()) {
-            return ActionAuthorizationDecision.BLOCKED_MISSING_CAPABILITY;
-        }
-        return ActionAuthorizationDecision.BLOCKED_REVOKED_EPOCH;
+        return ActionAuthorizationDecision.PLAYER_PASSTHROUGH;
     }
 
     @Override

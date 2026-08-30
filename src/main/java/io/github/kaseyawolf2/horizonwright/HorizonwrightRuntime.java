@@ -1,40 +1,88 @@
 package io.github.kaseyawolf2.horizonwright;
 
-import java.util.EnumSet;
 import java.util.Optional;
+import java.util.concurrent.TimeUnit;
 
 import io.github.kaseyawolf2.horizonwright.core.action.ActionBrokerSnapshot;
-import io.github.kaseyawolf2.horizonwright.core.action.ActionCapability;
-import io.github.kaseyawolf2.horizonwright.core.action.ActionLease;
 import io.github.kaseyawolf2.horizonwright.core.action.ActionRevocationListener;
 import io.github.kaseyawolf2.horizonwright.core.action.ActionSessionGuard;
 import io.github.kaseyawolf2.horizonwright.core.action.InMemoryActionBroker;
+import io.github.kaseyawolf2.horizonwright.core.navigation.BackendAvailability;
 import io.github.kaseyawolf2.horizonwright.core.navigation.NavigationBackend;
-import io.github.kaseyawolf2.horizonwright.core.navigation.NavigationHandle;
 import io.github.kaseyawolf2.horizonwright.core.navigation.NavigationProgress;
-import io.github.kaseyawolf2.horizonwright.core.navigation.NavigationRequest;
-import io.github.kaseyawolf2.horizonwright.core.navigation.NavigationState;
+import io.github.kaseyawolf2.horizonwright.core.task.ControllerSnapshot;
+import io.github.kaseyawolf2.horizonwright.core.task.IHorizonwrightController;
+import io.github.kaseyawolf2.horizonwright.core.task.MonotonicClock;
+import io.github.kaseyawolf2.horizonwright.core.task.ScheduleEnvironment;
+import io.github.kaseyawolf2.horizonwright.core.task.TaskControllerState;
+import io.github.kaseyawolf2.horizonwright.core.task.TaskOrchestrator;
+import io.github.kaseyawolf2.horizonwright.core.task.TaskSnapshot;
+import io.github.kaseyawolf2.horizonwright.core.task.TaskSpec;
+import io.github.kaseyawolf2.horizonwright.core.task.TaskState;
+import io.github.kaseyawolf2.horizonwright.runtime.task.GoToTask;
+import io.github.kaseyawolf2.horizonwright.runtime.task.NavigationRuntimeAccess;
+import io.github.kaseyawolf2.horizonwright.runtime.task.RuntimeTaskRunnerFactory;
 
-public final class HorizonwrightRuntime {
+/** Session-scoped composition root for action authority, tasks, and optional navigation. */
+public final class HorizonwrightRuntime implements AutoCloseable {
 
     private static final HorizonwrightRuntime INSTANCE = new HorizonwrightRuntime();
 
-    private final InMemoryActionBroker actionBroker = new InMemoryActionBroker();
-    private final ActionSessionGuard actionSessionGuard = new ActionSessionGuard();
+    private final InMemoryActionBroker actionBroker;
+    private final ActionSessionGuard actionSessionGuard;
+    private final TaskOrchestrator controller;
     private final long startedAtNanos = System.nanoTime();
+
+    private volatile NavigationBackend navigationBackend;
+    private volatile NavigationProgress lastNavigationProgress;
     private volatile String navigationDiagnostic = "No navigation backend configured";
-    private NavigationBackend navigationBackend;
-    private NavigationHandle activeNavigationHandle;
-    private ActionLease activeNavigationLease;
-    private NavigationProgress lastNavigationProgress;
-    private long nextNavigationRequestId = 1L;
+    private volatile ScheduleEnvironment scheduleEnvironment = ScheduleEnvironment.disconnected();
+    private volatile boolean dryRun;
+    private volatile boolean closed;
+    private long nextNavigationTaskId = 1L;
 
     private HorizonwrightRuntime() {
+        this(new InMemoryActionBroker(), new ActionSessionGuard(), new SystemMonotonicClock());
+    }
+
+    HorizonwrightRuntime(InMemoryActionBroker actionBroker, ActionSessionGuard actionSessionGuard,
+        MonotonicClock clock) {
+        if (actionBroker == null || actionSessionGuard == null || clock == null) {
+            throw new IllegalArgumentException("actionBroker, actionSessionGuard, and clock are required");
+        }
+        this.actionBroker = actionBroker;
+        this.actionSessionGuard = actionSessionGuard;
         actionBroker.addRevocationListener(actionSessionGuard);
+        NavigationRuntimeAccess navigationAccess = new NavigationRuntimeAccess() {
+
+            @Override
+            public NavigationBackend getNavigationBackend() {
+                return navigationBackend;
+            }
+
+            @Override
+            public boolean isDryRun() {
+                return dryRun || closed;
+            }
+
+            @Override
+            public void publishNavigationProgress(NavigationProgress progress) {
+                if (progress == null) {
+                    throw new IllegalArgumentException("progress must not be null");
+                }
+                lastNavigationProgress = progress;
+            }
+        };
+        controller = new TaskOrchestrator(clock, new RuntimeTaskRunnerFactory(navigationAccess), actionBroker);
     }
 
     public static HorizonwrightRuntime getInstance() {
         return INSTANCE;
+    }
+
+    /** Creates a fresh runtime for one explicitly managed profile/world session. */
+    public static HorizonwrightRuntime createSession() {
+        return new HorizonwrightRuntime();
     }
 
     public InMemoryActionBroker getActionBroker() {
@@ -45,171 +93,377 @@ public final class HorizonwrightRuntime {
         return actionSessionGuard;
     }
 
-    public synchronized RuntimeSnapshot snapshot() {
-        NavigationProgress progress = activeNavigationHandle == null ? lastNavigationProgress
-            : activeNavigationHandle.progress();
+    public IHorizonwrightController getController() {
+        return controller;
+    }
+
+    public ControllerSnapshot controllerSnapshot() {
+        return controller.snapshot();
+    }
+
+    public TaskControllerState exportControllerState() {
+        return controller.exportState();
+    }
+
+    /** Persistence integration hook; restoration is intentionally limited to a fresh controller. */
+    public synchronized ControllerSnapshot restoreControllerState(TaskControllerState state) {
+        ensureOpen();
+        ControllerSnapshot restored = controller.restoreState(state);
+        advanceNavigationTaskSequencePast(restored);
+        return restored;
+    }
+
+    public RuntimeSnapshot snapshot() {
+        ControllerSnapshot taskSnapshot = controller.snapshot();
         return new RuntimeSnapshot(
-            actionBroker.snapshot(),
+            taskSnapshot.getActionAuthority(),
+            taskSnapshot,
             navigationDiagnostic,
-            progress,
-            System.nanoTime() - startedAtNanos);
+            lastNavigationProgress,
+            dryRun,
+            elapsedNanos());
     }
 
-    public void emergencyStop(String reason) {
+    public void stopAutomation(String reason) {
+        String detail = reason == null || reason.trim()
+            .isEmpty() ? "unspecified emergency" : reason.trim();
         try {
-            actionBroker.enterSafetyLockdown();
+            actionBroker.enterAutomationLockdown();
         } catch (RuntimeException failure) {
-            HorizonwrightMod.LOG.error("Emergency revocation listener failed after safety lockdown latched", failure);
+            HorizonwrightMod.LOG.error("Automation-stop revocation listener failed after the stop engaged", failure);
         }
-        HorizonwrightMod.LOG.warn("Emergency stop latched: {}", reason);
+        HorizonwrightMod.LOG.warn("Automation stopped: {}", detail);
     }
 
-    public synchronized void setNavigationDiagnostic(String diagnostic) {
+    /** Re-arms automation after its producer cleanup has drained; direct player control is never latched by this. */
+    public boolean resetAutomationStop() {
+        ensureOpen();
+        if (!actionBroker.isAutomationLocked()) {
+            return false;
+        }
+        ActionSessionGuard.Mode mode = actionSessionGuard.getMode();
+        if (mode == ActionSessionGuard.Mode.ACTIVE || mode == ActionSessionGuard.Mode.QUARANTINED) {
+            throw new IllegalStateException("automation cleanup is still draining; try reset again next tick");
+        }
+        actionBroker.leaveAutomationLockdown();
+        HorizonwrightMod.LOG.info("Manual automation stop reset; blocked tasks still require explicit resume");
+        return true;
+    }
+
+    public void setNavigationDiagnostic(String diagnostic) {
         if (diagnostic == null || diagnostic.trim()
             .isEmpty()) {
             throw new IllegalArgumentException("diagnostic must not be blank");
         }
-        navigationDiagnostic = diagnostic;
+        navigationDiagnostic = diagnostic.trim();
     }
 
     public synchronized void installNavigationBackend(NavigationBackend backend) {
+        ensureOpen();
         if (backend == null) {
             throw new IllegalArgumentException("backend must not be null");
         }
-        if (activeNavigationHandle != null || actionSessionGuard.isGuarding()) {
+        if (controller.snapshot()
+            .getActiveTaskId()
+            .isPresent() || actionSessionGuard.isGuarding()) {
             throw new IllegalStateException("cannot replace the navigation backend while an action session is active");
         }
-        if (navigationBackend instanceof ActionRevocationListener) {
-            actionBroker.removeRevocationListener((ActionRevocationListener) navigationBackend);
+        NavigationBackend previous = navigationBackend;
+        if (previous == backend) {
+            navigationDiagnostic = readAvailability(backend).getDiagnostic();
+            return;
+        }
+        if (previous instanceof ActionRevocationListener) {
+            actionBroker.removeRevocationListener((ActionRevocationListener) previous);
         }
         navigationBackend = backend;
         if (backend instanceof ActionRevocationListener) {
             actionBroker.addRevocationListener((ActionRevocationListener) backend);
         }
-        navigationDiagnostic = backend.availability()
-            .getDiagnostic();
+        navigationDiagnostic = readAvailability(backend).getDiagnostic();
     }
 
-    public synchronized String startNavigation(int dimensionId, int x, int y, int z, int tolerance) {
-        if (navigationBackend == null || !navigationBackend.availability()
-            .isAvailable()) {
-            throw new IllegalStateException(navigationDiagnostic);
+    public synchronized TaskSpec createGoToTaskSpec(int dimensionId, int x, int y, int z, int tolerance) {
+        ensureOpen();
+        if (nextNavigationTaskId == Long.MAX_VALUE) {
+            throw new IllegalStateException("navigation task id sequence exhausted");
         }
-        if (activeNavigationHandle != null) {
-            throw new IllegalStateException("a navigation request is already active");
-        }
-        if (!actionSessionGuard.isReadyForSession()) {
-            throw new IllegalStateException(actionSessionGuard.readinessDiagnostic());
-        }
-        Optional<ActionLease> acquired = actionBroker
-            .tryAcquire("manual-goto", EnumSet.of(ActionCapability.MOVEMENT, ActionCapability.LOOK));
-        if (!acquired.isPresent()) {
-            throw new IllegalStateException("MOVEMENT/LOOK action lease is unavailable");
-        }
-        ActionLease lease = acquired.get();
-        try {
-            NavigationRequest request = new NavigationRequest(
-                "manual-goto-" + nextNavigationRequestId++,
-                lease.getEpoch(),
-                dimensionId,
-                x,
-                y,
-                z,
-                tolerance);
-            activeNavigationHandle = navigationBackend.submit(request, lease);
-            activeNavigationLease = lease;
-            lastNavigationProgress = activeNavigationHandle.progress();
-            return request.getRequestId();
-        } catch (RuntimeException failure) {
-            lease.close();
-            throw failure;
-        }
+        return GoToTask.create("goto-" + nextNavigationTaskId++, dimensionId, x, y, z, tolerance);
     }
 
-    public synchronized boolean cancelNavigation(String reason) {
-        if (activeNavigationHandle == null) {
-            return false;
+    public TaskSnapshot submitGoTo(int dimensionId, int x, int y, int z, int tolerance) {
+        ensureOpen();
+        if (actionBroker.isDeathSafetyLocked()) {
+            throw new IllegalStateException("death safety is active; new automation is unavailable");
         }
-        NavigationHandle handle = activeNavigationHandle;
-        RuntimeException cancellationFailure = null;
-        try {
-            handle.cancel();
-        } catch (RuntimeException failure) {
-            cancellationFailure = failure;
-        } finally {
-            try {
-                lastNavigationProgress = handle.progress();
-            } catch (RuntimeException progressFailure) {
-                if (cancellationFailure == null) {
-                    cancellationFailure = progressFailure;
-                } else {
-                    cancellationFailure.addSuppressed(progressFailure);
+        if (actionBroker.isAutomationLocked()) {
+            throw new IllegalStateException("automation is stopped; use /hw reset before submitting new work");
+        }
+        TaskSpec spec = createGoToTaskSpec(dimensionId, x, y, z, tolerance);
+        return controller.submit(spec);
+    }
+
+    /** Controller-backed compatibility entry point retained for existing integrations. */
+    public String startNavigation(int dimensionId, int x, int y, int z, int tolerance) {
+        return submitGoTo(dimensionId, x, y, z, tolerance).getSpec()
+            .getId();
+    }
+
+    public Optional<TaskSnapshot> cancelNavigationTask(String reason) {
+        ensureOpen();
+        ControllerSnapshot snapshot = controller.snapshot();
+        Optional<String> active = snapshot.getActiveTaskId();
+        if (active.isPresent()) {
+            TaskSnapshot activeTask = snapshot.findTask(active.get())
+                .orElse(null);
+            if (isLiveGoTo(activeTask)) {
+                HorizonwrightMod.LOG.info("Navigation task cancelled: {}", reason);
+                return Optional.of(controller.cancel(active.get()));
+            }
+        }
+        for (TaskSnapshot task : snapshot.getTasks()) {
+            if (isLiveGoTo(task)) {
+                HorizonwrightMod.LOG.info("Navigation task cancelled: {}", reason);
+                return Optional.of(
+                    controller.cancel(
+                        task.getSpec()
+                            .getId()));
+            }
+        }
+        return Optional.empty();
+    }
+
+    /** Controller-backed compatibility entry point retained for existing integrations. */
+    public boolean cancelNavigation(String reason) {
+        return cancelNavigationTask(reason).isPresent();
+    }
+
+    public Optional<TaskSnapshot> pauseActiveTask() {
+        ensureOpen();
+        Optional<String> active = controller.snapshot()
+            .getActiveTaskId();
+        return active.isPresent() ? Optional.of(controller.pause(active.get())) : Optional.empty();
+    }
+
+    public TaskSnapshot pauseTask(String taskId) {
+        ensureOpen();
+        return controller.pause(taskId);
+    }
+
+    public TaskSnapshot resumeTask(String taskId) {
+        ensureOpen();
+        if (actionBroker.isDeathSafetyLocked()) {
+            throw new IllegalStateException("death safety is active; work cannot be resumed");
+        }
+        if (actionBroker.isAutomationLocked()) {
+            throw new IllegalStateException("automation is stopped; use /hw reset before resuming work");
+        }
+        return controller.resume(taskId);
+    }
+
+    public TaskSnapshot cancelTask(String taskId) {
+        ensureOpen();
+        return controller.cancel(taskId);
+    }
+
+    public boolean isDryRun() {
+        return dryRun;
+    }
+
+    public void setDryRun(boolean enabled) {
+        ensureOpen();
+        boolean changed = dryRun != enabled;
+        dryRun = enabled;
+        if (changed && enabled) {
+            ControllerSnapshot snapshot = controller.snapshot();
+            Optional<String> active = snapshot.getActiveTaskId();
+            if (active.isPresent()) {
+                TaskSnapshot task = snapshot.findTask(active.get())
+                    .orElse(null);
+                if (task != null && task.getState() == TaskState.RUNNING) {
+                    controller.pause(active.get());
                 }
             }
-            activeNavigationHandle = null;
-            if (activeNavigationLease != null) {
-                activeNavigationLease.close();
-                activeNavigationLease = null;
-            }
         }
-        HorizonwrightMod.LOG.info("Navigation cancelled: {}", reason);
-        if (cancellationFailure != null) {
-            throw cancellationFailure;
-        }
-        return true;
     }
 
-    public synchronized void clientTick() {
-        if (navigationBackend != null) {
-            boolean tickFailed = false;
+    public void setScheduleEnvironment(ScheduleEnvironment environment) {
+        ensureOpen();
+        if (environment == null) {
+            throw new IllegalArgumentException("environment must not be null");
+        }
+        scheduleEnvironment = environment;
+    }
+
+    public ControllerSnapshot clientTick() {
+        return clientTick(scheduleEnvironment);
+    }
+
+    public ControllerSnapshot clientTick(ScheduleEnvironment environment) {
+        ensureOpen();
+        if (environment == null) {
+            throw new IllegalArgumentException("environment must not be null");
+        }
+        scheduleEnvironment = environment;
+        NavigationBackend backend = navigationBackend;
+        if (backend != null) {
             try {
-                navigationBackend.clientTick();
+                backend.clientTick();
+                navigationDiagnostic = readAvailability(backend).getDiagnostic();
             } catch (RuntimeException failure) {
-                tickFailed = true;
-                navigationDiagnostic = "Navigation cleanup failed: " + failure.getMessage();
+                navigationDiagnostic = "Navigation cleanup failed: " + describe(failure);
                 HorizonwrightMod.LOG.error("Navigation backend client tick failed", failure);
             }
-            if (!tickFailed) {
-                navigationDiagnostic = navigationBackend.availability()
-                    .getDiagnostic();
+        }
+        return controller.tick(environment);
+    }
+
+    @Override
+    public void close() {
+        NavigationBackend backend;
+        synchronized (this) {
+            if (closed) {
+                return;
+            }
+            closed = true;
+            dryRun = true;
+            backend = navigationBackend;
+        }
+
+        RuntimeException failure = null;
+        try {
+            ControllerSnapshot snapshot = controller.snapshot();
+            if (snapshot.getActiveTaskId()
+                .isPresent()) {
+                controller.cancel(
+                    snapshot.getActiveTaskId()
+                        .get());
+                controller.tick(ScheduleEnvironment.disconnected());
+            }
+        } catch (RuntimeException cancellationFailure) {
+            failure = cancellationFailure;
+        }
+        try {
+            actionBroker.enterSafetyLockdown();
+        } catch (RuntimeException revocationFailure) {
+            failure = append(failure, revocationFailure);
+        }
+        if (backend != null) {
+            try {
+                backend.clientTick();
+            } catch (RuntimeException backendFailure) {
+                failure = append(failure, backendFailure);
             }
         }
-        if (activeNavigationHandle == null) {
-            return;
+        if (backend instanceof ActionRevocationListener) {
+            actionBroker.removeRevocationListener((ActionRevocationListener) backend);
         }
-        NavigationProgress progress = activeNavigationHandle.progress();
-        lastNavigationProgress = progress;
-        if (isTerminal(progress.getState())) {
-            activeNavigationHandle = null;
-            if (activeNavigationLease != null) {
-                activeNavigationLease.close();
-                activeNavigationLease = null;
-            }
+        controller.close();
+        actionBroker.removeRevocationListener(actionSessionGuard);
+        if (failure != null) {
+            throw new IllegalStateException("Horizonwright runtime closed with safety cleanup failures", failure);
         }
     }
 
-    private static boolean isTerminal(NavigationState state) {
-        return state == NavigationState.COMPLETED || state == NavigationState.CANCELLED
-            || state == NavigationState.FAILED;
+    private void ensureOpen() {
+        if (closed) {
+            throw new IllegalStateException("Horizonwright runtime is closed");
+        }
+    }
+
+    private long elapsedNanos() {
+        long elapsed = System.nanoTime() - startedAtNanos;
+        return elapsed < 0L ? Long.MAX_VALUE : elapsed;
+    }
+
+    private static boolean isLiveGoTo(TaskSnapshot task) {
+        return task != null && GoToTask.TYPE.equals(
+            task.getSpec()
+                .getType())
+            && !task.getState()
+                .isTerminal();
+    }
+
+    private void advanceNavigationTaskSequencePast(ControllerSnapshot restored) {
+        for (TaskSnapshot task : restored.getTasks()) {
+            String taskId = task.getSpec()
+                .getId();
+            if (!taskId.startsWith("goto-") || taskId.length() == "goto-".length()) {
+                continue;
+            }
+            final long restoredSequence;
+            try {
+                restoredSequence = Long.parseLong(taskId.substring("goto-".length()));
+            } catch (NumberFormatException ignored) {
+                continue;
+            }
+            if (restoredSequence < nextNavigationTaskId) {
+                continue;
+            }
+            nextNavigationTaskId = restoredSequence == Long.MAX_VALUE ? Long.MAX_VALUE : restoredSequence + 1L;
+        }
+    }
+
+    private static BackendAvailability readAvailability(NavigationBackend backend) {
+        try {
+            BackendAvailability availability = backend.availability();
+            return availability == null ? BackendAvailability.unavailable("Navigation backend returned no status")
+                : availability;
+        } catch (RuntimeException failure) {
+            return BackendAvailability.unavailable("Navigation backend status failed: " + describe(failure));
+        }
+    }
+
+    private static RuntimeException append(RuntimeException first, RuntimeException next) {
+        if (first == null) {
+            return next;
+        }
+        first.addSuppressed(next);
+        return first;
+    }
+
+    private static String describe(RuntimeException failure) {
+        String message = failure.getMessage();
+        return failure.getClass()
+            .getSimpleName() + (message == null || message.isEmpty() ? "" : ": " + message);
+    }
+
+    private static final class SystemMonotonicClock implements MonotonicClock {
+
+        private final long originNanos = System.nanoTime();
+
+        @Override
+        public long nowMillis() {
+            long elapsed = System.nanoTime() - originNanos;
+            return elapsed < 0L ? Long.MAX_VALUE : TimeUnit.NANOSECONDS.toMillis(elapsed);
+        }
     }
 
     public static final class RuntimeSnapshot {
 
         private final ActionBrokerSnapshot actionBroker;
+        private final ControllerSnapshot controller;
         private final String navigationDiagnostic;
         private final NavigationProgress navigationProgress;
+        private final boolean dryRun;
         private final long uptimeNanos;
 
-        private RuntimeSnapshot(ActionBrokerSnapshot actionBroker, String navigationDiagnostic,
-            NavigationProgress navigationProgress, long uptimeNanos) {
+        private RuntimeSnapshot(ActionBrokerSnapshot actionBroker, ControllerSnapshot controller,
+            String navigationDiagnostic, NavigationProgress navigationProgress, boolean dryRun, long uptimeNanos) {
             this.actionBroker = actionBroker;
+            this.controller = controller;
             this.navigationDiagnostic = navigationDiagnostic;
             this.navigationProgress = navigationProgress;
+            this.dryRun = dryRun;
             this.uptimeNanos = uptimeNanos;
         }
 
         public ActionBrokerSnapshot getActionBroker() {
             return actionBroker;
+        }
+
+        public ControllerSnapshot getController() {
+            return controller;
         }
 
         public String getNavigationDiagnostic() {
@@ -218,6 +472,10 @@ public final class HorizonwrightRuntime {
 
         public NavigationProgress getNavigationProgress() {
             return navigationProgress;
+        }
+
+        public boolean isDryRun() {
+            return dryRun;
         }
 
         public long getUptimeNanos() {

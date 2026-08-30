@@ -74,6 +74,67 @@ public class InMemoryActionBrokerTest {
     }
 
     @Test
+    public void persistedEpochFloorAdvancesInOneBoundedTransition() {
+        InMemoryActionBroker broker = new InMemoryActionBroker();
+        List<ActionRevocation> observed = new ArrayList<>();
+        broker.addRevocationListener(observed::add);
+
+        broker.advanceEpochPast(Long.MAX_VALUE - 2L);
+
+        assertEquals(Long.MAX_VALUE - 1L, broker.currentEpoch());
+        assertEquals(1, observed.size());
+        assertEquals(
+            ActionRevocationReason.RESTORE_EPOCH_ADVANCE,
+            observed.get(0)
+                .getReason());
+    }
+
+    @Test
+    public void operatorAutomationStopDoesNotMasqueradeAsDeathSafetyButStillRejectsLeases() {
+        InMemoryActionBroker broker = new InMemoryActionBroker();
+
+        broker.enterAutomationLockdown();
+
+        assertTrue(broker.isAutomationLocked());
+        assertTrue(broker.isSafetyLocked());
+        assertTrue(
+            broker.snapshot()
+                .isAutomationLocked());
+        assertFalse(
+            broker.snapshot()
+                .isDeathSafetyLocked());
+        assertFalse(
+            broker.tryAcquire("navigation", EnumSet.of(ActionCapability.MOVEMENT))
+                .isPresent());
+
+        broker.leaveAutomationLockdown();
+
+        assertFalse(broker.isAutomationLocked());
+        assertFalse(broker.isSafetyLocked());
+        assertTrue(
+            broker.tryAcquire("navigation", EnumSet.of(ActionCapability.MOVEMENT))
+                .isPresent());
+    }
+
+    @Test
+    public void manualResetCannotReleaseAnIndependentDeathLockdown() {
+        InMemoryActionBroker broker = new InMemoryActionBroker();
+        broker.enterSafetyLockdown();
+        broker.enterAutomationLockdown();
+
+        broker.leaveAutomationLockdown();
+
+        assertFalse(broker.isAutomationLocked());
+        assertTrue(broker.isSafetyLocked());
+        assertTrue(
+            broker.snapshot()
+                .isDeathSafetyLocked());
+        assertFalse(
+            broker.tryAcquire("navigation", EnumSet.of(ActionCapability.MOVEMENT))
+                .isPresent());
+    }
+
+    @Test
     public void revocationListenersRunSynchronouslyAfterLeasesBecomeInvalid() {
         InMemoryActionBroker broker = new InMemoryActionBroker();
         ActionLease lease = broker.tryAcquire("navigation", EnumSet.of(ActionCapability.MOVEMENT))

@@ -100,6 +100,11 @@ public class HorizonwrightPersistenceStoreTest {
 
         RuntimeEnvelope loaded = store.loadRuntime(paths)
             .getValue();
+        assertEquals(0L, loaded.getLastConnectionEpoch());
+        assertTrue(
+            loaded.getTaskControllerState()
+                .getTasks()
+                .isEmpty());
         UnresolvedDeathState death = loaded.getUnresolvedDeathState();
         assertNotNull(death);
         assertEquals(41L, death.getDeathEpoch());

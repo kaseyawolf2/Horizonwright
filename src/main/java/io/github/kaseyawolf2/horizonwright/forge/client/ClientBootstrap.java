@@ -1,5 +1,7 @@
 package io.github.kaseyawolf2.horizonwright.forge.client;
 
+import java.util.Collections;
+
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.settings.KeyBinding;
 import net.minecraftforge.client.ClientCommandHandler;
@@ -15,6 +17,7 @@ import cpw.mods.fml.common.gameevent.TickEvent;
 import io.github.kaseyawolf2.horizonwright.HorizonwrightMod;
 import io.github.kaseyawolf2.horizonwright.HorizonwrightRuntime;
 import io.github.kaseyawolf2.horizonwright.core.action.ActionSessionGuard;
+import io.github.kaseyawolf2.horizonwright.core.task.ScheduleEnvironment;
 import io.github.kaseyawolf2.horizonwright.forge.client.network.ClientPacketFirewallInstaller;
 
 public final class ClientBootstrap {
@@ -27,6 +30,7 @@ public final class ClientBootstrap {
         "key.categories.horizonwright");
     private final HorizonwrightRuntime runtime = HorizonwrightRuntime.getInstance();
     private final ClientInputArbiter inputArbiter = new ClientInputArbiter();
+    private final ClientScheduleEnvironmentTracker scheduleEnvironment = new ClientScheduleEnvironmentTracker();
     private final ClientPacketFirewallInstaller packetFirewall = new ClientPacketFirewallInstaller(
         runtime.getActionSessionGuard());
     private boolean initialized;
@@ -71,7 +75,10 @@ public final class ClientBootstrap {
     @SubscribeEvent
     public void onClientTick(TickEvent.ClientTickEvent event) {
         if (event.phase == TickEvent.Phase.END) {
-            runtime.clientTick();
+            Minecraft minecraft = Minecraft.getMinecraft();
+            boolean connected = minecraft.theWorld != null && minecraft.thePlayer != null;
+            long worldTime = connected ? minecraft.theWorld.getWorldTime() : ScheduleEnvironment.UNKNOWN_WORLD_TIME;
+            runtime.clientTick(scheduleEnvironment.observe(connected, worldTime, Collections.<String>emptySet()));
             packetFirewall.ensureInstalled();
         }
     }
@@ -98,36 +105,17 @@ public final class ClientBootstrap {
 
     private static boolean isPlayerActionBinding(int keyCode) {
         net.minecraft.client.settings.GameSettings settings = Minecraft.getMinecraft().gameSettings;
-        if (matches(
-            keyCode,
-            settings.keyBindForward,
-            settings.keyBindBack,
-            settings.keyBindLeft,
-            settings.keyBindRight,
-            settings.keyBindJump,
-            settings.keyBindSneak,
-            settings.keyBindSprint,
-            settings.keyBindAttack,
-            settings.keyBindUseItem,
-            settings.keyBindPickBlock,
-            settings.keyBindDrop,
-            settings.keyBindInventory)) {
-            return true;
+        KeyBinding[] bindings = { settings.keyBindForward, settings.keyBindBack, settings.keyBindLeft,
+            settings.keyBindRight, settings.keyBindJump, settings.keyBindSneak, settings.keyBindSprint,
+            settings.keyBindAttack, settings.keyBindUseItem, settings.keyBindPickBlock, settings.keyBindDrop };
+        int[] gameplayKeyCodes = new int[bindings.length + settings.keyBindsHotbar.length];
+        for (int index = 0; index < bindings.length; index++) {
+            gameplayKeyCodes[index] = bindings[index].getKeyCode();
         }
-        for (KeyBinding hotbar : settings.keyBindsHotbar) {
-            if (hotbar.getKeyCode() == keyCode) {
-                return true;
-            }
+        for (int index = 0; index < settings.keyBindsHotbar.length; index++) {
+            gameplayKeyCodes[bindings.length + index] = settings.keyBindsHotbar[index].getKeyCode();
         }
-        return false;
-    }
-
-    private static boolean matches(int keyCode, KeyBinding... bindings) {
-        for (KeyBinding binding : bindings) {
-            if (binding.getKeyCode() == keyCode) {
-                return true;
-            }
-        }
-        return false;
+        return PhysicalInputPreemptionPolicy
+            .shouldPreempt(keyCode, settings.keyBindInventory.getKeyCode(), gameplayKeyCodes);
     }
 }

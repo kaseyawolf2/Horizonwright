@@ -9,7 +9,17 @@ public interface ActionBroker {
 
     long currentEpoch();
 
+    /**
+     * Aggregate automation-acquisition lock. This must never be used to gate direct player input or traffic;
+     * packet-level death policy must consult {@link #isDeathSafetyLocked()}.
+     */
     boolean isSafetyLocked();
+
+    /** True only for the death/item-preservation packet lockdown, not an operator automation stop. */
+    boolean isDeathSafetyLocked();
+
+    /** Operator stop which prevents automation acquisition without restricting direct player traffic. */
+    boolean isAutomationLocked();
 
     ActionBrokerSnapshot snapshot();
 
@@ -19,6 +29,14 @@ public interface ActionBroker {
 
     void revokeAll();
 
+    /** Establishes a fresh epoch above a persisted floor in one bounded transition. */
+    void advanceEpochPast(long floor);
+
+    void enterAutomationLockdown();
+
+    void leaveAutomationLockdown();
+
+    /** Death/item-preservation lockdown at the tested packet boundary. */
     void enterSafetyLockdown();
 
     void leaveSafetyLockdown();

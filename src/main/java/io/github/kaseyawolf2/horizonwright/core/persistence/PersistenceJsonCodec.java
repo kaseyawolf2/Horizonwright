@@ -13,9 +13,13 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParseException;
 import com.google.gson.JsonParser;
 
+import io.github.kaseyawolf2.horizonwright.core.task.TaskControllerState;
+
 final class PersistenceJsonCodec {
 
-    private final Gson gson = new GsonBuilder().serializeNulls()
+    private final Gson gson = new GsonBuilder()
+        .registerTypeAdapter(TaskControllerState.class, new TaskControllerStateJsonAdapter())
+        .serializeNulls()
         .setPrettyPrinting()
         .create();
 
@@ -40,6 +44,13 @@ final class PersistenceJsonCodec {
                 public void validate(ProfileEnvelope value) {
                     value.validate();
                 }
+            },
+            new Normalizer<ProfileEnvelope>() {
+
+                @Override
+                public ProfileEnvelope normalize(JsonObject root, ProfileEnvelope value) {
+                    return value;
+                }
             });
     }
 
@@ -54,6 +65,31 @@ final class PersistenceJsonCodec {
                 public void validate(RuntimeEnvelope value) {
                     value.validate();
                 }
+            },
+            new Normalizer<RuntimeEnvelope>() {
+
+                @Override
+                public RuntimeEnvelope normalize(JsonObject root, RuntimeEnvelope value) {
+                    TaskControllerState controllerState;
+                    if (!root.has("taskControllerState")) {
+                        controllerState = TaskControllerState.empty();
+                    } else {
+                        if (root.get("taskControllerState")
+                            .isJsonNull() || value.getTaskControllerState() == null) {
+                            throw new IllegalArgumentException("taskControllerState must not be null");
+                        }
+                        controllerState = value.getTaskControllerState();
+                    }
+                    long lastConnectionEpoch = root.has("lastConnectionEpoch") ? value.getLastConnectionEpoch() : 0L;
+                    return new RuntimeEnvelope(
+                        value.getWrittenAtEpochMillis(),
+                        value.getProfileId(),
+                        value.getServerAddress(),
+                        value.getWorldFingerprint(),
+                        lastConnectionEpoch,
+                        value.getUnresolvedDeathState(),
+                        controllerState);
+                }
             });
     }
 
@@ -61,7 +97,8 @@ final class PersistenceJsonCodec {
         return (gson.toJson(value) + "\n").getBytes(StandardCharsets.UTF_8);
     }
 
-    private <T> DecodeResult<T> decode(byte[] content, String expectedKind, Class<T> type, Validator<T> validator) {
+    private <T> DecodeResult<T> decode(byte[] content, String expectedKind, Class<T> type, Validator<T> validator,
+        Normalizer<T> normalizer) {
         if (content == null) {
             throw new IllegalArgumentException("content must not be null");
         }
@@ -91,6 +128,7 @@ final class PersistenceJsonCodec {
             if (value == null) {
                 return DecodeResult.failure(PersistenceLoadStatus.CORRUPT, "document decoded to null");
             }
+            value = normalizer.normalize(root, value);
             validator.validate(value);
             return DecodeResult.loaded(
                 value,
@@ -161,6 +199,11 @@ final class PersistenceJsonCodec {
     private interface Validator<T> {
 
         void validate(T value);
+    }
+
+    private interface Normalizer<T> {
+
+        T normalize(JsonObject root, T value);
     }
 
     static final class DecodeResult<T> {

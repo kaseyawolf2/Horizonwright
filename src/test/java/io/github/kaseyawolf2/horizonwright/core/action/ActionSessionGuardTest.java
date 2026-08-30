@@ -103,12 +103,78 @@ public class ActionSessionGuardTest {
         assertEquals(ActionSessionGuard.Mode.SAFETY_LOCKDOWN, guard.getMode());
         assertEquals(0L, guard.drainGenerationOrZero());
         assertFalse(guard.completeDrain(1L));
-        assertEquals(ActionAuthorizationDecision.BLOCKED_REVOKED_EPOCH, guard.authorizeUnknownAction());
+        assertEquals(ActionAuthorizationDecision.PLAYER_PASSTHROUGH, guard.authorizeUnknownAction());
 
         broker.leaveSafetyLockdown();
         assertEquals(ActionSessionGuard.Mode.QUARANTINED, guard.getMode());
         assertTrue(guard.completeDrain(guard.drainGenerationOrZero()));
         assertTrue(guard.isReadyForSession());
+    }
+
+    @Test
+    public void idleOperatorStopLeavesDirectPlayerPacketsInPlayerMode() {
+        InMemoryActionBroker broker = new InMemoryActionBroker();
+        ActionSessionGuard guard = new ActionSessionGuard();
+        guard.markFirewallInstalled();
+        broker.addRevocationListener(guard);
+
+        broker.enterAutomationLockdown();
+
+        assertEquals(ActionSessionGuard.Mode.PLAYER, guard.getMode());
+        assertEquals(ActionAuthorizationDecision.PLAYER_PASSTHROUGH, guard.authorize(ActionCapability.DIG));
+        assertEquals(ActionAuthorizationDecision.PLAYER_PASSTHROUGH, guard.authorize(ActionCapability.CONTAINER));
+        assertTrue(broker.isAutomationLocked());
+    }
+
+    @Test
+    public void operatorStopDrainsOnlyTheRevokedAutomationSessionThenRestoresPlayerTraffic() {
+        InMemoryActionBroker broker = new InMemoryActionBroker();
+        ActionSessionGuard guard = new ActionSessionGuard();
+        guard.markFirewallInstalled();
+        broker.addRevocationListener(guard);
+        ActionLease lease = broker.tryAcquire("navigation", EnumSet.of(ActionCapability.MOVEMENT))
+            .get();
+        guard.begin(lease);
+
+        broker.enterAutomationLockdown();
+
+        assertEquals(ActionSessionGuard.Mode.QUARANTINED, guard.getMode());
+        assertEquals(ActionAuthorizationDecision.BLOCKED_REVOKED_EPOCH, guard.authorize(ActionCapability.DIG));
+        guard.end(lease);
+        assertTrue(guard.completeDrain(guard.drainGenerationOrZero()));
+
+        assertEquals(ActionSessionGuard.Mode.PLAYER, guard.getMode());
+        assertEquals(ActionAuthorizationDecision.PLAYER_PASSTHROUGH, guard.authorize(ActionCapability.DIG));
+        assertEquals(ActionAuthorizationDecision.PLAYER_PASSTHROUGH, guard.authorize(ActionCapability.CONTAINER));
+        assertFalse(
+            broker.tryAcquire("new automation", EnumSet.of(ActionCapability.DIG))
+                .isPresent());
+        assertTrue(broker.isAutomationLocked());
+    }
+
+    @Test
+    public void forcedProducerFinalizationRestoresPlayerTrafficButCannotReleaseDeathSafety() {
+        InMemoryActionBroker broker = new InMemoryActionBroker();
+        ActionSessionGuard guard = new ActionSessionGuard();
+        guard.markFirewallInstalled();
+        broker.addRevocationListener(guard);
+        ActionLease lease = broker.tryAcquire("navigation", EnumSet.of(ActionCapability.MOVEMENT))
+            .get();
+        guard.begin(lease);
+
+        broker.enterAutomationLockdown();
+        broker.enterSafetyLockdown();
+        guard.end(lease);
+
+        assertEquals(ActionSessionGuard.Mode.SAFETY_LOCKDOWN, guard.getMode());
+        assertEquals(0L, guard.drainGenerationOrZero());
+        assertEquals(ActionAuthorizationDecision.BLOCKED_REVOKED_EPOCH, guard.authorize(ActionCapability.DIG));
+
+        broker.leaveSafetyLockdown();
+        assertEquals(ActionSessionGuard.Mode.QUARANTINED, guard.getMode());
+        assertTrue(guard.completeDrain(guard.drainGenerationOrZero()));
+        assertEquals(ActionAuthorizationDecision.PLAYER_PASSTHROUGH, guard.authorize(ActionCapability.DIG));
+        assertTrue(broker.isAutomationLocked());
     }
 
     @Test
@@ -126,7 +192,7 @@ public class ActionSessionGuardTest {
 
         assertEquals(ActionSessionGuard.Mode.SAFETY_LOCKDOWN, guard.getMode());
         assertEquals(0L, guard.drainGenerationOrZero());
-        assertEquals(ActionAuthorizationDecision.BLOCKED_REVOKED_EPOCH, guard.authorizeUnknownAction());
+        assertEquals(ActionAuthorizationDecision.PLAYER_PASSTHROUGH, guard.authorizeUnknownAction());
     }
 
     @Test

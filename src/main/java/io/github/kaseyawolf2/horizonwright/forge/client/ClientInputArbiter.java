@@ -11,6 +11,8 @@ public final class ClientInputArbiter implements ActionRevocationListener {
 
     @Override
     public void onActionEpochRevoked(ActionRevocation revocation) {
+        // An operator automation stop is producer-scoped: each owner clears only its own inputs.
+        // Only the evidence-driven death interlock may release Minecraft's global key state.
         if (revocation.getReason() != ActionRevocationReason.SAFETY_LOCKDOWN) {
             return;
         }

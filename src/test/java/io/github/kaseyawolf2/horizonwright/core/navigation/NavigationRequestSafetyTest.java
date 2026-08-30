@@ -1,5 +1,6 @@
 package io.github.kaseyawolf2.horizonwright.core.navigation;
 
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
@@ -31,6 +32,14 @@ public class NavigationRequestSafetyTest {
                 expected.getMessage()
                     .contains("timeout"));
         }
+    }
+
+    @Test
+    public void aRequestMaySpanWellBeyondTheFormerSmokeTestRadius() {
+        NavigationRequest request = new NavigationRequest("long-route", 1L, 0, 4_096, 64, -4_096, 1);
+
+        assertEquals(4_096, request.getX());
+        assertEquals(-4_096, request.getZ());
     }
 
     private static void assertRejected(int x, int y, int z, int tolerance) {

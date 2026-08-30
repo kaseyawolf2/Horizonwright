@@ -78,12 +78,20 @@ was installed for this test.
 - Press `H` in a loaded world to open the bootstrap dashboard.
 - Use `/hw panel` to open it from chat.
 - Use `/hw status` to print action-broker and navigation state.
-- Use `/hw goto <x> <y> <z> [tolerance]` for one bounded, lease-gated
-  navigation request. Relative coordinates such as `~4 ~ ~` are accepted.
+- Use `/hw goto <x> <y> <z> [tolerance]` for a lease-gated navigation task.
+  Relative coordinates such as `~256 ~ ~` are accepted; Horizonwright does not
+  impose the old 128-block smoke-test radius.
 - Use `/hw navcancel` to cancel the current navigation request and release
   inputs.
-- Use `/hw stop` to latch the bootstrap emergency stop for the current client
-  session.
+- Use `/hw stop` to stop Horizonwright automation. It revokes automation leases
+  and drains already-queued automation packets, but does not lock direct player
+  movement, mining, inventory use, or unrelated mods.
+- Use `/hw reset` after cleanup drains to re-arm automation. Stopped tasks still
+  require an explicit resume or a newly submitted task.
+
+The manual automation stop is separate from the death/item-preservation
+interlock. Only a verified death-safety transition may engage that narrower,
+packet-level safety state.
 
 The planned `#hw` command surface will be introduced with the controller in
 Milestone 1. `/hw` exists now as a Forge-native bootstrap command so the first

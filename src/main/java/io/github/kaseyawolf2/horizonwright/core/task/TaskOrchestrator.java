@@ -1058,13 +1058,13 @@ public final class TaskOrchestrator implements IHorizonwrightController, ActionR
     }
 
     private void advanceActionAuthorityPast(long previousEpoch) {
-        while (currentActionEpoch() <= previousEpoch) {
-            EpochTransition transition = revokeActionAuthority();
-            if (transition.listenerFailure != null) {
-                throw new IllegalStateException(
-                    "could not establish fresh action authority during restore",
-                    transition.listenerFailure);
-            }
+        try {
+            actionBroker.advanceEpochPast(previousEpoch);
+        } catch (RuntimeException failure) {
+            throw new IllegalStateException("could not establish fresh action authority during restore", failure);
+        }
+        if (currentActionEpoch() <= previousEpoch) {
+            throw new IllegalStateException("action broker did not advance past the persisted epoch floor");
         }
     }
 

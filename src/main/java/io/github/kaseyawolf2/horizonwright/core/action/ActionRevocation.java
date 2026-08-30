@@ -7,8 +7,8 @@ public final class ActionRevocation {
     private final ActionRevocationReason reason;
 
     ActionRevocation(long revokedEpoch, long newEpoch, ActionRevocationReason reason) {
-        if (revokedEpoch < 1L || newEpoch != revokedEpoch + 1L) {
-            throw new IllegalArgumentException("action epochs must advance by exactly one");
+        if (revokedEpoch < 1L || newEpoch <= revokedEpoch) {
+            throw new IllegalArgumentException("action epochs must advance monotonically");
         }
         if (reason == null) {
             throw new IllegalArgumentException("reason must not be null");
