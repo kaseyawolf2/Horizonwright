@@ -114,6 +114,14 @@ Horizonwright normalizes the inclusive bounds, refuses cross-dimension corners,
 and atomically saves the named area to the active world profile. Existing
 schema-v1 profiles without the optional area field load with an empty list, so
 this foundation for farms and animal pens does not invalidate enrolled worlds.
+The first operational-base task contract is also in place: a finite farm pass
+is a CHORE-lane task bound to one named plot and a configured minimum seed
+reserve. Its strict checkpoint freezes every crop position, adapter family,
+block-state fingerprint, required seed identity, maturity/protection evidence,
+verified-mutation count, and next observation index. Restored checkpoints must
+match the task's plot and revision exactly; changed or cross-task evidence is
+rejected instead of replayed. The live crop observer and action backend are the
+next slice, so farm tasks are not yet exposed for submission.
 Clean-volume excavation is now attached to a live, session-owned backend. Every
 observation and action carries the explicit dimension as well as the existing
 geometry, frontier, revision, epoch, and block fingerprint. The observer treats
