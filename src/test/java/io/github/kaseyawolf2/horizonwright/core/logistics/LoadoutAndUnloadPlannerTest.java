@@ -6,6 +6,7 @@ import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
 
 import java.util.Arrays;
+import java.util.Collections;
 
 import org.junit.Test;
 
@@ -72,6 +73,20 @@ public class LoadoutAndUnloadPlannerTest {
         assertThrows(
             IllegalArgumentException.class,
             () -> new NamedLoadout("ambiguous", "Ambiguous", Arrays.asList(anyPick, exactPick)));
+    }
+
+    @Test
+    public void destinationFilterDefersNonmatchingStacksWithoutTreatingThemAsReserved() {
+        NamedLoadout loadout = loadout(reservation("pick", LoadoutRole.TOOL, "TConstruct:pickaxe", 0, null, 1));
+        StorageItemFilter oresOnly = new StorageItemFilter(
+            StorageFilterMode.ALLOW_MATCHES,
+            Collections.singletonList(new StorageItemRule("gregtech:gt.blockores", -1, null)));
+
+        UnloadPlan plan = UnloadPlanner.plan(loadout, Arrays.asList(TINKERS_PICK, ORE, FOOD), oresOnly);
+
+        assertEquals(Collections.singletonList(0), plan.getReservedSlots());
+        assertEquals(Collections.singletonList(1), plan.getUnloadableSlots());
+        assertEquals(Collections.singletonList(2), plan.getDeferredSlots());
     }
 
     private static NamedLoadout loadout(LoadoutReservation... reservations) {

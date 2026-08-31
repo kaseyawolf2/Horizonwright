@@ -44,6 +44,12 @@ public final class ItemFingerprint {
         return count;
     }
 
+    public boolean hasSameIdentity(ItemFingerprint other) {
+        return other != null && metadata == other.metadata
+            && itemId.equals(other.itemId)
+            && dataHash.equals(other.dataHash);
+    }
+
     @Override
     public boolean equals(Object other) {
         if (this == other) {

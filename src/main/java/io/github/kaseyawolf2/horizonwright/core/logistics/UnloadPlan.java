@@ -12,13 +12,15 @@ public final class UnloadPlan {
     private final UnloadPlanStatus status;
     private final List<Integer> reservedSlots;
     private final List<Integer> unloadableSlots;
+    private final List<Integer> deferredSlots;
     private final Map<String, Integer> missingCounts;
 
     UnloadPlan(UnloadPlanStatus status, List<Integer> reservedSlots, List<Integer> unloadableSlots,
-        Map<String, Integer> missingCounts) {
+        List<Integer> deferredSlots, Map<String, Integer> missingCounts) {
         this.status = status;
         this.reservedSlots = Collections.unmodifiableList(new ArrayList<>(reservedSlots));
         this.unloadableSlots = Collections.unmodifiableList(new ArrayList<>(unloadableSlots));
+        this.deferredSlots = Collections.unmodifiableList(new ArrayList<>(deferredSlots));
         this.missingCounts = Collections.unmodifiableMap(new LinkedHashMap<>(missingCounts));
     }
 
@@ -32,6 +34,10 @@ public final class UnloadPlan {
 
     public List<Integer> getUnloadableSlots() {
         return unloadableSlots;
+    }
+
+    public List<Integer> getDeferredSlots() {
+        return deferredSlots;
     }
 
     public Map<String, Integer> getMissingCounts() {

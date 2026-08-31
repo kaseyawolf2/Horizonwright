@@ -16,8 +16,13 @@ public final class UnloadPlanner {
     private UnloadPlanner() {}
 
     public static UnloadPlan plan(NamedLoadout loadout, List<ItemFingerprint> playerSlots) {
-        if (loadout == null || playerSlots == null) {
-            throw new IllegalArgumentException("loadout and playerSlots must not be null");
+        return plan(loadout, playerSlots, StorageItemFilter.acceptAll());
+    }
+
+    public static UnloadPlan plan(NamedLoadout loadout, List<ItemFingerprint> playerSlots,
+        StorageItemFilter destinationFilter) {
+        if (loadout == null || playerSlots == null || destinationFilter == null) {
+            throw new IllegalArgumentException("loadout, playerSlots, and destinationFilter must not be null");
         }
         loadout.validate();
         Set<Integer> reserved = new LinkedHashSet<>();
@@ -42,19 +47,26 @@ public final class UnloadPlanner {
                 UnloadPlanStatus.LOADOUT_INCOMPLETE,
                 new ArrayList<>(reserved),
                 Collections.<Integer>emptyList(),
+                Collections.<Integer>emptyList(),
                 missing);
         }
 
         List<Integer> unloadable = new ArrayList<>();
+        List<Integer> deferred = new ArrayList<>();
         for (int slot = 0; slot < playerSlots.size(); slot++) {
             if (playerSlots.get(slot) != null && !reserved.contains(slot)) {
-                unloadable.add(slot);
+                if (destinationFilter.accepts(playerSlots.get(slot))) {
+                    unloadable.add(slot);
+                } else {
+                    deferred.add(slot);
+                }
             }
         }
         return new UnloadPlan(
             UnloadPlanStatus.READY,
             new ArrayList<>(reserved),
             unloadable,
+            deferred,
             Collections.<String, Integer>emptyMap());
     }
 
