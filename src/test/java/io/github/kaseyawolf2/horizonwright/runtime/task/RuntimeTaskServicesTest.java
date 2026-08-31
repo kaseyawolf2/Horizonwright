@@ -39,6 +39,13 @@ public class RuntimeTaskServicesTest {
         assertTrue(services.unbindRepairBackend(repair));
         assertNull(services.getRepairBackend());
 
+        StubFarm farm = new StubFarm();
+        services.bindFarmBackend(farm);
+        assertSame(farm, services.getFarmBackend());
+        assertFalse(services.unbindFarmBackend(new StubFarm()));
+        assertTrue(services.unbindFarmBackend(farm));
+        assertNull(services.getFarmBackend());
+
         dryRun.enabled = true;
         assertTrue(services.isDryRun());
     }
@@ -117,6 +124,29 @@ public class RuntimeTaskServicesTest {
 
         @Override
         public RepairActionHandle execute(RepairActionRequest request, ActionLease lease) {
+            throw new UnsupportedOperationException();
+        }
+    }
+
+    private static final class StubFarm implements FarmBackend {
+
+        @Override
+        public Availability availability() {
+            return Availability.available("test");
+        }
+
+        @Override
+        public PassSnapshot scan(ScanRequest request) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public TargetSnapshot observe(TargetRequest request) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public ActionHandle execute(ActionRequest request, ActionLease lease) {
             throw new UnsupportedOperationException();
         }
     }

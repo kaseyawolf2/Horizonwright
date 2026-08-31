@@ -81,7 +81,7 @@ public final class HorizonwrightRuntime implements AutoCloseable {
         taskServices = new RuntimeTaskServices(() -> dryRun || closed);
         controller = new TaskOrchestrator(
             clock,
-            new RuntimeTaskRunnerFactory(navigationAccess, taskServices, taskServices, taskServices),
+            new RuntimeTaskRunnerFactory(navigationAccess, taskServices, taskServices, taskServices, taskServices),
             actionBroker);
         excavationServiceCoordinator = new ExcavationServiceCoordinator(controller);
     }

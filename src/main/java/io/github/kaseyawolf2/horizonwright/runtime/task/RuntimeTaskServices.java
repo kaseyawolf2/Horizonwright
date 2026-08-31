@@ -9,7 +9,8 @@ package io.github.kaseyawolf2.horizonwright.runtime.task;
  * attachment from clearing a newer one.
  * </p>
  */
-public final class RuntimeTaskServices implements ExcavationRuntimeAccess, UnloadRuntimeAccess, RepairRuntimeAccess {
+public final class RuntimeTaskServices
+    implements ExcavationRuntimeAccess, UnloadRuntimeAccess, RepairRuntimeAccess, FarmRuntimeAccess {
 
     public interface DryRunSource {
 
@@ -20,6 +21,7 @@ public final class RuntimeTaskServices implements ExcavationRuntimeAccess, Unloa
     private volatile ExcavationBackend excavationBackend;
     private volatile UnloadBackend unloadBackend;
     private volatile RepairBackend repairBackend;
+    private volatile FarmBackend farmBackend;
 
     public RuntimeTaskServices(DryRunSource dryRun) {
         if (dryRun == null) {
@@ -82,10 +84,25 @@ public final class RuntimeTaskServices implements ExcavationRuntimeAccess, Unloa
         return true;
     }
 
+    public synchronized void bindFarmBackend(FarmBackend backend) {
+        if (backend == null) throw new IllegalArgumentException("farm backend must not be null");
+        if (farmBackend != null && farmBackend != backend) {
+            throw new IllegalStateException("another farm backend is already bound to this runtime session");
+        }
+        farmBackend = backend;
+    }
+
+    public synchronized boolean unbindFarmBackend(FarmBackend expected) {
+        if (expected == null || farmBackend != expected) return false;
+        farmBackend = null;
+        return true;
+    }
+
     public synchronized void clear() {
         excavationBackend = null;
         unloadBackend = null;
         repairBackend = null;
+        farmBackend = null;
     }
 
     @Override
@@ -101,6 +118,11 @@ public final class RuntimeTaskServices implements ExcavationRuntimeAccess, Unloa
     @Override
     public RepairBackend getRepairBackend() {
         return repairBackend;
+    }
+
+    @Override
+    public FarmBackend getFarmBackend() {
+        return farmBackend;
     }
 
     @Override
