@@ -158,6 +158,15 @@ forces a fresh observation. Operators can target a vanilla bed from
 night**. Equivalent commands are `/hw sleep <task-id> <bed-location>` and
 `/hw sleepschedule <id> <bed-location>`. This path is automated-test covered but
 has not been installed or physically verified.
+A bounded husbandry-pass task contract is now also present behind a disabled-by-
+default backend boundary. It binds one named pen, vanilla livestock species,
+minimum/maximum adult policy, and a hard per-pass action cap. Every feed, cull,
+or drop-collection decision comes from a complete loaded-pen scan, receives only
+its exact movement/look/use/held-use or attack capabilities, and must obtain a
+backend-confirmed postcondition before the verified-action checkpoint advances.
+The next action always requires a wholly fresh pen observation; pause and
+reconnect cancel the unconfirmed action without advancement. No live Minecraft
+entity adapter or operator control is claimed yet.
 Clean-volume excavation is now attached to a live, session-owned backend. Every
 observation and action carries the explicit dimension as well as the existing
 geometry, frontier, revision, epoch, and block fingerprint. The observer treats

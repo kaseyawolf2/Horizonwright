@@ -14,6 +14,7 @@ public final class RuntimeTaskRunnerFactory implements TaskRunnerFactory {
     private final RepairRuntimeAccess repair;
     private final FarmRuntimeAccess farm;
     private final SleepRuntimeAccess sleep;
+    private final HusbandryRuntimeAccess husbandry;
 
     public RuntimeTaskRunnerFactory(NavigationRuntimeAccess navigation) {
         this(
@@ -93,6 +94,16 @@ public final class RuntimeTaskRunnerFactory implements TaskRunnerFactory {
             sleep);
     }
 
+    public RuntimeTaskRunnerFactory(NavigationRuntimeAccess navigation, HusbandryRuntimeAccess husbandry) {
+        this(
+            navigation,
+            DisabledExcavationRuntimeAccess.INSTANCE,
+            DisabledUnloadRuntimeAccess.INSTANCE,
+            DisabledRepairRuntimeAccess.INSTANCE,
+            DisabledFarmRuntimeAccess.INSTANCE,
+            new HusbandrySleepAccess(husbandry));
+    }
+
     public RuntimeTaskRunnerFactory(NavigationRuntimeAccess navigation, ExcavationRuntimeAccess excavation,
         UnloadRuntimeAccess unload, RepairRuntimeAccess repair, FarmRuntimeAccess farm, SleepRuntimeAccess sleep) {
         if (navigation == null || excavation == null
@@ -108,6 +119,8 @@ public final class RuntimeTaskRunnerFactory implements TaskRunnerFactory {
         this.repair = repair;
         this.farm = farm;
         this.sleep = sleep;
+        this.husbandry = sleep instanceof HusbandryRuntimeAccess ? (HusbandryRuntimeAccess) sleep
+            : DisabledHusbandryRuntimeAccess.INSTANCE;
     }
 
     @Override
@@ -132,6 +145,9 @@ public final class RuntimeTaskRunnerFactory implements TaskRunnerFactory {
         }
         if (SleepTask.TYPE.equals(spec.getType())) {
             return new SleepTaskRunner(spec, checkpoint, sleep);
+        }
+        if (HusbandryTask.TYPE.equals(spec.getType())) {
+            return new HusbandryTaskRunner(spec, checkpoint, husbandry);
         }
         throw new IllegalArgumentException("unsupported runtime task type: " + spec.getType());
     }
@@ -208,6 +224,46 @@ public final class RuntimeTaskRunnerFactory implements TaskRunnerFactory {
         @Override
         public boolean isDryRun() {
             return false;
+        }
+    }
+
+    private enum DisabledHusbandryRuntimeAccess implements HusbandryRuntimeAccess {
+
+        INSTANCE;
+
+        @Override
+        public HusbandryBackend getHusbandryBackend() {
+            return null;
+        }
+
+        @Override
+        public boolean isDryRun() {
+            return false;
+        }
+    }
+
+    private static final class HusbandrySleepAccess implements SleepRuntimeAccess, HusbandryRuntimeAccess {
+
+        private final HusbandryRuntimeAccess husbandry;
+
+        private HusbandrySleepAccess(HusbandryRuntimeAccess husbandry) {
+            if (husbandry == null) throw new IllegalArgumentException("husbandry must not be null");
+            this.husbandry = husbandry;
+        }
+
+        @Override
+        public SleepBackend getSleepBackend() {
+            return null;
+        }
+
+        @Override
+        public HusbandryBackend getHusbandryBackend() {
+            return husbandry.getHusbandryBackend();
+        }
+
+        @Override
+        public boolean isDryRun() {
+            return husbandry.isDryRun();
         }
     }
 }

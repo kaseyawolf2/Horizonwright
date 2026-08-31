@@ -10,7 +10,7 @@ package io.github.kaseyawolf2.horizonwright.runtime.task;
  * </p>
  */
 public final class RuntimeTaskServices implements ExcavationRuntimeAccess, UnloadRuntimeAccess, RepairRuntimeAccess,
-    FarmRuntimeAccess, SleepRuntimeAccess {
+    FarmRuntimeAccess, SleepRuntimeAccess, HusbandryRuntimeAccess {
 
     public interface DryRunSource {
 
@@ -23,6 +23,7 @@ public final class RuntimeTaskServices implements ExcavationRuntimeAccess, Unloa
     private volatile RepairBackend repairBackend;
     private volatile FarmBackend farmBackend;
     private volatile SleepBackend sleepBackend;
+    private volatile HusbandryBackend husbandryBackend;
 
     public RuntimeTaskServices(DryRunSource dryRun) {
         if (dryRun == null) {
@@ -113,12 +114,27 @@ public final class RuntimeTaskServices implements ExcavationRuntimeAccess, Unloa
         return true;
     }
 
+    public synchronized void bindHusbandryBackend(HusbandryBackend backend) {
+        if (backend == null) throw new IllegalArgumentException("husbandry backend must not be null");
+        if (husbandryBackend != null && husbandryBackend != backend) {
+            throw new IllegalStateException("another husbandry backend is already bound to this runtime session");
+        }
+        husbandryBackend = backend;
+    }
+
+    public synchronized boolean unbindHusbandryBackend(HusbandryBackend expected) {
+        if (expected == null || husbandryBackend != expected) return false;
+        husbandryBackend = null;
+        return true;
+    }
+
     public synchronized void clear() {
         excavationBackend = null;
         unloadBackend = null;
         repairBackend = null;
         farmBackend = null;
         sleepBackend = null;
+        husbandryBackend = null;
     }
 
     @Override
@@ -144,6 +160,11 @@ public final class RuntimeTaskServices implements ExcavationRuntimeAccess, Unloa
     @Override
     public SleepBackend getSleepBackend() {
         return sleepBackend;
+    }
+
+    @Override
+    public HusbandryBackend getHusbandryBackend() {
+        return husbandryBackend;
     }
 
     @Override
