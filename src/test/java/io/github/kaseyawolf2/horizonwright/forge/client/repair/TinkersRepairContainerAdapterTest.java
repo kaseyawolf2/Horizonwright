@@ -1,0 +1,95 @@
+package io.github.kaseyawolf2.horizonwright.forge.client.repair;
+
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertThrows;
+import static org.junit.Assert.assertTrue;
+
+import net.minecraft.item.Item;
+import net.minecraft.item.ItemStack;
+import net.minecraft.nbt.NBTTagCompound;
+
+import org.junit.Test;
+
+import io.github.kaseyawolf2.horizonwright.core.repair.RepairToolSnapshot;
+
+public class TinkersRepairContainerAdapterTest {
+
+    @Test
+    public void recognizesOnlyTheTwoPinnedExactContainerClassesAndSlotCounts() {
+        TinkersRepairContainerAdapter.Layout station = TinkersRepairContainerAdapter
+            .layoutFor(TinkersRepairContainerAdapter.TOOL_STATION_CONTAINER);
+        TinkersRepairContainerAdapter.Layout forge = TinkersRepairContainerAdapter
+            .layoutFor(TinkersRepairContainerAdapter.TOOL_FORGE_CONTAINER);
+
+        assertEquals(TinkersStationKind.TOOL_STATION, station.getKind());
+        assertEquals(4, station.getStationSlotCount());
+        assertEquals(TinkersStationKind.TOOL_FORGE, forge.getKind());
+        assertEquals(5, forge.getStationSlotCount());
+        assertNull(TinkersRepairContainerAdapter.layoutFor("addon.SubclassedToolStationContainer"));
+    }
+
+    @Test
+    public void mapsThePinnedStationAndForgePlayerSlotOrderExactly() {
+        assertEquals(4, TinkersRepairContainerAdapter.containerSlotForPlayerInventory(4, 9));
+        assertEquals(30, TinkersRepairContainerAdapter.containerSlotForPlayerInventory(4, 35));
+        assertEquals(31, TinkersRepairContainerAdapter.containerSlotForPlayerInventory(4, 0));
+        assertEquals(39, TinkersRepairContainerAdapter.containerSlotForPlayerInventory(4, 8));
+
+        assertEquals(5, TinkersRepairContainerAdapter.containerSlotForPlayerInventory(5, 9));
+        assertEquals(31, TinkersRepairContainerAdapter.containerSlotForPlayerInventory(5, 35));
+        assertEquals(32, TinkersRepairContainerAdapter.containerSlotForPlayerInventory(5, 0));
+        assertEquals(40, TinkersRepairContainerAdapter.containerSlotForPlayerInventory(5, 8));
+    }
+
+    @Test
+    public void stableToolIdentityExcludesOnlyDamageAndRetainsOtherNbt() {
+        Item item = new FakeModifyableItem();
+        RepairToolSnapshot damaged = TinkersRepairContainerAdapter
+            .readTool(tool(item, 700, 1000, 3, "head-a"), 2, "TConstruct:pickaxe");
+        RepairToolSnapshot repaired = TinkersRepairContainerAdapter
+            .readTool(tool(item, 500, 1000, 3, "head-a"), 2, "TConstruct:pickaxe");
+        RepairToolSnapshot changedPart = TinkersRepairContainerAdapter
+            .readTool(tool(item, 500, 1000, 3, "head-b"), 2, "TConstruct:pickaxe");
+
+        assertEquals(damaged.getStableToolIdentity(), repaired.getStableToolIdentity());
+        assertTrue(
+            !damaged.getStableToolIdentity()
+                .equals(changedPart.getStableToolIdentity()));
+        assertEquals(700, damaged.getDamage());
+        assertEquals(1000, damaged.getMaximumDamage());
+        assertEquals(2, damaged.getReservedInventorySlot());
+    }
+
+    @Test
+    public void missingExactTinkersDurabilityEvidenceIsRejected() {
+        ItemStack stack = new ItemStack(new FakeModifyableItem());
+        NBTTagCompound root = new NBTTagCompound();
+        root.setTag("InfiTool", new NBTTagCompound());
+        stack.setTagCompound(root);
+
+        assertThrows(
+            IllegalStateException.class,
+            () -> TinkersRepairContainerAdapter.readTool(stack, 0, "TConstruct:pickaxe"));
+    }
+
+    private static ItemStack tool(Item item, int damage, int totalDurability, int modifiers, String headIdentity) {
+        ItemStack stack = new ItemStack(item, 1, 0);
+        NBTTagCompound root = new NBTTagCompound();
+        NBTTagCompound base = new NBTTagCompound();
+        base.setInteger("Damage", damage);
+        base.setInteger("TotalDurability", totalDurability);
+        base.setInteger("Modifiers", modifiers);
+        base.setString("HeadIdentity", headIdentity);
+        root.setTag("InfiTool", base);
+        stack.setTagCompound(root);
+        return stack;
+    }
+
+    public static final class FakeModifyableItem extends Item {
+
+        public String getBaseTagName() {
+            return "InfiTool";
+        }
+    }
+}

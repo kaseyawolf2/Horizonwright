@@ -56,7 +56,7 @@ remote commit URL for them.
 | Farming and CropsNH behavior | `REIMPLEMENT` | Use exact-version public APIs and independently recorded ordinary-crop fixtures. |
 | GT prospecting grid calculations | `REIMPLEMENT` | Use coordinate fixtures and an independent implementation. |
 | Storage/container transactions | `REIMPLEMENT` | New epoch-bound transactional service. |
-| Tinkers classification and repair behavior | `REIMPLEMENT` | Exact-version adapter; no implementation types in core or task packages. |
+| Tinkers classification and repair behavior | `REIMPLEMENT` | Exact TConstruct `1.14.93-GTNH`, TGregworks `1.0.33`, and Mantle `0.5.4` source hashes gate a reflection-isolated adapter; no implementation types enter core or task packages. |
 | Piston Boots movement behavior | `REIMPLEMENT` | Capability snapshots replace mutable global settings. |
 
 ## Compatibility rule
