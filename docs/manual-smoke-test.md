@@ -106,6 +106,19 @@ slot, rejected transaction, timeout, disconnect, and restart must all stop
 without replay. This checkpoint is not yet a recorded physical result, and
 automatic station population is still outstanding.
 
+## Pending excavation service-composition checkpoint
+
+After the profile editors are available, configure one disposable excavation
+with both a named unload endpoint and a named repair station. Cause an unload
+threshold at a recognizable frontier and confirm exactly one unload child is
+shown, the parent remains blocked until the child is verified complete, and the
+parent then resumes the identical frontier. Repeat for repair. Disconnect once
+while a child is queued and once after its final transaction but before the
+parent resumes; each reconnect must show the same child rather than create a
+duplicate. A failed or cancelled child must leave the parent blocked for
+operator inspection. This checkpoint is automated-test covered but has not yet
+been physically recorded.
+
 ## Recorded physical result
 
 On 2026-08-30, the operator completed the long-route, inventory-during-walk,

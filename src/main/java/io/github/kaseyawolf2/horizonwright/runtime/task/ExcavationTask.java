@@ -21,11 +21,22 @@ public final class ExcavationTask {
     public static final String RADIUS = "radius";
     public static final String BOTTOM_Y = "bottomY";
     public static final String TOP_Y = "topY";
+    static final String LOADOUT_ID = "service.loadoutId";
+    static final String STORAGE_ID = "service.storageId";
+    static final String REPAIR_STATION_ID = "service.repairStationId";
+    static final String RESERVED_TOOL_SLOT = "service.reservedToolSlot";
+    static final String PREDICTED_WORK_DAMAGE = "service.predictedWorkDamage";
 
     private ExcavationTask() {}
 
     public static TaskSpec cleanVolumeCylinder(String taskId, int dimensionId, int centerX, int centerZ, int radius,
         int bottomY, int topY) {
+        return cleanVolumeCylinder(taskId, dimensionId, centerX, centerZ, radius, bottomY, topY, null);
+    }
+
+    /** Creates a clean-volume excavation with optional durable unload and repair service bindings. */
+    public static TaskSpec cleanVolumeCylinder(String taskId, int dimensionId, int centerX, int centerZ, int radius,
+        int bottomY, int topY, ExcavationServicePolicy servicePolicy) {
         CylinderExcavationSpec cylinder = new CylinderExcavationSpec(
             dimensionId,
             centerX,
@@ -43,12 +54,20 @@ public final class ExcavationTask {
         parameters.put(RADIUS, Integer.toString(cylinder.getRadius()));
         parameters.put(BOTTOM_Y, Integer.toString(cylinder.getBottomY()));
         parameters.put(TOP_Y, Integer.toString(cylinder.getTopY()));
+        if (servicePolicy != null) {
+            servicePolicy.writeTo(parameters);
+        }
         return new TaskSpec(
             taskId,
             TYPE,
             "Excavate clean cylinder at " + centerX + ", " + centerZ,
             TaskLane.FALLBACK,
             parameters);
+    }
+
+    static ExcavationServicePolicy servicePolicy(TaskSpec spec) {
+        parse(spec);
+        return ExcavationServicePolicy.parse(spec.getParameters());
     }
 
     static CylinderExcavationSpec parse(TaskSpec spec) {

@@ -22,6 +22,17 @@ public final class UnloadTask {
         return new TaskSpec(id, TYPE, "Unload at " + storageId.trim(), TaskLane.CHORE, parameters);
     }
 
+    static TaskSpec createLinked(String id, String loadoutId, String storageId, String parentTaskId,
+        long parentCheckpointRevision) {
+        Map<String, String> parameters = new LinkedHashMap<>(create(id, loadoutId, storageId).getParameters());
+        LinkedServiceTask.write(
+            parameters,
+            parentTaskId,
+            parentCheckpointRevision,
+            io.github.kaseyawolf2.horizonwright.core.excavation.ExcavationSuspensionReason.UNLOADING_REQUIRED);
+        return new TaskSpec(id, TYPE, "Unload at " + storageId.trim(), TaskLane.CHORE, parameters);
+    }
+
     static String loadoutId(TaskSpec spec) {
         requireType(spec);
         return requireText(

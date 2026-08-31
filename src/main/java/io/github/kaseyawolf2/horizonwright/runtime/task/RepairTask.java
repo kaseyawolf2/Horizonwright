@@ -27,6 +27,18 @@ public final class RepairTask {
         return new TaskSpec(id, TYPE, "Repair at " + stationId.trim(), TaskLane.CHORE, parameters);
     }
 
+    static TaskSpec createLinked(String id, String stationId, int reservedInventorySlot, int predictedWorkDamage,
+        String parentTaskId, long parentCheckpointRevision) {
+        Map<String, String> parameters = new LinkedHashMap<>(
+            create(id, stationId, reservedInventorySlot, predictedWorkDamage).getParameters());
+        LinkedServiceTask.write(
+            parameters,
+            parentTaskId,
+            parentCheckpointRevision,
+            io.github.kaseyawolf2.horizonwright.core.excavation.ExcavationSuspensionReason.REPAIR_REQUIRED);
+        return new TaskSpec(id, TYPE, "Repair at " + stationId.trim(), TaskLane.CHORE, parameters);
+    }
+
     static String stationId(TaskSpec spec) {
         requireType(spec);
         return requireText(

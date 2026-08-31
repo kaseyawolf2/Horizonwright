@@ -19,6 +19,7 @@ import io.github.kaseyawolf2.horizonwright.core.task.TaskOrchestrator;
 import io.github.kaseyawolf2.horizonwright.core.task.TaskSnapshot;
 import io.github.kaseyawolf2.horizonwright.core.task.TaskSpec;
 import io.github.kaseyawolf2.horizonwright.core.task.TaskState;
+import io.github.kaseyawolf2.horizonwright.runtime.task.ExcavationServiceCoordinator;
 import io.github.kaseyawolf2.horizonwright.runtime.task.GoToTask;
 import io.github.kaseyawolf2.horizonwright.runtime.task.NavigationRuntimeAccess;
 import io.github.kaseyawolf2.horizonwright.runtime.task.RuntimeTaskRunnerFactory;
@@ -33,6 +34,7 @@ public final class HorizonwrightRuntime implements AutoCloseable {
     private final ActionSessionGuard actionSessionGuard;
     private final RuntimeTaskServices taskServices;
     private final TaskOrchestrator controller;
+    private final ExcavationServiceCoordinator excavationServiceCoordinator;
     private final long startedAtNanos = System.nanoTime();
 
     private volatile NavigationBackend navigationBackend;
@@ -80,6 +82,7 @@ public final class HorizonwrightRuntime implements AutoCloseable {
             clock,
             new RuntimeTaskRunnerFactory(navigationAccess, taskServices, taskServices),
             actionBroker);
+        excavationServiceCoordinator = new ExcavationServiceCoordinator(controller);
     }
 
     public static HorizonwrightRuntime getInstance() {
@@ -328,6 +331,11 @@ public final class HorizonwrightRuntime implements AutoCloseable {
                 navigationDiagnostic = "Navigation cleanup failed: " + describe(failure);
                 HorizonwrightMod.LOG.error("Navigation backend client tick failed", failure);
             }
+        }
+        try {
+            excavationServiceCoordinator.coordinate(controller.snapshot());
+        } catch (RuntimeException failure) {
+            HorizonwrightMod.LOG.error("Excavation service coordination failed safely", failure);
         }
         return controller.tick(environment);
     }

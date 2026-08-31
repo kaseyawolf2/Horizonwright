@@ -87,6 +87,17 @@ to pass the shared server-confirmed boundary and a fresh synchronized snapshot
 to prove the repaired stable tool identity is in that reserved slot. The
 prepared-station path is automated-test covered but remains physically
 unverified and does not yet populate the station inputs on its own.
+Excavation service interruptions are now composed by the session runtime rather
+than by a task runner or GUI. An excavation specification can persist named
+unload and repair bindings. At an exact unloading or repair checkpoint, the
+runtime creates one deterministic child task whose parameters authenticate the
+parent task, checkpoint revision, and suspension reason. A completed matching
+child is the only event that resumes the parent; failed, cancelled, incomplete,
+malformed, or colliding work leaves it blocked. The link survives controller
+persistence, so reconnect cannot duplicate the service operation, and the
+resumed excavation retains the same frontier. This composition is covered by
+automated completion, failure, collision, and restart tests but remains
+physically unverified pending the profile editors and prepared-station test.
 Unattended operation remains disabled.
 
 ## Pinned target
