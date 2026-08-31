@@ -35,6 +35,9 @@ import io.github.kaseyawolf2.horizonwright.forge.client.network.ContainerTransac
 import io.github.kaseyawolf2.horizonwright.forge.client.persistence.SingleplayerWorldBindingEvidence;
 import io.github.kaseyawolf2.horizonwright.forge.client.persistence.SingleplayerWorldMarkerRegistry;
 import io.github.kaseyawolf2.horizonwright.forge.client.persistence.SingleplayerWorldMarkerSnapshot;
+import io.github.kaseyawolf2.horizonwright.forge.client.repair.LiveTinkersRepairBackend;
+import io.github.kaseyawolf2.horizonwright.forge.client.repair.ProfileTinkersRepairConfiguration;
+import io.github.kaseyawolf2.horizonwright.forge.client.repair.TinkersRepairCompatibilityProbe;
 import io.github.kaseyawolf2.horizonwright.forge.client.safety.LiveClientDeathSafetyBoundaryFactory;
 import io.github.kaseyawolf2.horizonwright.runtime.persistence.session.ClientProfileBindingCoordinator;
 import io.github.kaseyawolf2.horizonwright.runtime.persistence.session.ClientProfileBindingObservation;
@@ -71,6 +74,7 @@ public final class ClientBootstrap {
     private ContainerTransactionPacketCoordinator containerTransactions;
     private LiveContainerTransactionExecutor containerTransactionExecutor;
     private LiveVanillaChestUnloadBackend liveUnloadBackend;
+    private LiveTinkersRepairBackend liveRepairBackend;
     private boolean initialized;
 
     private ClientBootstrap() {}
@@ -252,6 +256,13 @@ public final class ClientBootstrap {
                 containerTransactionExecutor);
             attachedRuntime.getTaskServices()
                 .bindUnloadBackend(liveUnloadBackend);
+            liveRepairBackend = new LiveTinkersRepairBackend(
+                minecraft,
+                new ProfileTinkersRepairConfiguration(minecraft, persistenceStore, identity),
+                containerTransactionExecutor,
+                TinkersRepairCompatibilityProbe.inspect());
+            attachedRuntime.getTaskServices()
+                .bindRepairBackend(liveRepairBackend);
             packetFirewall = new ClientPacketFirewallInstaller(
                 attachedRuntime.getActionSessionGuard(),
                 deathSafetyBoundaries.requirePacketBridgeFactory(attachedRuntime),
@@ -282,6 +293,10 @@ public final class ClientBootstrap {
             attachedRuntime.getTaskServices()
                 .unbindUnloadBackend(liveUnloadBackend);
         }
+        if (attachedRuntime != null && liveRepairBackend != null) {
+            attachedRuntime.getTaskServices()
+                .unbindRepairBackend(liveRepairBackend);
+        }
         if (runtimeSessions != null && activeIdentity != null && connectionToken != null) {
             runtimeSessions.worldUnavailable(activeIdentity, connectionToken);
             runtimeSessions.unbindProfile();
@@ -296,6 +311,7 @@ public final class ClientBootstrap {
         containerTransactions = null;
         containerTransactionExecutor = null;
         liveUnloadBackend = null;
+        liveRepairBackend = null;
     }
 
     private void preemptForPhysicalInput(int keyCode) {

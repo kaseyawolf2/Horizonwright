@@ -74,6 +74,9 @@ public class ProfileLoadoutPersistenceTest {
         assertTrue(
             reloaded.getNamedStorageEndpoints()
                 .isEmpty());
+        assertTrue(
+            reloaded.getNamedRepairStations()
+                .isEmpty());
     }
 
     @Test
@@ -109,7 +112,7 @@ public class ProfileLoadoutPersistenceTest {
     }
 
     @Test
-    public void legacyProfileWithoutStorageEndpointFieldNormalizesToEmpty() {
+    public void legacyProfileWithoutStorageOrRepairFieldsNormalizesToEmpty() {
         ProfileEnvelope profile = new ProfileEnvelope(
             20L,
             identity(),
@@ -119,6 +122,7 @@ public class ProfileLoadoutPersistenceTest {
         PersistenceJsonCodec codec = new PersistenceJsonCodec();
         String encoded = new String(codec.encodeProfile(profile), StandardCharsets.UTF_8);
         String legacy = encoded.replaceFirst(",?\\s*\"namedStorageEndpoints\"\\s*:\\s*\\[\\s*\\]", "");
+        legacy = legacy.replaceFirst(",?\\s*\"namedRepairStations\"\\s*:\\s*\\[\\s*\\]", "");
 
         PersistenceJsonCodec.DecodeResult<ProfileEnvelope> decoded = codec
             .decodeProfile(legacy.getBytes(StandardCharsets.UTF_8));
@@ -128,6 +132,42 @@ public class ProfileLoadoutPersistenceTest {
             decoded.getValue()
                 .getNamedStorageEndpoints()
                 .isEmpty());
+        assertTrue(
+            decoded.getValue()
+                .getNamedRepairStations()
+                .isEmpty());
+    }
+
+    @Test
+    public void namedRepairStationRoundTripsExactLocationAndLoadoutBindings() throws Exception {
+        NamedLocation location = new NamedLocation("forge-room", "Tool forge", 0, 8, 65, -2);
+        NamedLoadout loadout = new NamedLoadout("mining", "Mining", Collections.emptyList());
+        NamedRepairStation station = new NamedRepairStation(
+            "tool-forge",
+            "Main tool forge",
+            location.getId(),
+            loadout.getId());
+        ProfileEnvelope profile = new ProfileEnvelope(
+            20L,
+            identity(),
+            Collections.emptyList(),
+            Collections.singletonList(location),
+            Collections.emptyList(),
+            Collections.singletonList(loadout),
+            Collections.emptyList(),
+            Collections.singletonList(station));
+        HorizonwrightPersistenceStore store = store();
+        ProfileStatePaths paths = store.pathsForProfile("profile");
+
+        store.saveProfile(paths, profile);
+        ProfileEnvelope reloaded = store.loadProfile(paths)
+            .getValue();
+
+        assertEquals(profile, reloaded);
+        assertEquals(
+            station,
+            reloaded.getNamedRepairStations()
+                .get(0));
     }
 
     @Test(expected = IllegalArgumentException.class)
@@ -141,6 +181,21 @@ public class ProfileLoadoutPersistenceTest {
             Collections.emptyList(),
             Collections.singletonList(
                 new NamedStorageEndpoint("ore-chest", "Ore chest", "missing", StorageItemFilter.acceptAll())));
+    }
+
+    @Test(expected = IllegalArgumentException.class)
+    public void repairStationCannotReferenceAnUnknownLoadout() {
+        NamedLocation location = new NamedLocation("forge-room", "Tool forge", 0, 8, 65, -2);
+        new ProfileEnvelope(
+            20L,
+            identity(),
+            Collections.emptyList(),
+            Collections.singletonList(location),
+            Collections.emptyList(),
+            Collections.emptyList(),
+            Collections.emptyList(),
+            Collections
+                .singletonList(new NamedRepairStation("tool-forge", "Main tool forge", location.getId(), "missing")));
     }
 
     private HorizonwrightPersistenceStore store() throws Exception {

@@ -23,7 +23,7 @@ import io.github.kaseyawolf2.horizonwright.core.container.ItemFingerprint;
 /** Captures an immutable, exact view of the currently synchronized client container. */
 public final class MinecraftContainerSnapshotter {
 
-    interface ItemIdentityResolver {
+    public interface ItemIdentityResolver {
 
         String identity(Item item);
     }
@@ -37,7 +37,7 @@ public final class MinecraftContainerSnapshotter {
         });
     }
 
-    MinecraftContainerSnapshotter(ItemIdentityResolver itemIdentities) {
+    public MinecraftContainerSnapshotter(ItemIdentityResolver itemIdentities) {
         if (itemIdentities == null) {
             throw new IllegalArgumentException("itemIdentities must not be null");
         }
@@ -96,7 +96,7 @@ public final class MinecraftContainerSnapshotter {
             fingerprint(cursor));
     }
 
-    ItemFingerprint fingerprint(ItemStack stack) {
+    public ItemFingerprint fingerprint(ItemStack stack) {
         if (stack == null) {
             return null;
         }

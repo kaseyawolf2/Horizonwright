@@ -22,6 +22,7 @@ import io.github.kaseyawolf2.horizonwright.core.logistics.NamedLoadout;
 import io.github.kaseyawolf2.horizonwright.core.logistics.StorageItemFilter;
 import io.github.kaseyawolf2.horizonwright.core.persistence.HorizonwrightPersistenceStore;
 import io.github.kaseyawolf2.horizonwright.core.persistence.NamedLocation;
+import io.github.kaseyawolf2.horizonwright.core.persistence.NamedRepairStation;
 import io.github.kaseyawolf2.horizonwright.core.persistence.NamedRoute;
 import io.github.kaseyawolf2.horizonwright.core.persistence.NamedStorageEndpoint;
 import io.github.kaseyawolf2.horizonwright.core.persistence.PersistenceLoadStatus;
@@ -123,6 +124,7 @@ public class ClientProfileBindingCoordinatorTest {
             "Home chest",
             home.getId(),
             StorageItemFilter.acceptAll());
+        NamedRepairStation repair = new NamedRepairStation("home-forge", "Home forge", home.getId(), loadout.getId());
         stores.profiles.saveProfile(
             stores.profiles.pathsForProfile(previous.getProfileId()),
             new ProfileEnvelope(
@@ -132,7 +134,8 @@ public class ClientProfileBindingCoordinatorTest {
                 Collections.singletonList(home),
                 Collections.emptyList(),
                 Collections.singletonList(loadout),
-                Collections.singletonList(storage)));
+                Collections.singletonList(storage),
+                Collections.singletonList(repair)));
         ProfileBindingKey replacementKey = ProfileBindingKey.multiplayer(ENDPOINT, "world-after-reset");
         ClientProfileBindingCoordinator coordinator = coordinator(stores, ids(), ids("confirm-reset"), 20L);
 
@@ -167,6 +170,7 @@ public class ClientProfileBindingCoordinatorTest {
         assertEquals(Collections.singletonList(home), persisted.getNamedLocations());
         assertEquals(Collections.singletonList(loadout), persisted.getNamedLoadouts());
         assertEquals(Collections.singletonList(storage), persisted.getNamedStorageEndpoints());
+        assertEquals(Collections.singletonList(repair), persisted.getNamedRepairStations());
         assertEquals(
             1,
             persisted.getReassociations()

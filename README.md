@@ -74,6 +74,19 @@ runtime closes, preventing a prior connection from clearing or using a newer
 session's service. This live unload path is covered by automated layout,
 capacity, cursor, persistence, transaction-owner, and lifecycle tests but has
 not yet been installed into the Prism instance or physically exercised.
+Pinned Tinkers repair now has the corresponding live prepared-station path.
+The adapter follows the actual 1.14.93-GTNH semantics: station slot `1` is the
+damaged input, slots `2...` are materials, and slot `0` is the repaired output
+preview. A named repair station binds one exact world location to one loadout;
+the live adapter requires both the input tool and every consumed material to
+match the appropriate loadout roles. It derives exact material decrements from
+the preview's `ToRemove` evidence, strips that transient tag from the predicted
+final tool, then plans only the two normal clicks which take the output and put
+it back into the empty reserved player slot. Completion requires both clicks
+to pass the shared server-confirmed boundary and a fresh synchronized snapshot
+to prove the repaired stable tool identity is in that reserved slot. The
+prepared-station path is automated-test covered but remains physically
+unverified and does not yet populate the station inputs on its own.
 Unattended operation remains disabled.
 
 ## Pinned target

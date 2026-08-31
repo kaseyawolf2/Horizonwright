@@ -15,15 +15,20 @@ public final class TinkersRepairContainerEvidence {
     private final int stationSlotCount;
     private final int reservedContainerSlot;
     private final RepairToolSnapshot tool;
+    private final RepairToolSnapshot predictedOutput;
+    private final int predictedMaterialConsumed;
     private final List<ItemFingerprint> materialSlots;
 
     TinkersRepairContainerEvidence(TinkersStationKind stationKind, int windowId, int stationSlotCount,
-        int reservedContainerSlot, RepairToolSnapshot tool, List<ItemFingerprint> materialSlots) {
+        int reservedContainerSlot, RepairToolSnapshot tool, RepairToolSnapshot predictedOutput,
+        int predictedMaterialConsumed, List<ItemFingerprint> materialSlots) {
         this.stationKind = stationKind;
         this.windowId = windowId;
         this.stationSlotCount = stationSlotCount;
         this.reservedContainerSlot = reservedContainerSlot;
         this.tool = tool;
+        this.predictedOutput = predictedOutput;
+        this.predictedMaterialConsumed = predictedMaterialConsumed;
         this.materialSlots = Collections.unmodifiableList(new ArrayList<>(materialSlots));
     }
 
@@ -45,6 +50,18 @@ public final class TinkersRepairContainerEvidence {
 
     public RepairToolSnapshot getTool() {
         return tool;
+    }
+
+    public RepairToolSnapshot getInputTool() {
+        return tool;
+    }
+
+    public RepairToolSnapshot getPredictedOutput() {
+        return predictedOutput;
+    }
+
+    public int getPredictedMaterialConsumed() {
+        return predictedMaterialConsumed;
     }
 
     public List<ItemFingerprint> getMaterialSlots() {

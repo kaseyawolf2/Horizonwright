@@ -55,11 +55,17 @@ final class PersistenceJsonCodec {
                     java.util.List<NamedStorageEndpoint> storageEndpoints = root.has("namedStorageEndpoints")
                         ? value.getNamedStorageEndpoints()
                         : java.util.Collections.<NamedStorageEndpoint>emptyList();
+                    java.util.List<NamedRepairStation> repairStations = root.has("namedRepairStations")
+                        ? value.getNamedRepairStations()
+                        : java.util.Collections.<NamedRepairStation>emptyList();
                     if (loadouts == null) {
                         throw new IllegalArgumentException("namedLoadouts must not be null");
                     }
                     if (storageEndpoints == null) {
                         throw new IllegalArgumentException("namedStorageEndpoints must not be null");
+                    }
+                    if (repairStations == null) {
+                        throw new IllegalArgumentException("namedRepairStations must not be null");
                     }
                     return new ProfileEnvelope(
                         value.getWrittenAtEpochMillis(),
@@ -68,7 +74,8 @@ final class PersistenceJsonCodec {
                         value.getNamedLocations(),
                         value.getNamedRoutes(),
                         loadouts,
-                        storageEndpoints);
+                        storageEndpoints,
+                        repairStations);
                 }
             });
     }

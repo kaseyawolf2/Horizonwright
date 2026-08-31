@@ -20,6 +20,7 @@ public final class ProfileEnvelope {
     private final List<NamedRoute> namedRoutes;
     private final List<NamedLoadout> namedLoadouts;
     private final List<NamedStorageEndpoint> namedStorageEndpoints;
+    private final List<NamedRepairStation> namedRepairStations;
 
     public ProfileEnvelope(long writtenAtEpochMillis, WorldProfileIdentity identity,
         List<ProfileReassociation> reassociations, List<NamedLocation> namedLocations, List<NamedRoute> namedRoutes) {
@@ -32,7 +33,8 @@ public final class ProfileEnvelope {
             namedLocations,
             namedRoutes,
             Collections.<NamedLoadout>emptyList(),
-            Collections.<NamedStorageEndpoint>emptyList());
+            Collections.<NamedStorageEndpoint>emptyList(),
+            Collections.<NamedRepairStation>emptyList());
     }
 
     public ProfileEnvelope(long writtenAtEpochMillis, WorldProfileIdentity identity,
@@ -47,7 +49,8 @@ public final class ProfileEnvelope {
             namedLocations,
             namedRoutes,
             namedLoadouts,
-            Collections.<NamedStorageEndpoint>emptyList());
+            Collections.<NamedStorageEndpoint>emptyList(),
+            Collections.<NamedRepairStation>emptyList());
     }
 
     public ProfileEnvelope(long writtenAtEpochMillis, WorldProfileIdentity identity,
@@ -62,13 +65,31 @@ public final class ProfileEnvelope {
             namedLocations,
             namedRoutes,
             namedLoadouts,
-            namedStorageEndpoints);
+            namedStorageEndpoints,
+            Collections.<NamedRepairStation>emptyList());
+    }
+
+    public ProfileEnvelope(long writtenAtEpochMillis, WorldProfileIdentity identity,
+        List<ProfileReassociation> reassociations, List<NamedLocation> namedLocations, List<NamedRoute> namedRoutes,
+        List<NamedLoadout> namedLoadouts, List<NamedStorageEndpoint> namedStorageEndpoints,
+        List<NamedRepairStation> namedRepairStations) {
+        this(
+            PersistenceSchema.CURRENT_VERSION,
+            PersistenceSchema.PROFILE_DOCUMENT_KIND,
+            writtenAtEpochMillis,
+            identity,
+            reassociations,
+            namedLocations,
+            namedRoutes,
+            namedLoadouts,
+            namedStorageEndpoints,
+            namedRepairStations);
     }
 
     private ProfileEnvelope(int schemaVersion, String documentKind, long writtenAtEpochMillis,
         WorldProfileIdentity identity, List<ProfileReassociation> reassociations, List<NamedLocation> namedLocations,
         List<NamedRoute> namedRoutes, List<NamedLoadout> namedLoadouts,
-        List<NamedStorageEndpoint> namedStorageEndpoints) {
+        List<NamedStorageEndpoint> namedStorageEndpoints, List<NamedRepairStation> namedRepairStations) {
         this.schemaVersion = schemaVersion;
         this.documentKind = documentKind;
         this.writtenAtEpochMillis = writtenAtEpochMillis;
@@ -78,6 +99,7 @@ public final class ProfileEnvelope {
         this.namedRoutes = immutableCopy(namedRoutes, "namedRoutes");
         this.namedLoadouts = immutableCopy(namedLoadouts, "namedLoadouts");
         this.namedStorageEndpoints = immutableCopy(namedStorageEndpoints, "namedStorageEndpoints");
+        this.namedRepairStations = immutableCopy(namedRepairStations, "namedRepairStations");
         validate();
     }
 
@@ -115,6 +137,10 @@ public final class ProfileEnvelope {
 
     public List<NamedStorageEndpoint> getNamedStorageEndpoints() {
         return Collections.unmodifiableList(namedStorageEndpoints);
+    }
+
+    public List<NamedRepairStation> getNamedRepairStations() {
+        return Collections.unmodifiableList(namedRepairStations);
     }
 
     void validate() {
@@ -163,6 +189,24 @@ public final class ProfileEnvelope {
                     "storage endpoint '" + endpoint.getId()
                         + "' references missing location '"
                         + endpoint.getLocationId()
+                        + "'");
+            }
+        }
+        PersistenceValidation.requireUniqueIds(namedRepairStations, "profile namedRepairStations");
+        for (NamedRepairStation station : namedRepairStations) {
+            station.validate();
+            if (!locationIds.contains(station.getLocationId())) {
+                throw new IllegalArgumentException(
+                    "repair station '" + station.getId()
+                        + "' references missing location '"
+                        + station.getLocationId()
+                        + "'");
+            }
+            if (!loadoutIds.contains(station.getLoadoutId())) {
+                throw new IllegalArgumentException(
+                    "repair station '" + station.getId()
+                        + "' references missing loadout '"
+                        + station.getLoadoutId()
                         + "'");
             }
         }
@@ -220,7 +264,8 @@ public final class ProfileEnvelope {
             && Objects.equals(namedLocations, that.namedLocations)
             && Objects.equals(namedRoutes, that.namedRoutes)
             && Objects.equals(namedLoadouts, that.namedLoadouts)
-            && Objects.equals(namedStorageEndpoints, that.namedStorageEndpoints);
+            && Objects.equals(namedStorageEndpoints, that.namedStorageEndpoints)
+            && Objects.equals(namedRepairStations, that.namedRepairStations);
     }
 
     @Override
@@ -234,6 +279,7 @@ public final class ProfileEnvelope {
             namedLocations,
             namedRoutes,
             namedLoadouts,
-            namedStorageEndpoints);
+            namedStorageEndpoints,
+            namedRepairStations);
     }
 }

@@ -90,6 +90,22 @@ chest coordinate, modded/subclassed container, disconnect, rejection, and
 timeout all stop without replaying a click. This checkpoint is not yet a
 recorded physical result.
 
+## Pending live Tinkers repair checkpoint
+
+Do not run this checkpoint until the profile editor can create the named repair
+station and its loadout without hand-editing JSON. Use the pinned Tool Station
+or Tool Forge at the configured named location, a disposable damaged tool, and
+cheap approved repair material. For the current prepared-station slice, place
+the damaged tool in semantic input slot `1` and material in slots `2...`, leave
+the configured reserved player slot and cursor empty, and confirm slot `0`
+shows a lower-damage output preview. Verify Horizonwright takes that exact
+output, consumes only the preview-declared approved material amounts, and
+returns the same stable tool identity to the reserved slot. Wrong coordinates,
+unapproved tool/material identities, altered preview NBT, occupied reserved
+slot, rejected transaction, timeout, disconnect, and restart must all stop
+without replay. This checkpoint is not yet a recorded physical result, and
+automatic station population is still outstanding.
+
 ## Recorded physical result
 
 On 2026-08-30, the operator completed the long-route, inventory-during-walk,

@@ -47,17 +47,23 @@ public final class TinkersRepairContainerAdapter {
         }
         try {
             validateLayout(container, playerInventory, layout);
-            Slot toolSlot = slot(container, 0);
-            ItemStack tool = toolSlot.getStack();
-            if (tool == null) {
-                throw new IllegalStateException("recognized repair container has no tool in semantic slot 0");
+            ItemStack input = slot(container, 1).getStack();
+            if (input == null) {
+                throw new IllegalStateException("recognized repair container has no input tool in semantic slot 1");
             }
-            RepairToolSnapshot toolEvidence = readTool(tool, reservedInventorySlot);
+            RepairToolSnapshot toolEvidence = readTool(input, reservedInventorySlot);
             List<ItemFingerprint> materials = new ArrayList<>();
-            for (int index = 1; index < layout.stationSlotCount; index++) {
+            List<ItemStack> materialStacks = new ArrayList<>();
+            for (int index = 2; index < layout.stationSlotCount; index++) {
                 ItemStack material = slot(container, index).getStack();
                 materials.add(material == null ? null : fingerprint(material));
+                materialStacks.add(material);
             }
+            ItemStack finalizedOutput = finalizedOutput(slot(container, 0).getStack(), materialStacks);
+            RepairToolSnapshot predictedOutput = finalizedOutput == null ? null
+                : readTool(finalizedOutput, reservedInventorySlot);
+            int predictedMaterialConsumed = finalizedOutput == null ? 0
+                : predictedMaterialConsumed(slot(container, 0).getStack(), materialStacks);
             int reservedContainerSlot = containerSlotForPlayerInventory(layout.stationSlotCount, reservedInventorySlot);
             return TinkersRepairContainerInspection.recognized(
                 new TinkersRepairContainerEvidence(
@@ -66,6 +72,8 @@ public final class TinkersRepairContainerAdapter {
                     layout.stationSlotCount,
                     reservedContainerSlot,
                     toolEvidence,
+                    predictedOutput,
+                    predictedMaterialConsumed,
                     materials));
         } catch (RuntimeException failure) {
             return TinkersRepairContainerInspection.rejected(
@@ -95,6 +103,20 @@ public final class TinkersRepairContainerAdapter {
             : stationSlotCount + playerInventorySlot - 9;
     }
 
+    static Layout requirePinnedLayout(Container container, InventoryPlayer playerInventory) {
+        if (container == null || playerInventory == null) {
+            throw new IllegalArgumentException("container and playerInventory are required");
+        }
+        Layout layout = layoutFor(
+            container.getClass()
+                .getName());
+        if (layout == null) {
+            throw new IllegalStateException("open container is not the pinned Tool Station or Tool Forge");
+        }
+        validateLayout(container, playerInventory, layout);
+        return layout;
+    }
+
     static RepairToolSnapshot readTool(ItemStack stack, int reservedInventorySlot, String registryIdentity) {
         if (stack == null || registryIdentity == null
             || registryIdentity.trim()
@@ -122,7 +144,64 @@ public final class TinkersRepairContainerAdapter {
         return new RepairToolSnapshot(stableIdentity, damage, maximumDamage, reservedInventorySlot);
     }
 
-    private static RepairToolSnapshot readTool(ItemStack stack, int reservedInventorySlot) {
+    static ItemStack finalizedOutput(ItemStack preview, List<ItemStack> materials) {
+        if (preview == null) return null;
+        predictedMaterialConsumed(preview, materials);
+        ItemStack output = preview.copy();
+        String baseTagName = baseTagName(output.getItem());
+        output.getTagCompound()
+            .getCompoundTag(baseTagName)
+            .removeTag("ToRemove");
+        return output;
+    }
+
+    static int predictedMaterialConsumed(ItemStack preview, List<ItemStack> materials) {
+        int total = 0;
+        for (Integer amount : predictedMaterialRemovals(preview, materials)) {
+            total = Math.addExact(total, amount);
+        }
+        return total;
+    }
+
+    static List<Integer> predictedMaterialRemovals(ItemStack preview, List<ItemStack> materials) {
+        List<Integer> result = new ArrayList<>();
+        if (materials == null) throw new IllegalArgumentException("materials must not be null");
+        if (preview == null) {
+            for (int index = 0; index < materials.size(); index++) result.add(0);
+            return result;
+        }
+        if (allEmpty(materials)) {
+            for (int index = 0; index < materials.size(); index++) result.add(0);
+            return result;
+        }
+        String baseTagName = baseTagName(preview.getItem());
+        NBTTagCompound tag = preview.getTagCompound();
+        if (tag == null || !tag.hasKey(baseTagName, 10)) {
+            throw new IllegalStateException("repair preview lacks its " + baseTagName + " compound");
+        }
+        NBTTagCompound base = tag.getCompoundTag(baseTagName);
+        int[] removals = base.hasKey("ToRemove") ? base.getIntArray("ToRemove") : null;
+        int removalIndex = 0;
+        for (ItemStack material : materials) {
+            if (material == null) {
+                result.add(0);
+                continue;
+            }
+            int amount = removals == null || removalIndex >= removals.length ? 1 : removals[removalIndex++];
+            if (amount <= 0 || amount > material.stackSize) {
+                throw new IllegalStateException("repair preview requests an invalid material count");
+            }
+            result.add(amount);
+        }
+        return result;
+    }
+
+    private static boolean allEmpty(List<ItemStack> materials) {
+        for (ItemStack material : materials) if (material != null) return false;
+        return true;
+    }
+
+    static RepairToolSnapshot readTool(ItemStack stack, int reservedInventorySlot) {
         Object registryName = Item.itemRegistry.getNameForObject(stack.getItem());
         if (registryName == null) {
             throw new IllegalStateException("Tinkers tool has no item registry identity");

@@ -5,6 +5,8 @@ import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
 
+import java.util.Arrays;
+
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 import net.minecraft.nbt.NBTTagCompound;
@@ -71,6 +73,50 @@ public class TinkersRepairContainerAdapterTest {
         assertThrows(
             IllegalStateException.class,
             () -> TinkersRepairContainerAdapter.readTool(stack, 0, "TConstruct:pickaxe"));
+    }
+
+    @Test
+    public void finalizesPinnedRepairPreviewAndCountsExactMaterialRemovals() {
+        Item item = new FakeModifyableItem();
+        ItemStack input = tool(item, 700, 1000, 3, "head-a");
+        ItemStack preview = tool(item, 400, 1000, 3, "head-a");
+        preview.getTagCompound()
+            .getCompoundTag("InfiTool")
+            .setIntArray("ToRemove", new int[] { 2, 1 });
+        ItemStack firstMaterial = new ItemStack(new Item(), 5);
+        ItemStack secondMaterial = new ItemStack(new Item(), 3);
+
+        assertEquals(
+            3,
+            TinkersRepairContainerAdapter
+                .predictedMaterialConsumed(preview, Arrays.asList(firstMaterial, secondMaterial)));
+        ItemStack output = TinkersRepairContainerAdapter
+            .finalizedOutput(preview, Arrays.asList(firstMaterial, secondMaterial));
+        RepairToolSnapshot inputEvidence = TinkersRepairContainerAdapter.readTool(input, 4, "TConstruct:pickaxe");
+        RepairToolSnapshot outputEvidence = TinkersRepairContainerAdapter.readTool(output, 4, "TConstruct:pickaxe");
+
+        assertEquals(inputEvidence.getStableToolIdentity(), outputEvidence.getStableToolIdentity());
+        assertEquals(400, outputEvidence.getDamage());
+        assertTrue(
+            preview.getTagCompound()
+                .getCompoundTag("InfiTool")
+                .hasKey("ToRemove"));
+        assertTrue(
+            !output.getTagCompound()
+                .getCompoundTag("InfiTool")
+                .hasKey("ToRemove"));
+    }
+
+    @Test
+    public void invalidPreviewRemovalCountIsRejected() {
+        ItemStack preview = tool(new FakeModifyableItem(), 400, 1000, 3, "head-a");
+        preview.getTagCompound()
+            .getCompoundTag("InfiTool")
+            .setIntArray("ToRemove", new int[] { 4 });
+        assertThrows(
+            IllegalStateException.class,
+            () -> TinkersRepairContainerAdapter
+                .predictedMaterialConsumed(preview, Arrays.asList(new ItemStack(new Item(), 3))));
     }
 
     private static ItemStack tool(Item item, int damage, int totalDurability, int modifiers, String headIdentity) {
