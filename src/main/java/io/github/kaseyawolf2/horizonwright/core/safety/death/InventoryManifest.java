@@ -10,6 +10,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.TreeMap;
 
 /**
@@ -149,6 +150,43 @@ public final class InventoryManifest {
             combined.put(entry.getKey(), total);
         }
         return fingerprint(combined);
+    }
+
+    /**
+     * Conservatively derives contents no longer present after respawn.
+     *
+     * <p>
+     * An empty result means the retained inventory contains an item, count, or stack-size fact that cannot be
+     * explained by this pre-death manifest; callers must not guess at grave contents in that case.
+     */
+    public Optional<InventoryManifest> subtractContents(InventoryManifest retained) {
+        if (retained == null) {
+            throw new IllegalArgumentException("retained inventory must not be null");
+        }
+        List<InventoryStack> residual = new ArrayList<>();
+        for (Map.Entry<String, Long> retainedEntry : retained.counts.entrySet()) {
+            Long originalCount = counts.get(retainedEntry.getKey());
+            Integer originalMaximum = maximumStackSizes.get(retainedEntry.getKey());
+            Integer retainedMaximum = retained.maximumStackSizes.get(retainedEntry.getKey());
+            if (originalCount == null || originalMaximum == null
+                || !originalMaximum.equals(retainedMaximum)
+                || retainedEntry.getValue() > originalCount) {
+                return Optional.empty();
+            }
+        }
+        for (Map.Entry<String, Long> originalEntry : counts.entrySet()) {
+            long retainedCount = retained.counts.containsKey(originalEntry.getKey())
+                ? retained.counts.get(originalEntry.getKey())
+                : 0L;
+            long remaining = originalEntry.getValue() - retainedCount;
+            int maximum = maximumStackSizes.get(originalEntry.getKey());
+            while (remaining > 0L) {
+                int count = (int) Math.min(remaining, maximum);
+                residual.add(new InventoryStack(originalEntry.getKey(), count, maximum));
+                remaining -= count;
+            }
+        }
+        return Optional.of(new InventoryManifest(slotCount, residual));
     }
 
     private static long divideRoundingUp(long numerator, long denominator) {

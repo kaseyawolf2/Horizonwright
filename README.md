@@ -13,9 +13,15 @@ revocation, and a noninterfering outbound action boundary. The death-safety
 kernel is now attached to live health, connection, persistence, respawn, and
 packet boundaries. The version-isolated OpenBlocks adapter now decodes only
 the owner and empty-state fields that OpenBlocks 1.12.18-GTNH actually syncs
-to clients, and exact activation packets are matched solely against immutable
-Minecraft-thread evidence. Bounded grave discovery, conservative content
-reconstruction, and automatic recovery remain incomplete. Unattended
+to clients. Its loaded-chunk scanner bounds discovery to the configured death
+radius, maps the current account name to the recorded player incarnation, and
+conservatively reconstructs likely grave contents by subtracting the observed
+respawn inventory from the live pre-death manifest. Those observations now
+feed the live search, stabilization, and verification phases;
+missing restart evidence enters an explicit manual hold instead of being
+fabricated. Exact activation packets are matched solely against immutable
+Minecraft-thread evidence. Interaction-disabled recovery navigation and the
+automatic empty-hand/sneak activation sequence remain incomplete. Unattended
 operation remains disabled.
 
 ## Pinned target

@@ -13,7 +13,9 @@ import io.github.kaseyawolf2.horizonwright.core.safety.death.DeathSafetyPolicy;
 import io.github.kaseyawolf2.horizonwright.core.safety.death.DeathSafetySnapshot;
 import io.github.kaseyawolf2.horizonwright.core.safety.death.DeathSafetyUpdate;
 import io.github.kaseyawolf2.horizonwright.core.safety.death.DeathSignal;
+import io.github.kaseyawolf2.horizonwright.core.safety.death.GraveSearchObservation;
 import io.github.kaseyawolf2.horizonwright.core.safety.death.RecoveryNavigationStatus;
+import io.github.kaseyawolf2.horizonwright.core.safety.death.RecoveryVerificationObservation;
 import io.github.kaseyawolf2.horizonwright.core.safety.death.RespawnObservation;
 
 /** Live per-connection composition for client snapshots, redundant death signals, and exact packet gates. */
@@ -183,6 +185,41 @@ public final class ClientDeathSafetyRuntime {
                     source.getInventorySnapshot(),
                     false,
                     false));
+        directives.process(update, effects);
+        return update;
+    }
+
+    public synchronized DeathSafetyUpdate observeGraveSearch(long clientTick, GraveSearchObservation observation) {
+        if (observation == null) {
+            throw new IllegalArgumentException("grave search observation must not be null");
+        }
+        DeathSafetyConnectionCoordinator.Session active = requireSession();
+        DeathSafetySnapshot current = active.getController()
+            .snapshot();
+        DeathSafetyUpdate update = active.getController()
+            .onGraveSearch(
+                active.getStamps()
+                    .next(clientTick),
+                current.getDeathEpoch(),
+                observation);
+        directives.process(update, effects);
+        return update;
+    }
+
+    public synchronized DeathSafetyUpdate observeRecoveryVerification(long clientTick,
+        RecoveryVerificationObservation observation) {
+        if (observation == null) {
+            throw new IllegalArgumentException("recovery verification observation must not be null");
+        }
+        DeathSafetyConnectionCoordinator.Session active = requireSession();
+        DeathSafetySnapshot current = active.getController()
+            .snapshot();
+        DeathSafetyUpdate update = active.getController()
+            .onRecoveryVerification(
+                active.getStamps()
+                    .next(clientTick),
+                current.getDeathEpoch(),
+                observation);
         directives.process(update, effects);
         return update;
     }

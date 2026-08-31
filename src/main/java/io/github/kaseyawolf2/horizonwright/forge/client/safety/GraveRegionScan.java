@@ -17,8 +17,9 @@ public final class GraveRegionScan {
         if (status == null || candidates == null || candidates.contains(null)) {
             throw new IllegalArgumentException("scan status and candidates must not be null or contain null");
         }
-        if (status == GraveSearchStatus.REGION_UNLOADED && !candidates.isEmpty()) {
-            throw new IllegalArgumentException("an unloaded region cannot provide reliable grave candidates");
+        if ((status == GraveSearchStatus.REGION_UNLOADED || status == GraveSearchStatus.EVIDENCE_UNAVAILABLE)
+            && !candidates.isEmpty()) {
+            throw new IllegalArgumentException("an unavailable scan cannot provide reliable grave candidates");
         }
         this.status = status;
         this.candidates = Collections.unmodifiableList(new ArrayList<>(candidates));

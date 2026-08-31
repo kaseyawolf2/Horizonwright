@@ -15,6 +15,8 @@ public final class DeathSafetySnapshot {
     private final int graveStableTicks;
     private final boolean respawnRequestConsumed;
     private final ManualHoldReason manualHoldReason;
+    private final InventoryManifest preDeathInventory;
+    private final GraveCandidate stableGrave;
     private final GraveActivationPermit graveActivationPermit;
     private final RecoveryNavigationRequest recoveryNavigationRequest;
     private final UnresolvedDeathProjection unresolvedDeathProjection;
@@ -22,7 +24,8 @@ public final class DeathSafetySnapshot {
     DeathSafetySnapshot(DeathSafetyState state, RecoveryPhase recoveryPhase, boolean connected, long connectionEpoch,
         long deathEpoch, int healthyStableTicks, int respawnStableTicks, int graveStableTicks,
         boolean respawnRequestConsumed, ManualHoldReason manualHoldReason, GraveActivationPermit graveActivationPermit,
-        RecoveryNavigationRequest recoveryNavigationRequest, UnresolvedDeathProjection unresolvedDeathProjection) {
+        RecoveryNavigationRequest recoveryNavigationRequest, UnresolvedDeathProjection unresolvedDeathProjection,
+        InventoryManifest preDeathInventory, GraveCandidate stableGrave) {
         this.state = state;
         this.recoveryPhase = recoveryPhase;
         this.connected = connected;
@@ -33,6 +36,8 @@ public final class DeathSafetySnapshot {
         this.graveStableTicks = graveStableTicks;
         this.respawnRequestConsumed = respawnRequestConsumed;
         this.manualHoldReason = manualHoldReason;
+        this.preDeathInventory = preDeathInventory;
+        this.stableGrave = stableGrave;
         this.graveActivationPermit = graveActivationPermit;
         this.recoveryNavigationRequest = recoveryNavigationRequest;
         this.unresolvedDeathProjection = unresolvedDeathProjection;
@@ -76,6 +81,15 @@ public final class DeathSafetySnapshot {
 
     public Optional<ManualHoldReason> getManualHoldReason() {
         return Optional.ofNullable(manualHoldReason);
+    }
+
+    /** Available for the live death session; restart recovery must not fabricate it when it was not persisted. */
+    public Optional<InventoryManifest> getPreDeathInventory() {
+        return Optional.ofNullable(preDeathInventory);
+    }
+
+    public Optional<GraveCandidate> getStableGrave() {
+        return Optional.ofNullable(stableGrave);
     }
 
     public Optional<GraveActivationPermit> getGraveActivationPermit() {

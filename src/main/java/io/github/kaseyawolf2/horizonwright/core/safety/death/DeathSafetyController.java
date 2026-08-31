@@ -354,6 +354,9 @@ public final class DeathSafetyController {
         if (observation.getStatus() == GraveSearchStatus.REGION_UNLOADED) {
             return enterManualHold(ManualHoldReason.GRAVE_REGION_UNLOADED);
         }
+        if (observation.getStatus() == GraveSearchStatus.EVIDENCE_UNAVAILABLE) {
+            return enterManualHold(ManualHoldReason.GRAVE_EVIDENCE_UNAVAILABLE);
+        }
         if (observation.getStatus() == GraveSearchStatus.IN_PROGRESS) {
             if (recoveryPhase == RecoveryPhase.STABILIZING_GRAVE) {
                 return enterManualHold(ManualHoldReason.GRAVE_CHANGED);
@@ -845,7 +848,9 @@ public final class DeathSafetyController {
             manualHoldReason,
             graveActivationPermit,
             navigationRequest,
-            createProjection());
+            createProjection(),
+            preDeathInventory,
+            stableGrave);
     }
 
     private DeathSafetyUpdate update(DeathSafetyEventDisposition disposition, DeathSafetyDirective... directives) {

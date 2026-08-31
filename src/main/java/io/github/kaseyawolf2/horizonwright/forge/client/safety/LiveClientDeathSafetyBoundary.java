@@ -1,5 +1,6 @@
 package io.github.kaseyawolf2.horizonwright.forge.client.safety;
 
+import java.util.Collections;
 import java.util.Optional;
 
 import net.minecraft.client.Minecraft;
@@ -18,7 +19,11 @@ import io.github.kaseyawolf2.horizonwright.core.safety.death.DeathSafetyPolicy;
 import io.github.kaseyawolf2.horizonwright.core.safety.death.DeathSafetySnapshot;
 import io.github.kaseyawolf2.horizonwright.core.safety.death.GraveActivationAttempt;
 import io.github.kaseyawolf2.horizonwright.core.safety.death.GraveActivationPermit;
+import io.github.kaseyawolf2.horizonwright.core.safety.death.GraveCandidate;
 import io.github.kaseyawolf2.horizonwright.core.safety.death.GraveIdentity;
+import io.github.kaseyawolf2.horizonwright.core.safety.death.GraveSearchStatus;
+import io.github.kaseyawolf2.horizonwright.core.safety.death.InventoryManifest;
+import io.github.kaseyawolf2.horizonwright.core.safety.death.RecoveryPhase;
 import io.github.kaseyawolf2.horizonwright.forge.client.network.DeathSafetyPacketBridge;
 import io.github.kaseyawolf2.horizonwright.forge.client.network.DeathSafetyPacketBridgeFactory;
 import io.github.kaseyawolf2.horizonwright.forge.client.network.DeathSafetyPacketContext;
@@ -45,6 +50,7 @@ final class LiveClientDeathSafetyBoundary implements RuntimeSessionDeathStateBou
     private final LiveDeathSafetyControls controls;
     private final ClientDeathSafetyRuntime deathSafety;
     private final RetirementListener retirementListener;
+    private final int gravePlacementRadius;
     private final OpenBlocksGraveTileReader graveTileReader = new OpenBlocksGraveTileReader();
     private final GraveActivationPacketMatcher graveActivationPacketMatcher = new GraveActivationPacketMatcher();
 
@@ -52,6 +58,7 @@ final class LiveClientDeathSafetyBoundary implements RuntimeSessionDeathStateBou
     private long clientTick;
     private volatile double maximumHealth = 20.0D;
     private volatile GraveActivationPacketSnapshot graveActivationPacketSnapshot;
+    private GraveScanner graveScanner;
     private boolean graveAdapterFailureLogged;
     private boolean restored;
     private boolean disconnected;
@@ -65,6 +72,7 @@ final class LiveClientDeathSafetyBoundary implements RuntimeSessionDeathStateBou
         this.runtime = runtime;
         this.connection = connection;
         this.retirementListener = retirementListener;
+        gravePlacementRadius = policy.getGravePlacementRadius();
         persistence = new TaskControllerPersistenceCoordinator(store, connection.getIdentity());
         controls = new LiveDeathSafetyControls(runtime);
         deathSafety = new ClientDeathSafetyRuntime(runtime, policy, this, controls.createEffect());
@@ -79,6 +87,7 @@ final class LiveClientDeathSafetyBoundary implements RuntimeSessionDeathStateBou
         Minecraft minecraft = requireJoinedClientThread();
         MinecraftClientDeathContextSource source = new MinecraftClientDeathContextSource(minecraft, runtime);
         EntityClientPlayerMP player = minecraft.thePlayer;
+        graveScanner = new MinecraftOpenBlocksGraveScanner(minecraft);
         maximumHealth = positiveMaximumHealth(player.getMaxHealth());
         ConnectionIdentity identity = connectionIdentity(source.getPlayerIdentity());
         if (state == null) {
@@ -97,11 +106,14 @@ final class LiveClientDeathSafetyBoundary implements RuntimeSessionDeathStateBou
         maximumHealth = positiveMaximumHealth(minecraft.thePlayer.getMaxHealth());
         long tick = advanceClientTick();
         DeathSafetySnapshot snapshot = deathSafety.clientTick(tick);
-        refreshGraveActivationPacketSnapshot(minecraft, snapshot);
         if (controls.consumeUnavailableRecoveryRequest()) {
-            deathSafety.failUnavailableRecoveryNavigation(tick);
+            snapshot = deathSafety.failUnavailableRecoveryNavigation(tick)
+                .getSnapshot();
             graveActivationPacketSnapshot = null;
+        } else {
+            snapshot = advanceGraveRecovery(minecraft, tick, snapshot);
         }
+        refreshGraveActivationPacketSnapshot(minecraft, snapshot);
     }
 
     @Override
@@ -289,6 +301,97 @@ final class LiveClientDeathSafetyBoundary implements RuntimeSessionDeathStateBou
                     unsupportedAdapter);
             }
         }
+    }
+
+    private DeathSafetySnapshot advanceGraveRecovery(Minecraft minecraft, long tick, DeathSafetySnapshot snapshot) {
+        RecoveryPhase phase = snapshot.getRecoveryPhase();
+        if (phase != RecoveryPhase.SEARCHING_FOR_GRAVE && phase != RecoveryPhase.STABILIZING_GRAVE
+            && phase != RecoveryPhase.VERIFYING_RECOVERY) {
+            return snapshot;
+        }
+        MinecraftClientDeathContextSource source = new MinecraftClientDeathContextSource(minecraft, runtime);
+        Optional<InventoryManifest> preDeathInventory = snapshot.getPreDeathInventory();
+        if (!preDeathInventory.isPresent()) {
+            if (phase == RecoveryPhase.SEARCHING_FOR_GRAVE || phase == RecoveryPhase.STABILIZING_GRAVE) {
+                GraveRegionScan unavailable = new GraveRegionScan(
+                    GraveSearchStatus.EVIDENCE_UNAVAILABLE,
+                    Collections.<GraveCandidate>emptyList());
+                return deathSafety
+                    .observeGraveSearch(
+                        tick,
+                        RecoveryObservationFactory.graveSearch(
+                            unavailable,
+                            source.getInventorySnapshot(),
+                            hasEmptyHotbarHand(minecraft.thePlayer)))
+                    .getSnapshot();
+            }
+            return snapshot;
+        }
+        String oldPlayerIdentity = snapshot.getUnresolvedDeathProjection()
+            .get()
+            .getOldPlayerIdentity();
+        String username = minecraft.thePlayer.getCommandSenderName();
+        if (phase == RecoveryPhase.SEARCHING_FOR_GRAVE || phase == RecoveryPhase.STABILIZING_GRAVE) {
+            Optional<InventoryManifest> expectedGraveContents = preDeathInventory.get()
+                .subtractContents(
+                    source.getInventorySnapshot()
+                        .toManifest());
+            if (!expectedGraveContents.isPresent()) {
+                GraveRegionScan unavailable = new GraveRegionScan(
+                    GraveSearchStatus.EVIDENCE_UNAVAILABLE,
+                    Collections.<GraveCandidate>emptyList());
+                return deathSafety
+                    .observeGraveSearch(
+                        tick,
+                        RecoveryObservationFactory.graveSearch(
+                            unavailable,
+                            source.getInventorySnapshot(),
+                            hasEmptyHotbarHand(minecraft.thePlayer)))
+                    .getSnapshot();
+            }
+            GraveScanRequest request = new GraveScanRequest(
+                snapshot.getUnresolvedDeathProjection()
+                    .get()
+                    .getDeathPosition(),
+                gravePlacementRadius,
+                oldPlayerIdentity,
+                username,
+                expectedGraveContents.get());
+            GraveRegionScan scan = graveScanner.scanRegion(request);
+            return deathSafety
+                .observeGraveSearch(
+                    tick,
+                    RecoveryObservationFactory
+                        .graveSearch(scan, source.getInventorySnapshot(), hasEmptyHotbarHand(minecraft.thePlayer)))
+                .getSnapshot();
+        }
+        Optional<GraveCandidate> stableGrave = snapshot.getStableGrave();
+        if (!stableGrave.isPresent()) {
+            return snapshot;
+        }
+        GraveInspection inspection = graveScanner.inspectExact(
+            new GraveInspectionRequest(
+                stableGrave.get()
+                    .getIdentity(),
+                oldPlayerIdentity,
+                username,
+                stableGrave.get()
+                    .getContents()));
+        return deathSafety
+            .observeRecoveryVerification(
+                tick,
+                RecoveryObservationFactory.verification(inspection, source.getInventorySnapshot()))
+            .getSnapshot();
+    }
+
+    private static boolean hasEmptyHotbarHand(EntityClientPlayerMP player) {
+        int hotbarSlots = Math.min(9, player.inventory.mainInventory.length);
+        for (int slot = 0; slot < hotbarSlots; slot++) {
+            if (player.inventory.mainInventory[slot] == null) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static Minecraft requireJoinedClientThread() {

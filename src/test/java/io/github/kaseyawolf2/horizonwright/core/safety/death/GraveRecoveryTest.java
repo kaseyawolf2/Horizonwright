@@ -244,6 +244,13 @@ public class GraveRecoveryTest {
             ManualHoldReason.GRAVE_REGION_UNLOADED);
         assertSearchFailure(
             new GraveSearchObservation(
+                GraveSearchStatus.EVIDENCE_UNAVAILABLE,
+                Collections.<GraveCandidate>emptyList(),
+                InventoryManifest.empty(36),
+                true),
+            ManualHoldReason.GRAVE_EVIDENCE_UNAVAILABLE);
+        assertSearchFailure(
+            new GraveSearchObservation(
                 GraveSearchStatus.COMPLETE,
                 Collections.singletonList(
                     DeathSafetyTestHarness.grave(
