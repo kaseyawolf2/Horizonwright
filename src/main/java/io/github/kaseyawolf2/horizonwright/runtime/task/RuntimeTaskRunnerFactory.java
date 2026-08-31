@@ -13,6 +13,7 @@ public final class RuntimeTaskRunnerFactory implements TaskRunnerFactory {
     private final UnloadRuntimeAccess unload;
     private final RepairRuntimeAccess repair;
     private final FarmRuntimeAccess farm;
+    private final SleepRuntimeAccess sleep;
 
     public RuntimeTaskRunnerFactory(NavigationRuntimeAccess navigation) {
         this(
@@ -20,7 +21,8 @@ public final class RuntimeTaskRunnerFactory implements TaskRunnerFactory {
             DisabledExcavationRuntimeAccess.INSTANCE,
             DisabledUnloadRuntimeAccess.INSTANCE,
             DisabledRepairRuntimeAccess.INSTANCE,
-            DisabledFarmRuntimeAccess.INSTANCE);
+            DisabledFarmRuntimeAccess.INSTANCE,
+            DisabledSleepRuntimeAccess.INSTANCE);
     }
 
     public RuntimeTaskRunnerFactory(NavigationRuntimeAccess navigation, ExcavationRuntimeAccess excavation) {
@@ -29,22 +31,41 @@ public final class RuntimeTaskRunnerFactory implements TaskRunnerFactory {
             excavation,
             DisabledUnloadRuntimeAccess.INSTANCE,
             DisabledRepairRuntimeAccess.INSTANCE,
-            DisabledFarmRuntimeAccess.INSTANCE);
+            DisabledFarmRuntimeAccess.INSTANCE,
+            DisabledSleepRuntimeAccess.INSTANCE);
     }
 
     public RuntimeTaskRunnerFactory(NavigationRuntimeAccess navigation, UnloadRuntimeAccess unload,
         RepairRuntimeAccess repair) {
-        this(navigation, DisabledExcavationRuntimeAccess.INSTANCE, unload, repair, DisabledFarmRuntimeAccess.INSTANCE);
+        this(
+            navigation,
+            DisabledExcavationRuntimeAccess.INSTANCE,
+            unload,
+            repair,
+            DisabledFarmRuntimeAccess.INSTANCE,
+            DisabledSleepRuntimeAccess.INSTANCE);
     }
 
     public RuntimeTaskRunnerFactory(NavigationRuntimeAccess navigation, ExcavationRuntimeAccess excavation,
         UnloadRuntimeAccess unload) {
-        this(navigation, excavation, unload, DisabledRepairRuntimeAccess.INSTANCE, DisabledFarmRuntimeAccess.INSTANCE);
+        this(
+            navigation,
+            excavation,
+            unload,
+            DisabledRepairRuntimeAccess.INSTANCE,
+            DisabledFarmRuntimeAccess.INSTANCE,
+            DisabledSleepRuntimeAccess.INSTANCE);
     }
 
     public RuntimeTaskRunnerFactory(NavigationRuntimeAccess navigation, ExcavationRuntimeAccess excavation,
         UnloadRuntimeAccess unload, RepairRuntimeAccess repair) {
-        this(navigation, excavation, unload, repair, DisabledFarmRuntimeAccess.INSTANCE);
+        this(
+            navigation,
+            excavation,
+            unload,
+            repair,
+            DisabledFarmRuntimeAccess.INSTANCE,
+            DisabledSleepRuntimeAccess.INSTANCE);
     }
 
     public RuntimeTaskRunnerFactory(NavigationRuntimeAccess navigation, FarmRuntimeAccess farm) {
@@ -53,19 +74,40 @@ public final class RuntimeTaskRunnerFactory implements TaskRunnerFactory {
             DisabledExcavationRuntimeAccess.INSTANCE,
             DisabledUnloadRuntimeAccess.INSTANCE,
             DisabledRepairRuntimeAccess.INSTANCE,
-            farm);
+            farm,
+            DisabledSleepRuntimeAccess.INSTANCE);
     }
 
     public RuntimeTaskRunnerFactory(NavigationRuntimeAccess navigation, ExcavationRuntimeAccess excavation,
         UnloadRuntimeAccess unload, RepairRuntimeAccess repair, FarmRuntimeAccess farm) {
-        if (navigation == null || excavation == null || unload == null || repair == null || farm == null) {
-            throw new IllegalArgumentException("navigation, excavation, unload, repair, and farm must not be null");
+        this(navigation, excavation, unload, repair, farm, DisabledSleepRuntimeAccess.INSTANCE);
+    }
+
+    public RuntimeTaskRunnerFactory(NavigationRuntimeAccess navigation, SleepRuntimeAccess sleep) {
+        this(
+            navigation,
+            DisabledExcavationRuntimeAccess.INSTANCE,
+            DisabledUnloadRuntimeAccess.INSTANCE,
+            DisabledRepairRuntimeAccess.INSTANCE,
+            DisabledFarmRuntimeAccess.INSTANCE,
+            sleep);
+    }
+
+    public RuntimeTaskRunnerFactory(NavigationRuntimeAccess navigation, ExcavationRuntimeAccess excavation,
+        UnloadRuntimeAccess unload, RepairRuntimeAccess repair, FarmRuntimeAccess farm, SleepRuntimeAccess sleep) {
+        if (navigation == null || excavation == null
+            || unload == null
+            || repair == null
+            || farm == null
+            || sleep == null) {
+            throw new IllegalArgumentException("runtime accesses must not be null");
         }
         this.navigation = navigation;
         this.excavation = excavation;
         this.unload = unload;
         this.repair = repair;
         this.farm = farm;
+        this.sleep = sleep;
     }
 
     @Override
@@ -87,6 +129,9 @@ public final class RuntimeTaskRunnerFactory implements TaskRunnerFactory {
         }
         if (FarmTask.TYPE.equals(spec.getType())) {
             return new FarmTaskRunner(spec, checkpoint, farm);
+        }
+        if (SleepTask.TYPE.equals(spec.getType())) {
+            return new SleepTaskRunner(spec, checkpoint, sleep);
         }
         throw new IllegalArgumentException("unsupported runtime task type: " + spec.getType());
     }
@@ -142,6 +187,21 @@ public final class RuntimeTaskRunnerFactory implements TaskRunnerFactory {
 
         @Override
         public FarmBackend getFarmBackend() {
+            return null;
+        }
+
+        @Override
+        public boolean isDryRun() {
+            return false;
+        }
+    }
+
+    private enum DisabledSleepRuntimeAccess implements SleepRuntimeAccess {
+
+        INSTANCE;
+
+        @Override
+        public SleepBackend getSleepBackend() {
             return null;
         }
 

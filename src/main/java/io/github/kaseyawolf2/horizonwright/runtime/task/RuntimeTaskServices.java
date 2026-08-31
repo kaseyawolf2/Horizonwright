@@ -9,8 +9,8 @@ package io.github.kaseyawolf2.horizonwright.runtime.task;
  * attachment from clearing a newer one.
  * </p>
  */
-public final class RuntimeTaskServices
-    implements ExcavationRuntimeAccess, UnloadRuntimeAccess, RepairRuntimeAccess, FarmRuntimeAccess {
+public final class RuntimeTaskServices implements ExcavationRuntimeAccess, UnloadRuntimeAccess, RepairRuntimeAccess,
+    FarmRuntimeAccess, SleepRuntimeAccess {
 
     public interface DryRunSource {
 
@@ -22,6 +22,7 @@ public final class RuntimeTaskServices
     private volatile UnloadBackend unloadBackend;
     private volatile RepairBackend repairBackend;
     private volatile FarmBackend farmBackend;
+    private volatile SleepBackend sleepBackend;
 
     public RuntimeTaskServices(DryRunSource dryRun) {
         if (dryRun == null) {
@@ -98,11 +99,26 @@ public final class RuntimeTaskServices
         return true;
     }
 
+    public synchronized void bindSleepBackend(SleepBackend backend) {
+        if (backend == null) throw new IllegalArgumentException("sleep backend must not be null");
+        if (sleepBackend != null && sleepBackend != backend) {
+            throw new IllegalStateException("another sleep backend is already bound to this runtime session");
+        }
+        sleepBackend = backend;
+    }
+
+    public synchronized boolean unbindSleepBackend(SleepBackend expected) {
+        if (expected == null || sleepBackend != expected) return false;
+        sleepBackend = null;
+        return true;
+    }
+
     public synchronized void clear() {
         excavationBackend = null;
         unloadBackend = null;
         repairBackend = null;
         farmBackend = null;
+        sleepBackend = null;
     }
 
     @Override
@@ -123,6 +139,11 @@ public final class RuntimeTaskServices
     @Override
     public FarmBackend getFarmBackend() {
         return farmBackend;
+    }
+
+    @Override
+    public SleepBackend getSleepBackend() {
+        return sleepBackend;
     }
 
     @Override
