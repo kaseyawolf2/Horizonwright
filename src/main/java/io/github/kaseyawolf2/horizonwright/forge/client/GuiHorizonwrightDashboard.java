@@ -120,7 +120,7 @@ public final class GuiHorizonwrightDashboard extends GuiScreen {
             return;
         }
         if (button.id == PROFILE_ASSETS_TAB_BUTTON) {
-            mc.displayGuiScreen(new GuiProfileAssets(this, profileEditorProvider));
+            mc.displayGuiScreen(new GuiProfileAssets(this, runtimeProvider, profileEditorProvider));
             return;
         }
         CurrentRuntimeUiResolver.Resolution resolution = CurrentRuntimeUiResolver.resolve(runtimeProvider);

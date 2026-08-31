@@ -24,6 +24,7 @@ import io.github.kaseyawolf2.horizonwright.core.navigation.NavigationState;
 import io.github.kaseyawolf2.horizonwright.core.task.MonotonicClock;
 import io.github.kaseyawolf2.horizonwright.core.task.ScheduleEnvironment;
 import io.github.kaseyawolf2.horizonwright.core.task.TaskState;
+import io.github.kaseyawolf2.horizonwright.runtime.task.ExcavationTask;
 
 public class HorizonwrightRuntimeTest {
 
@@ -179,6 +180,37 @@ public class HorizonwrightRuntimeTest {
         assertTrue(runtime.resetAutomationStop());
         assertFalse(runtime.resetAutomationStop());
         assertFalse(broker.isSafetyLocked());
+        runtime.close();
+    }
+
+    @Test
+    public void excavationSubmissionAcceptsOnlyExcavationSpecsAndHonorsAutomationStop() {
+        InMemoryActionBroker broker = new InMemoryActionBroker();
+        HorizonwrightRuntime runtime = new HorizonwrightRuntime(broker, new ActionSessionGuard(), new FixedClock());
+
+        assertEquals(
+            "quarry",
+            runtime.submitExcavation(ExcavationTask.cleanVolumeCylinder("quarry", 0, 10, 20, 2, 60, 64))
+                .getSpec()
+                .getId());
+        try {
+            runtime.submitExcavation(runtime.createGoToTaskSpec(0, 4, 64, 4, 1));
+            fail("the excavation entry point must reject other task types");
+        } catch (IllegalArgumentException expected) {
+            assertTrue(
+                expected.getMessage()
+                    .contains("excavation"));
+        }
+
+        runtime.stopAutomation("operator test");
+        try {
+            runtime.submitExcavation(ExcavationTask.cleanVolumeCylinder("blocked", 0, 0, 0, 1, 60, 60));
+            fail("automation stop must reject new excavation work");
+        } catch (IllegalStateException expected) {
+            assertTrue(
+                expected.getMessage()
+                    .contains("/hw reset"));
+        }
         runtime.close();
     }
 

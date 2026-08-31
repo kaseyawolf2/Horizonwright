@@ -27,5 +27,7 @@ public class GuiProfileAssetsTest {
         assertEquals(16, ProfileAssetInput.positiveInteger("16", "minimum"));
         assertThrows(IllegalArgumentException.class, () -> ProfileAssetInput.positiveInteger("0", "minimum"));
         assertThrows(IllegalArgumentException.class, () -> ProfileAssetInput.positiveInteger("many", "minimum"));
+        assertEquals(0, ProfileAssetInput.nonNegativeInteger("0", "radius"));
+        assertThrows(IllegalArgumentException.class, () -> ProfileAssetInput.nonNegativeInteger("-1", "radius"));
     }
 }

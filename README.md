@@ -130,6 +130,14 @@ durability threshold or insufficient durability for the predicted work unit
 requests repair. Non-breaking targets never create service churn. These reasons
 are persisted at the current frontier and flow into the durable child-task
 coordinator; no runner or GUI directly performs the service operation.
+Operators can now reach that path without editing task JSON. The **Profile
+assets** page opens a guided **New excavation** form which centers a validated
+clean-volume cylinder at the player's X/Z when it is queued, and optionally
+binds the saved loadout, chest, repair station, reserved tool slot, and expected
+work damage. The equivalent typed entry point is
+`/hw excavate cylinder <id> <radius> <bottom-y> <top-y>`; supplying all five service arguments adds the
+named unload and repair bindings. Both paths validate geometry and profile
+references before the controller accepts the task.
 Unattended operation remains disabled.
 
 ## Pinned target
@@ -203,6 +211,11 @@ was installed for this test.
 - Use `/hw panel` to open it from chat.
 - Use `/hw status` to print action-broker and navigation state.
 - Use `/hw goto <x> <y> <z> [tolerance]` for a lease-gated navigation task.
+- Use `/hw excavate cylinder <id> <radius> <bottom-y> <top-y>` to queue a
+  clean-volume cylinder centered at your current X/Z without shared services.
+  Append `<loadout> <storage> <station> <tool-slot> <work-damage>` to bind all
+  guided unload and repair services, or use **Dashboard > Profile assets > New
+  excavation** for the nontechnical form.
   Relative coordinates such as `~256 ~ ~` are accepted; Horizonwright does not
   impose the old 128-block smoke-test radius.
 - Use `/hw navcancel` to cancel the current navigation request and release

@@ -21,27 +21,39 @@ import io.github.kaseyawolf2.horizonwright.core.task.ControllerSnapshot;
 import io.github.kaseyawolf2.horizonwright.core.task.TaskLane;
 import io.github.kaseyawolf2.horizonwright.core.task.TaskResumeCandidates;
 import io.github.kaseyawolf2.horizonwright.core.task.TaskSnapshot;
+import io.github.kaseyawolf2.horizonwright.core.task.TaskSpec;
+import io.github.kaseyawolf2.horizonwright.runtime.persistence.profile.ProfileAssetEditor;
+import io.github.kaseyawolf2.horizonwright.runtime.persistence.profile.ProfileAssetEditorProvider;
 import io.github.kaseyawolf2.horizonwright.runtime.persistence.session.ClientProfileBindingCoordinator;
 import io.github.kaseyawolf2.horizonwright.runtime.persistence.session.ClientProfileBindingSnapshot;
 import io.github.kaseyawolf2.horizonwright.runtime.persistence.session.ClientProfileBindingState;
 import io.github.kaseyawolf2.horizonwright.runtime.persistence.session.CurrentRuntimeProvider;
+import io.github.kaseyawolf2.horizonwright.runtime.task.ExcavationTaskSubmission;
 
 public final class HorizonwrightClientCommand extends CommandBase {
 
     private final CurrentRuntimeProvider runtimeProvider;
     private final ClientProfileBindingCoordinator profileBindings;
+    private final ProfileAssetEditorProvider profileEditorProvider;
 
     public HorizonwrightClientCommand(CurrentRuntimeProvider runtimeProvider) {
-        this(runtimeProvider, null);
+        this(runtimeProvider, null, () -> Optional.empty());
     }
 
     public HorizonwrightClientCommand(CurrentRuntimeProvider runtimeProvider,
         ClientProfileBindingCoordinator profileBindings) {
+        this(runtimeProvider, profileBindings, () -> Optional.empty());
+    }
+
+    public HorizonwrightClientCommand(CurrentRuntimeProvider runtimeProvider,
+        ClientProfileBindingCoordinator profileBindings, ProfileAssetEditorProvider profileEditorProvider) {
         if (runtimeProvider == null) {
             throw new IllegalArgumentException("runtimeProvider must not be null");
         }
+        if (profileEditorProvider == null) throw new IllegalArgumentException("profileEditorProvider must not be null");
         this.runtimeProvider = runtimeProvider;
         this.profileBindings = profileBindings;
+        this.profileEditorProvider = profileEditorProvider;
     }
 
     @Override
@@ -51,7 +63,7 @@ public final class HorizonwrightClientCommand extends CommandBase {
 
     @Override
     public String getCommandUsage(ICommandSender sender) {
-        return "/hw [panel|profile [status|enroll|recover|reassociate <id>]|status|task [id]|goto <x> <y> <z> [tolerance]|pause [id]|resume [id]|cancel <id>|navcancel|dryrun [on|off]|stop|reset]";
+        return "/hw [panel|profile [status|enroll|recover|reassociate <id>]|status|task [id]|goto <x> <y> <z> [tolerance]|excavate cylinder <id> <radius> <bottom-y> <top-y> [<loadout> <storage> <station> <tool-slot> <work-damage>]|pause [id]|resume [id]|cancel <id>|navcancel|dryrun [on|off]|stop|reset]";
     }
 
     @Override
@@ -87,6 +99,10 @@ public final class HorizonwrightClientCommand extends CommandBase {
         }
         if ("goto".equals(subcommand)) {
             startNavigation(sender, arguments, runtime);
+            return;
+        }
+        if ("excavate".equals(subcommand)) {
+            startExcavation(sender, arguments, runtime);
             return;
         }
         if ("navcancel".equals(subcommand)) {
@@ -142,6 +158,7 @@ public final class HorizonwrightClientCommand extends CommandBase {
     private static boolean isRuntimeCommand(String subcommand) {
         return "status".equals(subcommand) || "task".equals(subcommand)
             || "goto".equals(subcommand)
+            || "excavate".equals(subcommand)
             || "navcancel".equals(subcommand)
             || "pause".equals(subcommand)
             || "resume".equals(subcommand)
@@ -167,6 +184,7 @@ public final class HorizonwrightClientCommand extends CommandBase {
                 "status",
                 "task",
                 "goto",
+                "excavate",
                 "pause",
                 "resume",
                 "cancel",
@@ -177,6 +195,9 @@ public final class HorizonwrightClientCommand extends CommandBase {
         }
         if (arguments.length == 2 && "profile".equalsIgnoreCase(arguments[0])) {
             return getListOfStringsMatchingLastWord(arguments, "status", "enroll", "recover", "reassociate");
+        }
+        if (arguments.length == 2 && "excavate".equalsIgnoreCase(arguments[0])) {
+            return getListOfStringsMatchingLastWord(arguments, "cylinder");
         }
         if (arguments.length == 3 && "profile".equalsIgnoreCase(arguments[0])
             && "reassociate".equalsIgnoreCase(arguments[1])
@@ -293,6 +314,63 @@ public final class HorizonwrightClientCommand extends CommandBase {
         } catch (RuntimeException failure) {
             sender.addChatMessage(
                 new ChatComponentText(EnumChatFormatting.RED + "Navigation not started: " + failure.getMessage()));
+        }
+    }
+
+    private void startExcavation(ICommandSender sender, String[] arguments, HorizonwrightRuntime runtime) {
+        if ((arguments.length != 6 && arguments.length != 11) || !"cylinder".equalsIgnoreCase(arguments[1])) {
+            sender.addChatMessage(new ChatComponentText(EnumChatFormatting.RED + getCommandUsage(sender)));
+            return;
+        }
+        try {
+            String taskId = ProfileAssetInput.stableId(arguments[2], "excavation task name");
+            int radius = Integer.parseInt(arguments[3]);
+            ChunkCoordinates current = sender.getPlayerCoordinates();
+            int bottomY = parseCoordinate(arguments[4], current.posY);
+            int topY = parseCoordinate(arguments[5], current.posY);
+            int dimension = sender.getEntityWorld().provider.dimensionId;
+            TaskSpec spec;
+            if (arguments.length == 6) {
+                spec = ExcavationTaskSubmission
+                    .withoutServices(taskId, dimension, current.posX, current.posZ, radius, bottomY, topY);
+            } else {
+                ProfileAssetEditor editor = profileEditorProvider.getCurrentProfileAssetEditor()
+                    .orElseThrow(() -> new IllegalStateException("active profile assets are unavailable"));
+                spec = ExcavationTaskSubmission.withServices(
+                    editor.load(),
+                    taskId,
+                    dimension,
+                    current.posX,
+                    current.posZ,
+                    radius,
+                    bottomY,
+                    topY,
+                    arguments[6],
+                    arguments[7],
+                    arguments[8],
+                    Integer.parseInt(arguments[9]),
+                    Integer.parseInt(arguments[10]));
+            }
+            TaskSnapshot submitted = runtime.submitExcavation(spec);
+            sender.addChatMessage(
+                new ChatComponentText(
+                    EnumChatFormatting.AQUA + "Horizonwright queued clean-volume excavation '"
+                        + submitted.getSpec()
+                            .getId()
+                        + "' centered at "
+                        + current.posX
+                        + ", "
+                        + current.posZ
+                        + ", radius "
+                        + radius
+                        + ", Y "
+                        + bottomY
+                        + ".."
+                        + topY
+                        + (arguments.length == 11 ? ", with named unload and repair services." : ".")));
+        } catch (RuntimeException failure) {
+            sender.addChatMessage(
+                new ChatComponentText(EnumChatFormatting.RED + "Excavation not started: " + safeMessage(failure)));
         }
     }
 

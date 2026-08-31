@@ -132,7 +132,15 @@ and unreachable targets must not repeatedly create service children.
 ## Pending live clean-volume excavation checkpoint
 
 Install only after the automated build remains green. In a disposable area,
-start with a one-block-radius, one-layer clean-volume cylinder containing only
+open **Dashboard > Profile assets > New excavation**. Confirm the saved loadout,
+storage, and repair station names are prefilled, the displayed center follows
+the player's current dimension and X/Z, and invalid radius/Y/service fields
+leave the page open with a clear `Nothing queued` message. Queue a uniquely
+named radius-1, one-layer cylinder and confirm it appears on the dashboard.
+Repeat once with services off. As a typed-path cross-check, use `/hw excavate
+cylinder smoke-command 1 ~-1 ~-1`; relative Y coordinates must resolve from the
+player and a duplicate name or invalid profile reference must be refused before
+any action begins. Then start with a one-block-radius, one-layer clean-volume cylinder containing only
 ordinary cheap blocks. Confirm Horizonwright approaches without breaking route
 blocks, digs exactly the current frontier target, and advances only after that
 block is visibly air. Pause, direct player input, automation stop, disconnect,

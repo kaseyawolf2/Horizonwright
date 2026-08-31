@@ -118,7 +118,8 @@ public final class ClientBootstrap {
             .register(this);
         SingleplayerWorldMarkerRegistry.getInstance()
             .initialize();
-        ClientCommandHandler.instance.registerCommand(new HorizonwrightClientCommand(runtimeSessions, profileBindings));
+        ClientCommandHandler.instance
+            .registerCommand(new HorizonwrightClientCommand(runtimeSessions, profileBindings, profileEditorProvider()));
         initialized = true;
     }
 

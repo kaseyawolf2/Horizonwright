@@ -26,6 +26,7 @@ import io.github.kaseyawolf2.horizonwright.forge.client.container.MinecraftConta
 import io.github.kaseyawolf2.horizonwright.runtime.persistence.profile.ProfileAssetEditor;
 import io.github.kaseyawolf2.horizonwright.runtime.persistence.profile.ProfileAssetEditorProvider;
 import io.github.kaseyawolf2.horizonwright.runtime.persistence.profile.ProfileAssetUpdate;
+import io.github.kaseyawolf2.horizonwright.runtime.persistence.session.CurrentRuntimeProvider;
 
 /** Guided named-asset editor which captures inventory and world evidence instead of requiring JSON. */
 public final class GuiProfileAssets extends GuiScreen {
@@ -34,8 +35,10 @@ public final class GuiProfileAssets extends GuiScreen {
     private static final int SAVE_LOADOUT_BUTTON = 2;
     private static final int SAVE_CHEST_BUTTON = 3;
     private static final int SAVE_STATION_BUTTON = 4;
+    private static final int NEW_EXCAVATION_BUTTON = 5;
 
     private final GuiScreen parent;
+    private final CurrentRuntimeProvider runtimeProvider;
     private final ProfileAssetEditorProvider editorProvider;
     private final MinecraftContainerSnapshotter snapshots = new MinecraftContainerSnapshotter();
 
@@ -50,11 +53,13 @@ public final class GuiProfileAssets extends GuiScreen {
     private int top;
     private int panelWidth;
 
-    public GuiProfileAssets(GuiScreen parent, ProfileAssetEditorProvider editorProvider) {
-        if (parent == null || editorProvider == null) {
-            throw new IllegalArgumentException("parent and editorProvider are required");
+    public GuiProfileAssets(GuiScreen parent, CurrentRuntimeProvider runtimeProvider,
+        ProfileAssetEditorProvider editorProvider) {
+        if (parent == null || runtimeProvider == null || editorProvider == null) {
+            throw new IllegalArgumentException("parent, runtimeProvider, and editorProvider are required");
         }
         this.parent = parent;
+        this.runtimeProvider = runtimeProvider;
         this.editorProvider = editorProvider;
     }
 
@@ -76,6 +81,7 @@ public final class GuiProfileAssets extends GuiScreen {
         buttonList
             .add(new GuiButton(SAVE_STATION_BUTTON, left + 282, top + 208, 196, 20, "Save targeted repair station"));
         buttonList.add(new GuiButton(BACK_BUTTON, left + panelWidth - 82, top + 278, 70, 20, "Back"));
+        buttonList.add(new GuiButton(NEW_EXCAVATION_BUTTON, left + 12, top + 278, 128, 20, "New excavation"));
         refreshStatus();
     }
 
@@ -88,6 +94,10 @@ public final class GuiProfileAssets extends GuiScreen {
     protected void actionPerformed(GuiButton button) {
         if (button.id == BACK_BUTTON) {
             mc.displayGuiScreen(parent);
+            return;
+        }
+        if (button.id == NEW_EXCAVATION_BUTTON) {
+            mc.displayGuiScreen(new GuiExcavationSetup(this, runtimeProvider, editorProvider));
             return;
         }
         Optional<ProfileAssetEditor> editor = editorProvider.getCurrentProfileAssetEditor();
