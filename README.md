@@ -256,6 +256,10 @@ was installed for this test.
   pass over a saved work area, or use **Dashboard > Profile assets > Work areas
   > Queue one farm pass**. Keep the exact replant seed in the hotbar; the
   default reserve is 2.
+- Use `/hw farmschedule <id> <plot-id> <minutes> [seed-reserve]`, or the guided
+  **Schedule recurring farm passes** button, to persist a CHORE-lane connected-
+  time interval. Offline process time is not counted; the existing scheduler
+  prevents duplicate concurrent occurrences and persists the next due state.
   Relative coordinates such as `~256 ~ ~` are accepted; Horizonwright does not
   impose the old 128-block smoke-test radius.
 - Use `/hw navcancel` to cancel the current navigation request and release

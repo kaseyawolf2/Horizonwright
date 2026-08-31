@@ -64,7 +64,7 @@ public final class HorizonwrightClientCommand extends CommandBase {
 
     @Override
     public String getCommandUsage(ICommandSender sender) {
-        return "/hw [panel|profile [status|enroll|recover|reassociate <id>]|status|task [id]|goto <x> <y> <z> [tolerance]|excavate cylinder <id> <radius> <bottom-y> <top-y> [<loadout> <storage> <station> <tool-slot> <work-damage>]|farm <task-id> <plot-id> [seed-reserve]|pause [id]|resume [id]|cancel <id>|navcancel|dryrun [on|off]|stop|reset]";
+        return "/hw [panel|profile [status|enroll|recover|reassociate <id>]|status|task [id]|goto <x> <y> <z> [tolerance]|excavate cylinder <id> <radius> <bottom-y> <top-y> [<loadout> <storage> <station> <tool-slot> <work-damage>]|farm <task-id> <plot-id> [seed-reserve]|farmschedule <id> <plot-id> <minutes> [seed-reserve]|pause [id]|resume [id]|cancel <id>|navcancel|dryrun [on|off]|stop|reset]";
     }
 
     @Override
@@ -108,6 +108,10 @@ public final class HorizonwrightClientCommand extends CommandBase {
         }
         if ("farm".equals(subcommand)) {
             startFarm(sender, arguments, runtime);
+            return;
+        }
+        if ("farmschedule".equals(subcommand)) {
+            scheduleFarm(sender, arguments, runtime);
             return;
         }
         if ("navcancel".equals(subcommand)) {
@@ -165,6 +169,7 @@ public final class HorizonwrightClientCommand extends CommandBase {
             || "goto".equals(subcommand)
             || "excavate".equals(subcommand)
             || "farm".equals(subcommand)
+            || "farmschedule".equals(subcommand)
             || "navcancel".equals(subcommand)
             || "pause".equals(subcommand)
             || "resume".equals(subcommand)
@@ -192,6 +197,7 @@ public final class HorizonwrightClientCommand extends CommandBase {
                 "goto",
                 "excavate",
                 "farm",
+                "farmschedule",
                 "pause",
                 "resume",
                 "cancel",
@@ -415,6 +421,48 @@ public final class HorizonwrightClientCommand extends CommandBase {
             sender.addChatMessage(
                 new ChatComponentText(EnumChatFormatting.RED + "Farm pass not started: " + safeMessage(failure)));
         }
+    }
+
+    private void scheduleFarm(ICommandSender sender, String[] arguments, HorizonwrightRuntime runtime) {
+        if (arguments.length != 4 && arguments.length != 5) {
+            sender.addChatMessage(new ChatComponentText(EnumChatFormatting.RED + getCommandUsage(sender)));
+            return;
+        }
+        try {
+            String scheduleId = ProfileAssetInput.stableId(arguments[1], "farm schedule name");
+            String plotId = ProfileAssetInput.stableId(arguments[2], "farm plot name");
+            int minutes = ProfileAssetInput.positiveInteger(arguments[3], "farm interval minutes");
+            int reserve = arguments.length == 5 ? ProfileAssetInput.nonNegativeInteger(arguments[4], "seed reserve")
+                : 2;
+            requireNamedArea(plotId);
+            long intervalMillis = Math.multiplyExact((long) minutes, 60_000L);
+            io.github.kaseyawolf2.horizonwright.core.task.ScheduleSnapshot scheduled = runtime
+                .scheduleFarm(scheduleId, plotId, reserve, intervalMillis);
+            sender.addChatMessage(
+                new ChatComponentText(
+                    EnumChatFormatting.AQUA + "Horizonwright scheduled '"
+                        + scheduled.getRule()
+                            .getId()
+                        + "' every "
+                        + minutes
+                        + " connected minute(s) for plot '"
+                        + plotId
+                        + "'."));
+        } catch (RuntimeException failure) {
+            sender.addChatMessage(
+                new ChatComponentText(EnumChatFormatting.RED + "Farm schedule not created: " + safeMessage(failure)));
+        }
+    }
+
+    private void requireNamedArea(String plotId) {
+        ProfileAssetEditor editor = profileEditorProvider.getCurrentProfileAssetEditor()
+            .orElseThrow(() -> new IllegalStateException("active profile assets are unavailable"));
+        for (io.github.kaseyawolf2.horizonwright.core.base.NamedArea area : editor.load()
+            .getNamedAreas()) {
+            if (area.getId()
+                .equals(plotId)) return;
+        }
+        throw new IllegalStateException("active profile has no named area '" + plotId + "'");
     }
 
     private void showStatus(ICommandSender sender, HorizonwrightRuntime runtime) {

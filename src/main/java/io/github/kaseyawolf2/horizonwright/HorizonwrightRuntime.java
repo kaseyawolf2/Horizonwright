@@ -14,6 +14,8 @@ import io.github.kaseyawolf2.horizonwright.core.task.ControllerSnapshot;
 import io.github.kaseyawolf2.horizonwright.core.task.IHorizonwrightController;
 import io.github.kaseyawolf2.horizonwright.core.task.MonotonicClock;
 import io.github.kaseyawolf2.horizonwright.core.task.ScheduleEnvironment;
+import io.github.kaseyawolf2.horizonwright.core.task.ScheduleRule;
+import io.github.kaseyawolf2.horizonwright.core.task.ScheduleSnapshot;
 import io.github.kaseyawolf2.horizonwright.core.task.TaskControllerState;
 import io.github.kaseyawolf2.horizonwright.core.task.TaskOrchestrator;
 import io.github.kaseyawolf2.horizonwright.core.task.TaskSnapshot;
@@ -248,6 +250,26 @@ public final class HorizonwrightRuntime implements AutoCloseable {
             throw new IllegalStateException("automation is stopped; use /hw reset before submitting new work");
         }
         return controller.submit(spec);
+    }
+
+    public ScheduleSnapshot scheduleFarm(String scheduleId, String plotId, int minimumSeedReserve,
+        long intervalMillis) {
+        ensureOpen();
+        if (intervalMillis < 1L) throw new IllegalArgumentException("farm schedule interval must be positive");
+        if (actionBroker.isDeathSafetyLocked()) {
+            throw new IllegalStateException("death safety is active; new automation is unavailable");
+        }
+        if (actionBroker.isAutomationLocked()) {
+            throw new IllegalStateException("automation is stopped; use /hw reset before scheduling new work");
+        }
+        return controller.submitSchedule(
+            ScheduleRule.connectedInterval(
+                scheduleId,
+                FarmTask.scheduledPass(plotId, minimumSeedReserve),
+                intervalMillis,
+                intervalMillis,
+                java.util.Collections.<String>emptySet(),
+                0));
     }
 
     /** Controller-backed compatibility entry point retained for existing integrations. */

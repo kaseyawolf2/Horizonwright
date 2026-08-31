@@ -28,6 +28,7 @@ public final class GuiProfileAreas extends GuiScreen {
     private static final int SECOND_BUTTON = 3;
     private static final int SAVE_BUTTON = 4;
     private static final int QUEUE_FARM_BUTTON = 5;
+    private static final int SCHEDULE_FARM_BUTTON = 6;
 
     private final GuiScreen parent;
     private final CurrentRuntimeProvider runtimeProvider;
@@ -35,6 +36,7 @@ public final class GuiProfileAreas extends GuiScreen {
     private final ProfileAreaCapture capture = new ProfileAreaCapture();
     private GuiTextField areaId;
     private GuiTextField seedReserve;
+    private GuiTextField intervalMinutes;
     private int left;
     private int top;
     private int panelWidth;
@@ -56,25 +58,36 @@ public final class GuiProfileAreas extends GuiScreen {
         buttonList.clear();
         panelWidth = Math.min(440, width - 24);
         left = (width - panelWidth) / 2;
-        top = Math.max(8, (height - 270) / 2);
-        areaId = new GuiTextField(fontRendererObj, left + 132, top + 52, 180, 18);
+        top = Math.max(8, (height - 310) / 2);
+        areaId = new GuiTextField(fontRendererObj, left + 100, top + 52, 172, 18);
         areaId.setMaxStringLength(48);
         areaId.setText("north-field");
-        seedReserve = new GuiTextField(fontRendererObj, left + 352, top + 52, 70, 18);
+        seedReserve = new GuiTextField(fontRendererObj, left + 370, top + 52, 52, 18);
         seedReserve.setMaxStringLength(8);
         seedReserve.setText("2");
-        buttonList.add(new GuiButton(FIRST_BUTTON, left + 18, top + 88, 190, 20, "Capture corner 1 here"));
-        buttonList.add(new GuiButton(SECOND_BUTTON, left + 232, top + 88, 190, 20, "Capture corner 2 here"));
-        buttonList.add(new GuiButton(SAVE_BUTTON, left + 18, top + 166, panelWidth - 36, 22, "Save work area"));
+        intervalMinutes = new GuiTextField(fontRendererObj, left + 370, top + 78, 52, 18);
+        intervalMinutes.setMaxStringLength(8);
+        intervalMinutes.setText("30");
+        buttonList.add(new GuiButton(FIRST_BUTTON, left + 18, top + 110, 190, 20, "Capture corner 1 here"));
+        buttonList.add(new GuiButton(SECOND_BUTTON, left + 232, top + 110, 190, 20, "Capture corner 2 here"));
+        buttonList.add(new GuiButton(SAVE_BUTTON, left + 18, top + 188, panelWidth - 36, 22, "Save work area"));
         buttonList.add(
             new GuiButton(
                 QUEUE_FARM_BUTTON,
                 left + 18,
-                top + 194,
+                top + 216,
                 panelWidth - 36,
                 22,
                 "Queue one farm pass for this area"));
-        buttonList.add(new GuiButton(BACK_BUTTON, left + panelWidth - 82, top + 234, 70, 20, "Back"));
+        buttonList.add(
+            new GuiButton(
+                SCHEDULE_FARM_BUTTON,
+                left + 18,
+                top + 244,
+                panelWidth - 36,
+                22,
+                "Schedule recurring farm passes"));
+        buttonList.add(new GuiButton(BACK_BUTTON, left + panelWidth - 82, top + 278, 70, 20, "Back"));
         refreshCount();
     }
 
@@ -100,24 +113,32 @@ public final class GuiProfileAreas extends GuiScreen {
                 save();
             } else if (button.id == QUEUE_FARM_BUTTON) {
                 queueFarmPass();
+            } else if (button.id == SCHEDULE_FARM_BUTTON) {
+                scheduleFarmPasses();
             }
         } catch (RuntimeException failure) {
             status = "Nothing changed: " + safeMessage(failure);
         }
     }
 
+    private void scheduleFarmPasses() {
+        if (mc == null || mc.theWorld == null) throw new IllegalStateException("join the bound world first");
+        String plotId = ProfileAssetInput.stableId(areaId.getText(), "area name");
+        requireSavedArea(plotId);
+        int reserve = ProfileAssetInput.nonNegativeInteger(seedReserve.getText(), "minimum seed reserve");
+        int minutes = ProfileAssetInput.positiveInteger(intervalMinutes.getText(), "farm interval minutes");
+        long intervalMillis = Math.multiplyExact((long) minutes, 60_000L);
+        String scheduleId = "farm-" + plotId;
+        HorizonwrightRuntime runtime = CurrentRuntimeUiResolver.resolve(runtimeProvider)
+            .getRuntime();
+        runtime.scheduleFarm(scheduleId, plotId, reserve, intervalMillis);
+        status = "Scheduled '" + scheduleId + "' every " + minutes + " connected minute(s).";
+    }
+
     private void queueFarmPass() {
         if (mc == null || mc.theWorld == null) throw new IllegalStateException("join the bound world first");
         String plotId = ProfileAssetInput.stableId(areaId.getText(), "area name");
-        ProfileAssetEditor editor = editorProvider.getCurrentProfileAssetEditor()
-            .orElseThrow(() -> new IllegalStateException("active profile assets are unavailable"));
-        boolean found = false;
-        for (NamedArea area : editor.load()
-            .getNamedAreas()) {
-            if (area.getId()
-                .equals(plotId)) found = true;
-        }
-        if (!found) throw new IllegalStateException("save work area '" + plotId + "' first");
+        requireSavedArea(plotId);
         int reserve = ProfileAssetInput.nonNegativeInteger(seedReserve.getText(), "minimum seed reserve");
         String taskId = "farm-" + plotId + "-" + mc.theWorld.getTotalWorldTime();
         HorizonwrightRuntime runtime = CurrentRuntimeUiResolver.resolve(runtimeProvider)
@@ -125,6 +146,17 @@ public final class GuiProfileAreas extends GuiScreen {
         TaskSnapshot submitted = runtime.submitFarm(FarmTask.finitePass(taskId, plotId, reserve));
         status = "Queued '" + submitted.getSpec()
             .getId() + "' with seed reserve " + reserve + ".";
+    }
+
+    private void requireSavedArea(String plotId) {
+        ProfileAssetEditor editor = editorProvider.getCurrentProfileAssetEditor()
+            .orElseThrow(() -> new IllegalStateException("active profile assets are unavailable"));
+        for (NamedArea area : editor.load()
+            .getNamedAreas()) {
+            if (area.getId()
+                .equals(plotId)) return;
+        }
+        throw new IllegalStateException("save work area '" + plotId + "' first");
     }
 
     private void save() {
@@ -165,6 +197,7 @@ public final class GuiProfileAreas extends GuiScreen {
     public void updateScreen() {
         areaId.updateCursorCounter();
         seedReserve.updateCursorCounter();
+        intervalMinutes.updateCursorCounter();
     }
 
     @Override
@@ -175,6 +208,7 @@ public final class GuiProfileAreas extends GuiScreen {
         }
         areaId.textboxKeyTyped(character, keyCode);
         seedReserve.textboxKeyTyped(character, keyCode);
+        intervalMinutes.textboxKeyTyped(character, keyCode);
     }
 
     @Override
@@ -182,12 +216,13 @@ public final class GuiProfileAreas extends GuiScreen {
         super.mouseClicked(mouseX, mouseY, mouseButton);
         areaId.mouseClicked(mouseX, mouseY, mouseButton);
         seedReserve.mouseClicked(mouseX, mouseY, mouseButton);
+        intervalMinutes.mouseClicked(mouseX, mouseY, mouseButton);
     }
 
     @Override
     public void drawScreen(int mouseX, int mouseY, float partialTicks) {
         drawDefaultBackground();
-        drawRect(left, top, left + panelWidth, top + 270, 0xE010141B);
+        drawRect(left, top, left + panelWidth, top + 310, 0xE010141B);
         drawCenteredString(fontRendererObj, "Named work areas", width / 2, top + 15, 0xFFF0C674);
         drawCenteredString(
             fontRendererObj,
@@ -196,27 +231,29 @@ public final class GuiProfileAreas extends GuiScreen {
             top + 30,
             0xFF8FAAD0);
         drawString(fontRendererObj, "Area name", left + 18, top + 58, 0xFFE0E0E0);
-        drawString(fontRendererObj, "Seed reserve", left + 278, top + 58, 0xFFE0E0E0);
+        drawString(fontRendererObj, "Seed reserve", left + 292, top + 58, 0xFFE0E0E0);
+        drawString(fontRendererObj, "Every minutes", left + 284, top + 84, 0xFFE0E0E0);
         drawString(
             fontRendererObj,
             "Corner 1: " + truncate(capture.firstSummary(), 48),
             left + 18,
-            top + 120,
+            top + 142,
             0xFFB8C8DE);
         drawString(
             fontRendererObj,
             "Corner 2: " + truncate(capture.secondSummary(), 48),
             left + 18,
-            top + 138,
+            top + 160,
             0xFFB8C8DE);
         drawString(
             fontRendererObj,
             truncate(status, 66),
             left + 18,
-            top + 152,
+            top + 174,
             status.startsWith("Nothing") ? 0xFFFF7777 : 0xFFB8C8DE);
         areaId.drawTextBox();
         seedReserve.drawTextBox();
+        intervalMinutes.drawTextBox();
         super.drawScreen(mouseX, mouseY, partialTicks);
     }
 

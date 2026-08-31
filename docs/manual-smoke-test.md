@@ -179,6 +179,13 @@ pass with `/hw farm smoke-farm smoke-plot 2`; missing plots, seeds outside the
 hotbar, insufficient reserve, oversized plots, unloaded plot chunks, and
 unknown mod crops must stop without a harvest.
 
+Then schedule the same plot every two connected minutes from the guided page or
+with `/hw farmschedule smoke-farm-recurring smoke-plot 2 2`. Keep a long
+excavation active and confirm the farm CHORE suspends it at a safe frontier,
+runs once, and lets the exact excavation frontier resume. Disconnect for longer
+than two minutes: offline time must not create a burst of runs after rejoin, and
+at most one occurrence for this schedule may be queued or active at once.
+
 ## Recorded physical result
 
 On 2026-08-30, the operator completed the long-route, inventory-during-walk,

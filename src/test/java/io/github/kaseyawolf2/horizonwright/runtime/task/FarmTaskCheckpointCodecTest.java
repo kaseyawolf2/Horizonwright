@@ -13,6 +13,7 @@ import io.github.kaseyawolf2.horizonwright.core.base.CropFamily;
 import io.github.kaseyawolf2.horizonwright.core.base.CropObservation;
 import io.github.kaseyawolf2.horizonwright.core.base.FarmPassCheckpoint;
 import io.github.kaseyawolf2.horizonwright.core.base.NamedArea;
+import io.github.kaseyawolf2.horizonwright.core.task.ScheduledTaskSpec;
 import io.github.kaseyawolf2.horizonwright.core.task.TaskCheckpoint;
 import io.github.kaseyawolf2.horizonwright.core.task.TaskLane;
 import io.github.kaseyawolf2.horizonwright.core.task.TaskSpec;
@@ -92,6 +93,18 @@ public class FarmTaskCheckpointCodecTest {
                     "Bad",
                     TaskLane.CHORE,
                     java.util.Collections.singletonMap(FarmTask.PLOT_ID, "north-field"))));
+
+        ScheduledTaskSpec recurring = FarmTask.scheduledPass("north-field", 12);
+        assertEquals(FarmTask.TYPE, recurring.getType());
+        assertEquals(TaskLane.CHORE, recurring.getLane());
+        assertEquals(
+            "north-field",
+            recurring.getParameters()
+                .get(FarmTask.PLOT_ID));
+        assertEquals(
+            "12",
+            recurring.getParameters()
+                .get(FarmTask.MINIMUM_SEED_RESERVE));
     }
 
     private static CropObservation crop(int x, int y, int z, String fingerprint, String seed, boolean known,

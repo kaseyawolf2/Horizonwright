@@ -3,6 +3,7 @@ package io.github.kaseyawolf2.horizonwright.runtime.task;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
+import io.github.kaseyawolf2.horizonwright.core.task.ScheduledTaskSpec;
 import io.github.kaseyawolf2.horizonwright.core.task.TaskLane;
 import io.github.kaseyawolf2.horizonwright.core.task.TaskSpec;
 
@@ -16,12 +17,16 @@ public final class FarmTask {
     private FarmTask() {}
 
     public static TaskSpec finitePass(String taskId, String plotId, int minimumSeedReserve) {
+        return scheduledPass(plotId, minimumSeedReserve).instantiate(taskId);
+    }
+
+    public static ScheduledTaskSpec scheduledPass(String plotId, int minimumSeedReserve) {
         String plot = required(plotId, "plot id");
         if (minimumSeedReserve < 0) throw new IllegalArgumentException("minimum seed reserve must not be negative");
         Map<String, String> parameters = new LinkedHashMap<>();
         parameters.put(PLOT_ID, plot);
         parameters.put(MINIMUM_SEED_RESERVE, Integer.toString(minimumSeedReserve));
-        return new TaskSpec(taskId, TYPE, "Farm pass: " + plot, TaskLane.CHORE, parameters);
+        return new ScheduledTaskSpec(TYPE, "Farm pass: " + plot, TaskLane.CHORE, parameters);
     }
 
     static String plotId(TaskSpec spec) {

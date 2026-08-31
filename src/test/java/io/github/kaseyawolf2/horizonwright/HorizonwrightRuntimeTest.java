@@ -23,6 +23,7 @@ import io.github.kaseyawolf2.horizonwright.core.navigation.NavigationRequest;
 import io.github.kaseyawolf2.horizonwright.core.navigation.NavigationState;
 import io.github.kaseyawolf2.horizonwright.core.task.MonotonicClock;
 import io.github.kaseyawolf2.horizonwright.core.task.ScheduleEnvironment;
+import io.github.kaseyawolf2.horizonwright.core.task.ScheduleSnapshot;
 import io.github.kaseyawolf2.horizonwright.core.task.TaskState;
 import io.github.kaseyawolf2.horizonwright.runtime.task.ExcavationTask;
 import io.github.kaseyawolf2.horizonwright.runtime.task.FarmTask;
@@ -243,6 +244,47 @@ public class HorizonwrightRuntimeTest {
                 expected.getMessage()
                     .contains("/hw reset"));
         }
+        runtime.close();
+    }
+
+    @Test
+    public void recurringFarmScheduleRetainsTypedChoreParametersAndStartsAfterOneInterval() {
+        HorizonwrightRuntime runtime = new HorizonwrightRuntime(
+            new InMemoryActionBroker(),
+            new ActionSessionGuard(),
+            new FixedClock());
+
+        ScheduleSnapshot scheduled = runtime.scheduleFarm("north-farm", "north-field", 3, 1_800_000L);
+
+        assertEquals(
+            "north-farm",
+            scheduled.getRule()
+                .getId());
+        assertEquals(
+            FarmTask.TYPE,
+            scheduled.getRule()
+                .getTask()
+                .getType());
+        assertEquals(
+            "north-field",
+            scheduled.getRule()
+                .getTask()
+                .getParameters()
+                .get("plotId"));
+        assertEquals(
+            "3",
+            scheduled.getRule()
+                .getTask()
+                .getParameters()
+                .get("minimumSeedReserve"));
+        assertEquals(
+            1_800_000L,
+            scheduled.getRule()
+                .getIntervalMillis());
+        assertEquals(
+            1_800_000L,
+            scheduled.getRule()
+                .getInitialDelayMillis());
         runtime.close();
     }
 
