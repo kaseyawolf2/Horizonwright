@@ -83,7 +83,10 @@ public final class BaritoneNavigationBackend implements NavigationBackend, Actio
         if (active != null && !active.isTerminal()) {
             throw new IllegalStateException("Baritone navigation already has an active request");
         }
-        if (pendingCleanup != null || !actionSessionGuard.isReadyForSession()) {
+        boolean sessionReady = movementLease.isSafetyRecoveryLease()
+            ? actionSessionGuard.isReadyForSafetyRecoverySession()
+            : actionSessionGuard.isReadyForSession();
+        if (pendingCleanup != null || !sessionReady) {
             throw new IllegalStateException(actionSessionGuard.readinessDiagnostic());
         }
         requireClientThread();

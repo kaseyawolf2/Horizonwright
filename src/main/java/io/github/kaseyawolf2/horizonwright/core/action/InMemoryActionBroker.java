@@ -31,13 +31,27 @@ public final class InMemoryActionBroker implements ActionBroker {
         if (safetyLocked || automationLocked || revocationTransitionsInProgress > 0) {
             return Optional.empty();
         }
+        return acquire(normalizedOwner, capabilities, false);
+    }
+
+    @Override
+    public synchronized Optional<ActionLease> tryAcquireSafetyRecovery(String owner) {
+        String normalizedOwner = normalizeOwner(owner);
+        if (!safetyLocked || automationLocked || revocationTransitionsInProgress > 0) {
+            return Optional.empty();
+        }
+        return acquire(normalizedOwner, EnumSet.of(ActionCapability.MOVEMENT, ActionCapability.LOOK), true);
+    }
+
+    private Optional<ActionLease> acquire(String owner, EnumSet<ActionCapability> capabilities,
+        boolean safetyRecovery) {
         for (ActionCapability capability : capabilities) {
             if (leasesByCapability.containsKey(capability)) {
                 return Optional.empty();
             }
         }
 
-        Lease lease = new Lease(this, nextLeaseId++, normalizedOwner, epoch, capabilities);
+        Lease lease = new Lease(this, nextLeaseId++, owner, epoch, capabilities, safetyRecovery);
         for (ActionCapability capability : capabilities) {
             leasesByCapability.put(capability, lease);
         }
@@ -177,7 +191,8 @@ public final class InMemoryActionBroker implements ActionBroker {
     }
 
     private synchronized boolean isValid(Lease lease) {
-        if (lease.closed || safetyLocked || automationLocked || lease.epoch != epoch) {
+        boolean correctSafetyMode = lease.safetyRecovery ? safetyLocked : !safetyLocked;
+        if (lease.closed || !correctSafetyMode || automationLocked || lease.epoch != epoch) {
             return false;
         }
         for (ActionCapability capability : lease.capabilities) {
@@ -287,15 +302,17 @@ public final class InMemoryActionBroker implements ActionBroker {
         private final String owner;
         private final long epoch;
         private final Set<ActionCapability> capabilities;
+        private final boolean safetyRecovery;
         private volatile boolean closed;
 
         private Lease(InMemoryActionBroker broker, long leaseId, String owner, long epoch,
-            EnumSet<ActionCapability> capabilities) {
+            EnumSet<ActionCapability> capabilities, boolean safetyRecovery) {
             this.broker = broker;
             this.leaseId = leaseId;
             this.owner = owner;
             this.epoch = epoch;
             this.capabilities = Collections.unmodifiableSet(EnumSet.copyOf(capabilities));
+            this.safetyRecovery = safetyRecovery;
         }
 
         @Override
@@ -316,6 +333,11 @@ public final class InMemoryActionBroker implements ActionBroker {
         @Override
         public boolean isValid() {
             return broker.isValid(this);
+        }
+
+        @Override
+        public boolean isSafetyRecoveryLease() {
+            return safetyRecovery;
         }
 
         @Override

@@ -106,13 +106,21 @@ final class LiveClientDeathSafetyBoundary implements RuntimeSessionDeathStateBou
         maximumHealth = positiveMaximumHealth(minecraft.thePlayer.getMaxHealth());
         long tick = advanceClientTick();
         DeathSafetySnapshot snapshot = deathSafety.clientTick(tick);
-        if (controls.consumeUnavailableRecoveryRequest()) {
-            snapshot = deathSafety.failUnavailableRecoveryNavigation(tick)
-                .getSnapshot();
-            graveActivationPacketSnapshot = null;
-        } else {
-            snapshot = advanceGraveRecovery(minecraft, tick, snapshot);
+        if (snapshot.getRecoveryPhase() == RecoveryPhase.NAVIGATING_WITH_INTERACTIONS_DISABLED) {
+            Optional<io.github.kaseyawolf2.horizonwright.core.safety.death.RecoveryNavigationStatus> status = controls
+                .pollRecoveryNavigation(snapshot.getDeathEpoch());
+            if (status.isPresent()) {
+                MinecraftClientDeathContextSource source = new MinecraftClientDeathContextSource(minecraft, runtime);
+                snapshot = deathSafety
+                    .observeRecoveryNavigation(
+                        tick,
+                        status.get(),
+                        source.getPlayerPosition(),
+                        source.getInventorySnapshot())
+                    .getSnapshot();
+            }
         }
+        snapshot = advanceGraveRecovery(minecraft, tick, snapshot);
         refreshGraveActivationPacketSnapshot(minecraft, snapshot);
     }
 

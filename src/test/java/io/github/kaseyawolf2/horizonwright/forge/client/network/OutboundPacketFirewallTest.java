@@ -99,6 +99,34 @@ public class OutboundPacketFirewallTest {
     }
 
     @Test
+    public void deathRecoveryLeasePassesMovementButBlocksIntegratedInteractionsAndPreservesUnknownTraffic() {
+        InMemoryActionBroker broker = new InMemoryActionBroker();
+        ActionSessionGuard guard = new ActionSessionGuard();
+        guard.markFirewallInstalled();
+        broker.addRevocationListener(guard);
+        broker.enterSafetyLockdown();
+        ActionLease recovery = broker.tryAcquireSafetyRecovery("death-recovery")
+            .get();
+        guard.begin(recovery);
+        EmbeddedChannel channel = new EmbeddedChannel(new OutboundPacketFirewall(guard));
+
+        C03PacketPlayer.C04PacketPlayerPosition movement = position(4.0D);
+        assertTrue(channel.writeOutbound(movement));
+        assertSame(movement, channel.readOutbound());
+
+        channel.writeOutbound(new C07PacketPlayerDigging(0, 1, 64, 1, 1));
+        assertNull(channel.readOutbound());
+        assertEquals(1L, guard.getBlockedActionCount());
+
+        FMLProxyPacket unknown = new FMLProxyPacket(Unpooled.wrappedBuffer(new byte[] { 9 }), "UnintegratedMod");
+        assertTrue(channel.writeOutbound(unknown));
+        assertSame(unknown, channel.readOutbound());
+        unknown.payload()
+            .release();
+        channel.finish();
+    }
+
+    @Test
     public void directHandlerRemovalDisablesAutomationButLeavesTheChannelAlone() {
         InMemoryActionBroker broker = new InMemoryActionBroker();
         ActionLease lease = broker.tryAcquire("navigation", EnumSet.of(ActionCapability.MOVEMENT))

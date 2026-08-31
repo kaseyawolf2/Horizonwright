@@ -112,6 +112,36 @@ public class ActionSessionGuardTest {
     }
 
     @Test
+    public void safetyRecoverySessionAllowsOnlyMovementAndLookWithoutReleasingLockdown() {
+        InMemoryActionBroker broker = new InMemoryActionBroker();
+        ActionSessionGuard guard = new ActionSessionGuard();
+        guard.markFirewallInstalled();
+        broker.addRevocationListener(guard);
+        broker.enterSafetyLockdown();
+        ActionLease recovery = broker.tryAcquireSafetyRecovery("death-recovery")
+            .get();
+
+        assertTrue(guard.isReadyForSafetyRecoverySession());
+        guard.begin(recovery);
+
+        assertEquals(ActionSessionGuard.Mode.SAFETY_LOCKDOWN, guard.getMode());
+        assertEquals(ActionAuthorizationDecision.AUTHORIZED, guard.authorize(ActionCapability.MOVEMENT));
+        assertEquals(ActionAuthorizationDecision.AUTHORIZED, guard.authorize(ActionCapability.LOOK));
+        assertEquals(ActionAuthorizationDecision.BLOCKED_MISSING_CAPABILITY, guard.authorize(ActionCapability.DIG));
+        assertEquals(ActionAuthorizationDecision.BLOCKED_MISSING_CAPABILITY, guard.authorize(ActionCapability.USE));
+        assertEquals(ActionAuthorizationDecision.PLAYER_PASSTHROUGH, guard.authorizeUnknownAction());
+
+        guard.quarantine(recovery);
+        guard.end(recovery);
+        recovery.close();
+
+        assertEquals(ActionSessionGuard.Mode.SAFETY_LOCKDOWN, guard.getMode());
+        assertEquals(ActionAuthorizationDecision.BLOCKED_REVOKED_EPOCH, guard.authorize(ActionCapability.MOVEMENT));
+        assertTrue(guard.isReadyForSafetyRecoverySession());
+        assertEquals(0L, guard.drainGenerationOrZero());
+    }
+
+    @Test
     public void idleOperatorStopLeavesDirectPlayerPacketsInPlayerMode() {
         InMemoryActionBroker broker = new InMemoryActionBroker();
         ActionSessionGuard guard = new ActionSessionGuard();

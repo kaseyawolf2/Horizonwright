@@ -12,6 +12,10 @@ public interface ActionLease extends AutoCloseable {
 
     boolean isValid();
 
+    default boolean isSafetyRecoveryLease() {
+        return false;
+    }
+
     @Override
     void close();
 }

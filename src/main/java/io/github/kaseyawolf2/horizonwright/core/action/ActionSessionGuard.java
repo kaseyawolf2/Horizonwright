@@ -37,12 +37,18 @@ public final class ActionSessionGuard implements ActionRevocationListener {
         if (!firewallReady) {
             throw new IllegalStateException("outbound action firewall is not ready");
         }
-        if (mode != Mode.PLAYER) {
+        if (lease.isSafetyRecoveryLease()) {
+            if (mode != Mode.SAFETY_LOCKDOWN || activeLease != null) {
+                throw new IllegalStateException("death recovery movement authority is not ready");
+            }
+        } else if (mode != Mode.PLAYER) {
             throw new IllegalStateException("the previous action session has not drained");
         }
         activeLease = lease;
         sessionEpoch = lease.getEpoch();
-        mode = Mode.ACTIVE;
+        if (!lease.isSafetyRecoveryLease()) {
+            mode = Mode.ACTIVE;
+        }
         cleanupComplete = false;
         blockedActionCount = 0L;
         lastBlockedAction = "";
@@ -112,8 +118,15 @@ public final class ActionSessionGuard implements ActionRevocationListener {
         return firewallReady && mode == Mode.PLAYER;
     }
 
+    public synchronized boolean isReadyForSafetyRecoverySession() {
+        return firewallReady && mode == Mode.SAFETY_LOCKDOWN && activeLease == null;
+    }
+
     public synchronized boolean isActiveLease(ActionLease lease) {
-        return mode == Mode.ACTIVE && activeLease == lease && lease != null && lease.isValid();
+        if (lease == null || activeLease != lease || !lease.isValid()) {
+            return false;
+        }
+        return lease.isSafetyRecoveryLease() ? mode == Mode.SAFETY_LOCKDOWN : mode == Mode.ACTIVE;
     }
 
     public synchronized String readinessDiagnostic() {
@@ -267,7 +280,11 @@ public final class ActionSessionGuard implements ActionRevocationListener {
         if (mode == Mode.PLAYER) {
             return ActionAuthorizationDecision.PLAYER_PASSTHROUGH;
         }
-        if (mode != Mode.ACTIVE || activeLease == null || !activeLease.isValid()) {
+        boolean activeNormalSession = mode == Mode.ACTIVE && activeLease != null
+            && !activeLease.isSafetyRecoveryLease();
+        boolean activeRecoverySession = mode == Mode.SAFETY_LOCKDOWN && activeLease != null
+            && activeLease.isSafetyRecoveryLease();
+        if ((!activeNormalSession && !activeRecoverySession) || !activeLease.isValid()) {
             return ActionAuthorizationDecision.BLOCKED_REVOKED_EPOCH;
         }
         return null;

@@ -74,6 +74,46 @@ public class InMemoryActionBrokerTest {
     }
 
     @Test
+    public void deathLockdownAllowsOnlyAnExplicitMovementLookRecoveryLease() {
+        InMemoryActionBroker broker = new InMemoryActionBroker();
+        broker.enterSafetyLockdown();
+
+        ActionLease recovery = broker.tryAcquireSafetyRecovery("death-recovery")
+            .get();
+
+        assertTrue(recovery.isSafetyRecoveryLease());
+        assertEquals(EnumSet.of(ActionCapability.MOVEMENT, ActionCapability.LOOK), recovery.getCapabilities());
+        assertTrue(recovery.isValid());
+        assertFalse(
+            broker.tryAcquire("ordinary", EnumSet.of(ActionCapability.MOVEMENT))
+                .isPresent());
+        assertFalse(
+            broker.tryAcquireSafetyRecovery("second-recovery")
+                .isPresent());
+
+        broker.revokeAll();
+        assertFalse(recovery.isValid());
+        assertTrue(
+            broker.tryAcquireSafetyRecovery("replacement-recovery")
+                .isPresent());
+    }
+
+    @Test
+    public void operatorStopAlsoStopsSafetyRecoveryAutomation() {
+        InMemoryActionBroker broker = new InMemoryActionBroker();
+        broker.enterSafetyLockdown();
+        ActionLease recovery = broker.tryAcquireSafetyRecovery("death-recovery")
+            .get();
+
+        broker.enterAutomationLockdown();
+
+        assertFalse(recovery.isValid());
+        assertFalse(
+            broker.tryAcquireSafetyRecovery("replacement-recovery")
+                .isPresent());
+    }
+
+    @Test
     public void persistedEpochFloorAdvancesInOneBoundedTransition() {
         InMemoryActionBroker broker = new InMemoryActionBroker();
         List<ActionRevocation> observed = new ArrayList<>();

@@ -833,7 +833,10 @@ public final class DeathSafetyController {
     private DeathSafetySnapshot createSnapshot() {
         RecoveryNavigationRequest navigationRequest = recoveryPhase
             == RecoveryPhase.NAVIGATING_WITH_INTERACTIONS_DISABLED
-                ? new RecoveryNavigationRequest(deathEpoch, deathPosition)
+                ? new RecoveryNavigationRequest(
+                    deathEpoch,
+                    deathPosition,
+                    Math.min(policy.getGravePlacementRadius(), 8))
                 : null;
         return new DeathSafetySnapshot(
             state,

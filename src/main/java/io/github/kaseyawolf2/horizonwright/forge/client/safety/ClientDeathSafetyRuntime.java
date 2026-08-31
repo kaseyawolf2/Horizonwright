@@ -13,6 +13,7 @@ import io.github.kaseyawolf2.horizonwright.core.safety.death.DeathSafetyPolicy;
 import io.github.kaseyawolf2.horizonwright.core.safety.death.DeathSafetySnapshot;
 import io.github.kaseyawolf2.horizonwright.core.safety.death.DeathSafetyUpdate;
 import io.github.kaseyawolf2.horizonwright.core.safety.death.DeathSignal;
+import io.github.kaseyawolf2.horizonwright.core.safety.death.DimensionBlockPosition;
 import io.github.kaseyawolf2.horizonwright.core.safety.death.GraveSearchObservation;
 import io.github.kaseyawolf2.horizonwright.core.safety.death.RecoveryNavigationStatus;
 import io.github.kaseyawolf2.horizonwright.core.safety.death.RecoveryVerificationObservation;
@@ -185,6 +186,24 @@ public final class ClientDeathSafetyRuntime {
                     source.getInventorySnapshot(),
                     false,
                     false));
+        directives.process(update, effects);
+        return update;
+    }
+
+    public synchronized DeathSafetyUpdate observeRecoveryNavigation(long clientTick, RecoveryNavigationStatus status,
+        DimensionBlockPosition playerPosition, ClientInventorySnapshot inventorySnapshot) {
+        if (status == null || playerPosition == null || inventorySnapshot == null) {
+            throw new IllegalArgumentException("recovery navigation observation must be complete");
+        }
+        DeathSafetyConnectionCoordinator.Session active = requireSession();
+        DeathSafetySnapshot current = active.getController()
+            .snapshot();
+        DeathSafetyUpdate update = active.getController()
+            .onRecoveryNavigation(
+                active.getStamps()
+                    .next(clientTick),
+                current.getDeathEpoch(),
+                RecoveryObservationFactory.navigation(status, playerPosition, inventorySnapshot, false, false));
         directives.process(update, effects);
         return update;
     }

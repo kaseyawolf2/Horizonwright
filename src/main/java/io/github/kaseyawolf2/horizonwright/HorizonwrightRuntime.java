@@ -93,6 +93,10 @@ public final class HorizonwrightRuntime implements AutoCloseable {
         return actionSessionGuard;
     }
 
+    public NavigationBackend getNavigationBackend() {
+        return navigationBackend;
+    }
+
     public IHorizonwrightController getController() {
         return controller;
     }

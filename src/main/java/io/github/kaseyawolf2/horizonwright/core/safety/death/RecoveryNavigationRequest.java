@@ -5,10 +5,15 @@ public final class RecoveryNavigationRequest {
 
     private final long deathEpoch;
     private final DimensionBlockPosition target;
+    private final int arrivalTolerance;
 
-    RecoveryNavigationRequest(long deathEpoch, DimensionBlockPosition target) {
+    RecoveryNavigationRequest(long deathEpoch, DimensionBlockPosition target, int arrivalTolerance) {
+        if (arrivalTolerance < 0 || arrivalTolerance > 8) {
+            throw new IllegalArgumentException("recovery arrival tolerance must be between zero and eight");
+        }
         this.deathEpoch = deathEpoch;
         this.target = target;
+        this.arrivalTolerance = arrivalTolerance;
     }
 
     public long getDeathEpoch() {
@@ -17,6 +22,10 @@ public final class RecoveryNavigationRequest {
 
     public DimensionBlockPosition getTarget() {
         return target;
+    }
+
+    public int getArrivalTolerance() {
+        return arrivalTolerance;
     }
 
     public boolean areGenericInteractionsAllowed() {

@@ -7,6 +7,9 @@ public interface ActionBroker {
 
     Optional<ActionLease> tryAcquire(String owner, Set<ActionCapability> capabilities);
 
+    /** Acquires the one movement/look-only lease permitted while death recovery is latched. */
+    Optional<ActionLease> tryAcquireSafetyRecovery(String owner);
+
     long currentEpoch();
 
     /**

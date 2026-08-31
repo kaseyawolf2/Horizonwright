@@ -20,9 +20,12 @@ respawn inventory from the live pre-death manifest. Those observations now
 feed the live search, stabilization, and verification phases;
 missing restart evidence enters an explicit manual hold instead of being
 fabricated. Exact activation packets are matched solely against immutable
-Minecraft-thread evidence. Interaction-disabled recovery navigation and the
-automatic empty-hand/sneak activation sequence remain incomplete. Unattended
-operation remains disabled.
+Minecraft-thread evidence. Interaction-disabled recovery navigation now uses
+one death-scoped `MOVEMENT`/`LOOK` lease while the ordinary death lockdown
+continues blocking every integrated interaction packet; unintegrated mod
+traffic remains pass-through. The automatic empty-hand/sneak activation
+sequence, restart evidence persistence, and physical recovery test remain
+incomplete. Unattended operation remains disabled.
 
 ## Pinned target
 
