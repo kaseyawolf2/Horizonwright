@@ -32,7 +32,14 @@ consumed grave activation to resume verification without replay. The physical
 recovery test remains incomplete. Milestone 3 shared operations have started
 with durable named loadouts and conservative whole-stack unload selection;
 arbitrary modded equipment is protected by configured identity rules rather
-than vanilla item-class guesses.
+than vanilla item-class guesses. Destination filters defer nonmatching items,
+and adapter-proposed quick moves become executable only after reservation,
+exact-snapshot, empty-cursor, source-reduction, and whole-container content
+conservation checks. Excavation can checkpoint its exact frontier for unloading
+or repair before acquiring an action lease. The adapter-neutral Tinkers repair
+gate triggers at the configured durability threshold or when the next work unit
+would exhaust the tool, and accepts output only when material was consumed,
+stable tool identity is unchanged, and `InfiTool.Damage` decreased.
 Unattended operation remains disabled.
 
 ## Pinned target

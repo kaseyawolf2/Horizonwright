@@ -4,6 +4,7 @@ import java.util.Objects;
 
 import io.github.kaseyawolf2.horizonwright.core.excavation.ExcavationFrontier;
 import io.github.kaseyawolf2.horizonwright.core.excavation.ExcavationObservation;
+import io.github.kaseyawolf2.horizonwright.core.excavation.ExcavationSuspensionReason;
 
 /** Immutable observation tagged with the exact request authority that produced it. */
 public final class ExcavationObservationResult {
@@ -13,9 +14,16 @@ public final class ExcavationObservationResult {
     private final String geometryKey;
     private final ExcavationFrontier startFrontier;
     private final ExcavationObservation observation;
+    private final ExcavationSuspensionReason suspensionReason;
 
     public ExcavationObservationResult(long taskRevision, long actionEpoch, String geometryKey,
         ExcavationFrontier startFrontier, ExcavationObservation observation) {
+        this(taskRevision, actionEpoch, geometryKey, startFrontier, observation, ExcavationSuspensionReason.NONE);
+    }
+
+    public ExcavationObservationResult(long taskRevision, long actionEpoch, String geometryKey,
+        ExcavationFrontier startFrontier, ExcavationObservation observation,
+        ExcavationSuspensionReason suspensionReason) {
         if (taskRevision < 1L) {
             throw new IllegalArgumentException("taskRevision must be positive");
         }
@@ -27,6 +35,7 @@ public final class ExcavationObservationResult {
         this.geometryKey = requireText(geometryKey, "geometryKey");
         this.startFrontier = Objects.requireNonNull(startFrontier, "startFrontier");
         this.observation = Objects.requireNonNull(observation, "observation");
+        this.suspensionReason = Objects.requireNonNull(suspensionReason, "suspensionReason");
     }
 
     public long getTaskRevision() {
@@ -47,6 +56,10 @@ public final class ExcavationObservationResult {
 
     public ExcavationObservation getObservation() {
         return observation;
+    }
+
+    public ExcavationSuspensionReason getSuspensionReason() {
+        return suspensionReason;
     }
 
     private static String requireText(String value, String field) {

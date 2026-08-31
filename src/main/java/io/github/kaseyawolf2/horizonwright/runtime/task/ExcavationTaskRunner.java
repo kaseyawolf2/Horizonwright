@@ -242,6 +242,9 @@ final class ExcavationTaskRunner implements TaskRunner {
                 "Clean-volume excavation planner violated the single-target contract",
                 false);
         }
+        if (observed.getSuspensionReason() != ExcavationSuspensionReason.NONE) {
+            return suspendForSharedOperation(context, plan, observed.getSuspensionReason());
+        }
 
         Optional<ActionLease> acquired = context.getActions()
             .tryAcquire(REQUIRED_CAPABILITIES);
@@ -300,6 +303,45 @@ final class ExcavationTaskRunner implements TaskRunner {
                 "Excavation action submission failed: " + describe(failure),
                 true);
         }
+    }
+
+    private StepResult suspendForSharedOperation(TaskStepContext context, ExcavationPlan plan,
+        ExcavationSuspensionReason reason) {
+        if (reason != ExcavationSuspensionReason.UNLOADING_REQUIRED
+            && reason != ExcavationSuspensionReason.REPAIR_REQUIRED) {
+            return StepResult.failed(
+                context.getActionEpoch(),
+                taskCheckpoint,
+                "Excavation backend requested unsupported shared operation " + reason,
+                false);
+        }
+        ExcavationExecutionResult result = new ExcavationExecutionResult(
+            plan,
+            Collections.<ExcavationTargetResult>emptyList(),
+            reason);
+        ExcavationResultApplication application = ExcavationReducer.apply(excavationCheckpoint, result);
+        if (!application.wasApplied()) {
+            return StepResult.failed(
+                context.getActionEpoch(),
+                taskCheckpoint,
+                "Excavation shared-operation suspension was rejected as " + application.getDisposition(),
+                false);
+        }
+        excavationCheckpoint = application.getCheckpoint();
+        taskCheckpoint = ExcavationTaskCheckpointCodec.encode(cylinder, excavationCheckpoint);
+        String requirement = reason == ExcavationSuspensionReason.UNLOADING_REQUIRED ? "verified unloading"
+            : "verified Tinkers repair";
+        String action = reason == ExcavationSuspensionReason.UNLOADING_REQUIRED
+            ? "Complete the configured unload transaction, then resume this task."
+            : "Repair the reserved tool at the configured station, then resume this task.";
+        return StepResult.blocked(
+            context.getActionEpoch(),
+            taskCheckpoint,
+            BlockedReason.missingRequirement(
+                "Excavation suspended at its exact frontier for " + requirement + ".",
+                spec.getId(),
+                requirement,
+                action));
     }
 
     private StepResult observeAction(TaskStepContext context, ExcavationBackend backend) {

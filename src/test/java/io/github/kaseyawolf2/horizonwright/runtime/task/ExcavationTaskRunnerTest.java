@@ -17,6 +17,7 @@ import io.github.kaseyawolf2.horizonwright.core.action.InMemoryActionBroker;
 import io.github.kaseyawolf2.horizonwright.core.excavation.ExcavationBlockClassification;
 import io.github.kaseyawolf2.horizonwright.core.excavation.ExcavationMode;
 import io.github.kaseyawolf2.horizonwright.core.excavation.ExcavationObservation;
+import io.github.kaseyawolf2.horizonwright.core.excavation.ExcavationSuspensionReason;
 import io.github.kaseyawolf2.horizonwright.core.excavation.ExcavationTargetOutcome;
 import io.github.kaseyawolf2.horizonwright.core.excavation.ExcavationTargetResult;
 import io.github.kaseyawolf2.horizonwright.core.navigation.NavigationBackend;
@@ -307,6 +308,76 @@ public class ExcavationTaskRunnerTest {
                 .create(managed, TaskCheckpoint.empty()));
     }
 
+    @Test
+    public void unloadingRequirementBlocksAtExactFrontierAndResumeReobservesIt() {
+        harness = new Harness();
+        harness.backend.suspensionReason = ExcavationSuspensionReason.UNLOADING_REQUIRED;
+        TaskSpec spec = ExcavationTask.cleanVolumeCylinder("unload", 0, 8, 8, 1, 12, 12);
+        harness.controller.submit(spec);
+        TaskSnapshot bound = task(harness.controller.tick(), spec.getId());
+        String frontierBefore = frontierKey(bound.getCheckpoint());
+
+        TaskSnapshot blocked = task(harness.controller.tick(), spec.getId());
+
+        assertEquals(TaskState.BLOCKED, blocked.getState());
+        assertEquals(
+            "suspended",
+            blocked.getCheckpoint()
+                .getValues()
+                .get("phase"));
+        assertEquals(
+            ExcavationSuspensionReason.UNLOADING_REQUIRED.name(),
+            blocked.getCheckpoint()
+                .getValues()
+                .get("suspensionReason"));
+        assertEquals(frontierBefore, frontierKey(blocked.getCheckpoint()));
+        assertEquals(
+            "0",
+            blocked.getCheckpoint()
+                .getValues()
+                .get("progress.completed"));
+        assertEquals(0, harness.backend.submissions);
+        assertTrue(
+            harness.broker.snapshot()
+                .getActiveOwners()
+                .isEmpty());
+
+        harness.backend.suspensionReason = ExcavationSuspensionReason.NONE;
+        harness.controller.resume(spec.getId());
+        TaskSnapshot rebound = task(harness.controller.tick(), spec.getId());
+        assertEquals(TaskState.RUNNING, rebound.getState());
+        assertEquals(
+            "active",
+            rebound.getCheckpoint()
+                .getValues()
+                .get("phase"));
+        assertEquals(frontierBefore, frontierKey(rebound.getCheckpoint()));
+        harness.controller.tick();
+        assertEquals(1, harness.backend.submissions);
+    }
+
+    @Test
+    public void repairRequirementUsesItsExactPersistedSuspensionReason() {
+        harness = new Harness();
+        harness.backend.suspensionReason = ExcavationSuspensionReason.REPAIR_REQUIRED;
+        TaskSpec spec = ExcavationTask.cleanVolumeCylinder("repair", 0, 8, 8, 1, 12, 12);
+        harness.controller.submit(spec);
+        harness.controller.tick();
+
+        TaskSnapshot blocked = task(harness.controller.tick(), spec.getId());
+
+        assertEquals(TaskState.BLOCKED, blocked.getState());
+        assertEquals(
+            ExcavationSuspensionReason.REPAIR_REQUIRED.name(),
+            blocked.getCheckpoint()
+                .getValues()
+                .get("suspensionReason"));
+        assertTrue(
+            blocked.getDetail()
+                .contains("Tinkers repair"));
+        assertEquals(0, harness.backend.submissions);
+    }
+
     private static TaskSnapshot task(ControllerSnapshot snapshot, String taskId) {
         return snapshot.findTask(taskId)
             .orElseThrow(() -> new AssertionError("missing task " + taskId));
@@ -369,6 +440,7 @@ public class ExcavationTaskRunnerTest {
         private int submissions;
         private long observationRevisionOffset;
         private long confirmationEpochOffset;
+        private ExcavationSuspensionReason suspensionReason = ExcavationSuspensionReason.NONE;
         private ExcavationActionRequest lastRequest;
         private ActionLease lastLease;
         private Handle active;
@@ -391,7 +463,8 @@ public class ExcavationTaskRunnerTest {
                 request.getActionEpoch(),
                 request.getGeometryKey(),
                 request.getStartFrontier(),
-                observation);
+                observation,
+                suspensionReason);
         }
 
         @Override
