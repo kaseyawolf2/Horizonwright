@@ -28,6 +28,8 @@ import io.github.kaseyawolf2.horizonwright.core.persistence.ProfileBindingKey;
 import io.github.kaseyawolf2.horizonwright.core.persistence.WorldProfileIdentity;
 import io.github.kaseyawolf2.horizonwright.core.safety.death.DeathSafetyPolicy;
 import io.github.kaseyawolf2.horizonwright.forge.client.container.LiveContainerTransactionExecutor;
+import io.github.kaseyawolf2.horizonwright.forge.client.container.LiveVanillaChestUnloadBackend;
+import io.github.kaseyawolf2.horizonwright.forge.client.container.ProfileVanillaChestUnloadConfiguration;
 import io.github.kaseyawolf2.horizonwright.forge.client.network.ClientPacketFirewallInstaller;
 import io.github.kaseyawolf2.horizonwright.forge.client.network.ContainerTransactionPacketCoordinator;
 import io.github.kaseyawolf2.horizonwright.forge.client.persistence.SingleplayerWorldBindingEvidence;
@@ -55,6 +57,7 @@ public final class ClientBootstrap {
     private final ClientInputArbiter inputArbiter = new ClientInputArbiter();
     private final ClientScheduleEnvironmentTracker scheduleEnvironment = new ClientScheduleEnvironmentTracker();
     private ClientRuntimeSessionManager runtimeSessions;
+    private HorizonwrightPersistenceStore persistenceStore;
     private LiveClientDeathSafetyBoundaryFactory deathSafetyBoundaries;
     private ClientProfileBindingCoordinator profileBindings;
     private NetworkManager connectionManager;
@@ -67,6 +70,7 @@ public final class ClientBootstrap {
     private ClientPacketFirewallInstaller packetFirewall;
     private ContainerTransactionPacketCoordinator containerTransactions;
     private LiveContainerTransactionExecutor containerTransactionExecutor;
+    private LiveVanillaChestUnloadBackend liveUnloadBackend;
     private boolean initialized;
 
     private ClientBootstrap() {}
@@ -82,7 +86,7 @@ public final class ClientBootstrap {
         if (stateRoot == null) {
             throw new IllegalArgumentException("stateRoot must not be null");
         }
-        HorizonwrightPersistenceStore persistenceStore = new HorizonwrightPersistenceStore(stateRoot);
+        persistenceStore = new HorizonwrightPersistenceStore(stateRoot);
         deathSafetyBoundaries = new LiveClientDeathSafetyBoundaryFactory(
             persistenceStore,
             DeathSafetyPolicy.planDefaults(6));
@@ -242,6 +246,12 @@ public final class ClientBootstrap {
                 minecraft,
                 attachedRuntime.getActionSessionGuard(),
                 containerTransactions);
+            liveUnloadBackend = new LiveVanillaChestUnloadBackend(
+                minecraft,
+                new ProfileVanillaChestUnloadConfiguration(minecraft, persistenceStore, identity),
+                containerTransactionExecutor);
+            attachedRuntime.getTaskServices()
+                .bindUnloadBackend(liveUnloadBackend);
             packetFirewall = new ClientPacketFirewallInstaller(
                 attachedRuntime.getActionSessionGuard(),
                 deathSafetyBoundaries.requirePacketBridgeFactory(attachedRuntime),
@@ -268,6 +278,10 @@ public final class ClientBootstrap {
     }
 
     private void retireProfile() {
+        if (attachedRuntime != null && liveUnloadBackend != null) {
+            attachedRuntime.getTaskServices()
+                .unbindUnloadBackend(liveUnloadBackend);
+        }
         if (runtimeSessions != null && activeIdentity != null && connectionToken != null) {
             runtimeSessions.worldUnavailable(activeIdentity, connectionToken);
             runtimeSessions.unbindProfile();
@@ -281,6 +295,7 @@ public final class ClientBootstrap {
         packetFirewall = null;
         containerTransactions = null;
         containerTransactionExecutor = null;
+        liveUnloadBackend = null;
     }
 
     private void preemptForPhysicalInput(int keyCode) {

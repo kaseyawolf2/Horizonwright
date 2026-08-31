@@ -16,7 +16,7 @@ import io.github.kaseyawolf2.horizonwright.forge.client.network.ContainerTransac
  * later click until the previous click has both a matching accepted response
  * and its exact synchronized after-snapshot.
  */
-public final class LiveContainerTransactionExecutor {
+public final class LiveContainerTransactionExecutor implements ConfirmedContainerTransactionExecutor {
 
     private static final long DEFAULT_TIMEOUT_NANOS = 5_000_000_000L;
 
@@ -68,6 +68,7 @@ public final class LiveContainerTransactionExecutor {
         this.timeoutNanos = timeoutNanos;
     }
 
+    @Override
     public synchronized void begin(ContainerTransaction transaction) {
         client.requireClientThread();
         if (transaction == null) {
@@ -130,11 +131,20 @@ public final class LiveContainerTransactionExecutor {
     }
 
     public synchronized void cancel(String reason) {
-        client.requireClientThread();
         if (active != null) {
             active.cancel(reason);
             releaseIfTerminal();
         }
+    }
+
+    @Override
+    public synchronized boolean cancel(ContainerTransaction expected, String reason) {
+        if (expected == null || active == null || active.getTransaction() != expected) {
+            return false;
+        }
+        active.cancel(reason);
+        releaseIfTerminal();
+        return true;
     }
 
     public synchronized boolean isActive() {

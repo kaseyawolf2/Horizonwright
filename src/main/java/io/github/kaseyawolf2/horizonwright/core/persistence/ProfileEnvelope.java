@@ -19,6 +19,7 @@ public final class ProfileEnvelope {
     private final List<NamedLocation> namedLocations;
     private final List<NamedRoute> namedRoutes;
     private final List<NamedLoadout> namedLoadouts;
+    private final List<NamedStorageEndpoint> namedStorageEndpoints;
 
     public ProfileEnvelope(long writtenAtEpochMillis, WorldProfileIdentity identity,
         List<ProfileReassociation> reassociations, List<NamedLocation> namedLocations, List<NamedRoute> namedRoutes) {
@@ -30,7 +31,8 @@ public final class ProfileEnvelope {
             reassociations,
             namedLocations,
             namedRoutes,
-            Collections.<NamedLoadout>emptyList());
+            Collections.<NamedLoadout>emptyList(),
+            Collections.<NamedStorageEndpoint>emptyList());
     }
 
     public ProfileEnvelope(long writtenAtEpochMillis, WorldProfileIdentity identity,
@@ -44,12 +46,29 @@ public final class ProfileEnvelope {
             reassociations,
             namedLocations,
             namedRoutes,
-            namedLoadouts);
+            namedLoadouts,
+            Collections.<NamedStorageEndpoint>emptyList());
+    }
+
+    public ProfileEnvelope(long writtenAtEpochMillis, WorldProfileIdentity identity,
+        List<ProfileReassociation> reassociations, List<NamedLocation> namedLocations, List<NamedRoute> namedRoutes,
+        List<NamedLoadout> namedLoadouts, List<NamedStorageEndpoint> namedStorageEndpoints) {
+        this(
+            PersistenceSchema.CURRENT_VERSION,
+            PersistenceSchema.PROFILE_DOCUMENT_KIND,
+            writtenAtEpochMillis,
+            identity,
+            reassociations,
+            namedLocations,
+            namedRoutes,
+            namedLoadouts,
+            namedStorageEndpoints);
     }
 
     private ProfileEnvelope(int schemaVersion, String documentKind, long writtenAtEpochMillis,
         WorldProfileIdentity identity, List<ProfileReassociation> reassociations, List<NamedLocation> namedLocations,
-        List<NamedRoute> namedRoutes, List<NamedLoadout> namedLoadouts) {
+        List<NamedRoute> namedRoutes, List<NamedLoadout> namedLoadouts,
+        List<NamedStorageEndpoint> namedStorageEndpoints) {
         this.schemaVersion = schemaVersion;
         this.documentKind = documentKind;
         this.writtenAtEpochMillis = writtenAtEpochMillis;
@@ -58,6 +77,7 @@ public final class ProfileEnvelope {
         this.namedLocations = immutableCopy(namedLocations, "namedLocations");
         this.namedRoutes = immutableCopy(namedRoutes, "namedRoutes");
         this.namedLoadouts = immutableCopy(namedLoadouts, "namedLoadouts");
+        this.namedStorageEndpoints = immutableCopy(namedStorageEndpoints, "namedStorageEndpoints");
         validate();
     }
 
@@ -91,6 +111,10 @@ public final class ProfileEnvelope {
 
     public List<NamedLoadout> getNamedLoadouts() {
         return Collections.unmodifiableList(namedLoadouts);
+    }
+
+    public List<NamedStorageEndpoint> getNamedStorageEndpoints() {
+        return Collections.unmodifiableList(namedStorageEndpoints);
     }
 
     void validate() {
@@ -127,6 +151,19 @@ public final class ProfileEnvelope {
             if (!loadoutIds.add(loadout.getId())) {
                 throw new IllegalArgumentException(
                     "profile namedLoadouts contains duplicate id '" + loadout.getId() + "'");
+            }
+        }
+        PersistenceValidation.requireUniqueIds(namedStorageEndpoints, "profile namedStorageEndpoints");
+        Set<String> locationIds = new HashSet<>();
+        for (NamedLocation location : namedLocations) locationIds.add(location.getId());
+        for (NamedStorageEndpoint endpoint : namedStorageEndpoints) {
+            endpoint.validate();
+            if (!locationIds.contains(endpoint.getLocationId())) {
+                throw new IllegalArgumentException(
+                    "storage endpoint '" + endpoint.getId()
+                        + "' references missing location '"
+                        + endpoint.getLocationId()
+                        + "'");
             }
         }
     }
@@ -182,7 +219,8 @@ public final class ProfileEnvelope {
             && Objects.equals(reassociations, that.reassociations)
             && Objects.equals(namedLocations, that.namedLocations)
             && Objects.equals(namedRoutes, that.namedRoutes)
-            && Objects.equals(namedLoadouts, that.namedLoadouts);
+            && Objects.equals(namedLoadouts, that.namedLoadouts)
+            && Objects.equals(namedStorageEndpoints, that.namedStorageEndpoints);
     }
 
     @Override
@@ -195,6 +233,7 @@ public final class ProfileEnvelope {
             reassociations,
             namedLocations,
             namedRoutes,
-            namedLoadouts);
+            namedLoadouts,
+            namedStorageEndpoints);
     }
 }

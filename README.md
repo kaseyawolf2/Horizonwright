@@ -61,6 +61,19 @@ consumed, stable tool identity and maximum durability were retained, the tool
 returned to its reserved inventory slot, and `InfiTool.Damage` decreased.
 Rejected or mismatched confirmations enter an operator reconciliation hold and
 are never automatically replayed after restart.
+The unload runner is now connected to a live, session-scoped vanilla 1.7.10
+chest adapter. A storage endpoint persists its destination filter and refers to
+one named location; the adapter verifies that the open chest is the tile at
+that exact dimension and coordinate. Its quick-move model reproduces vanilla
+chest slot order, hotbar mapping, existing-stack merges, and empty-slot
+placement on copies before submitting anything. Unsupported or subclassed
+containers are refused, a full destination produces no speculative click, and
+each predicted click still passes through the shared server-confirmed
+transaction executor. World retirement identity-unbinds the adapter before the
+runtime closes, preventing a prior connection from clearing or using a newer
+session's service. This live unload path is covered by automated layout,
+capacity, cursor, persistence, transaction-owner, and lifecycle tests but has
+not yet been installed into the Prism instance or physically exercised.
 Unattended operation remains disabled.
 
 ## Pinned target

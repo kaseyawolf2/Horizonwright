@@ -22,6 +22,7 @@ import io.github.kaseyawolf2.horizonwright.core.task.TaskState;
 import io.github.kaseyawolf2.horizonwright.runtime.task.GoToTask;
 import io.github.kaseyawolf2.horizonwright.runtime.task.NavigationRuntimeAccess;
 import io.github.kaseyawolf2.horizonwright.runtime.task.RuntimeTaskRunnerFactory;
+import io.github.kaseyawolf2.horizonwright.runtime.task.RuntimeTaskServices;
 
 /** Session-scoped composition root for action authority, tasks, and optional navigation. */
 public final class HorizonwrightRuntime implements AutoCloseable {
@@ -30,6 +31,7 @@ public final class HorizonwrightRuntime implements AutoCloseable {
 
     private final InMemoryActionBroker actionBroker;
     private final ActionSessionGuard actionSessionGuard;
+    private final RuntimeTaskServices taskServices;
     private final TaskOrchestrator controller;
     private final long startedAtNanos = System.nanoTime();
 
@@ -73,7 +75,11 @@ public final class HorizonwrightRuntime implements AutoCloseable {
                 lastNavigationProgress = progress;
             }
         };
-        controller = new TaskOrchestrator(clock, new RuntimeTaskRunnerFactory(navigationAccess), actionBroker);
+        taskServices = new RuntimeTaskServices(() -> dryRun || closed);
+        controller = new TaskOrchestrator(
+            clock,
+            new RuntimeTaskRunnerFactory(navigationAccess, taskServices, taskServices),
+            actionBroker);
     }
 
     public static HorizonwrightRuntime getInstance() {
@@ -91,6 +97,10 @@ public final class HorizonwrightRuntime implements AutoCloseable {
 
     public ActionSessionGuard getActionSessionGuard() {
         return actionSessionGuard;
+    }
+
+    public RuntimeTaskServices getTaskServices() {
+        return taskServices;
     }
 
     public NavigationBackend getNavigationBackend() {
@@ -331,6 +341,7 @@ public final class HorizonwrightRuntime implements AutoCloseable {
             }
             closed = true;
             dryRun = true;
+            taskServices.clear();
             backend = navigationBackend;
         }
 

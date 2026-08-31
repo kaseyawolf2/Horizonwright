@@ -52,8 +52,14 @@ final class PersistenceJsonCodec {
                 public ProfileEnvelope normalize(JsonObject root, ProfileEnvelope value) {
                     java.util.List<NamedLoadout> loadouts = root.has("namedLoadouts") ? value.getNamedLoadouts()
                         : java.util.Collections.<NamedLoadout>emptyList();
+                    java.util.List<NamedStorageEndpoint> storageEndpoints = root.has("namedStorageEndpoints")
+                        ? value.getNamedStorageEndpoints()
+                        : java.util.Collections.<NamedStorageEndpoint>emptyList();
                     if (loadouts == null) {
                         throw new IllegalArgumentException("namedLoadouts must not be null");
+                    }
+                    if (storageEndpoints == null) {
+                        throw new IllegalArgumentException("namedStorageEndpoints must not be null");
                     }
                     return new ProfileEnvelope(
                         value.getWrittenAtEpochMillis(),
@@ -61,7 +67,8 @@ final class PersistenceJsonCodec {
                         value.getReassociations(),
                         value.getNamedLocations(),
                         value.getNamedRoutes(),
-                        loadouts);
+                        loadouts,
+                        storageEndpoints);
                 }
             });
     }

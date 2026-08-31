@@ -25,6 +25,11 @@ public final class RuntimeTaskRunnerFactory implements TaskRunnerFactory {
         this(navigation, excavation, DisabledUnloadRuntimeAccess.INSTANCE, DisabledRepairRuntimeAccess.INSTANCE);
     }
 
+    public RuntimeTaskRunnerFactory(NavigationRuntimeAccess navigation, UnloadRuntimeAccess unload,
+        RepairRuntimeAccess repair) {
+        this(navigation, DisabledExcavationRuntimeAccess.INSTANCE, unload, repair);
+    }
+
     public RuntimeTaskRunnerFactory(NavigationRuntimeAccess navigation, ExcavationRuntimeAccess excavation,
         UnloadRuntimeAccess unload) {
         this(navigation, excavation, unload, DisabledRepairRuntimeAccess.INSTANCE);

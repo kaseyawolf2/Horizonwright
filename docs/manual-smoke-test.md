@@ -77,6 +77,19 @@ Unknown or unintegrated network traffic is outside Horizonwright's ownership
 and must pass through unchanged in every state, including death safety. Only
 packet semantics with an explicit tested integration may be gated.
 
+## Pending live vanilla-chest unload checkpoint
+
+Do not run this checkpoint until the profile editor can create named loadouts
+and storage endpoints without hand-editing JSON. When enabled, use only a
+disposable vanilla chest at the endpoint's exact named dimension and block
+position. Verify reserved stacks remain in the player inventory, disallowed
+items remain deferred, allowed items follow vanilla shift-click merge order,
+and every click receives an accepted server confirmation plus the exact
+synchronized after-state. Also verify a full chest, held cursor stack, wrong
+chest coordinate, modded/subclassed container, disconnect, rejection, and
+timeout all stop without replaying a click. This checkpoint is not yet a
+recorded physical result.
+
 ## Recorded physical result
 
 On 2026-08-30, the operator completed the long-route, inventory-during-walk,

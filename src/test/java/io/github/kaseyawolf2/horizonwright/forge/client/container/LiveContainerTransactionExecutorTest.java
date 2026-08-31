@@ -85,6 +85,22 @@ public class LiveContainerTransactionExecutorTest {
                 .contains("not be resent"));
     }
 
+    @Test
+    public void staleOwnerCannotCancelAnotherTransaction() {
+        ContainerSnapshot before = snapshot(10L, ORE, null);
+        ContainerSnapshot after = snapshot(11L, null, ORE);
+        ContainerTransaction active = transaction(before, after);
+        ContainerTransaction stale = transaction(before, after);
+        Harness harness = new Harness(before);
+
+        harness.executor.begin(active);
+        assertFalse(harness.executor.cancel(stale, "stale task retirement"));
+        assertEquals(ContainerTransactionState.AWAITING_CONFIRMATION, active.getState());
+        assertTrue(harness.executor.cancel(active, "exact owner retirement"));
+        assertEquals(ContainerTransactionState.ABORTED, active.getState());
+        assertFalse(harness.executor.isActive());
+    }
+
     private static ContainerTransaction transaction(ContainerSnapshot before, ContainerSnapshot after) {
         return new ContainerTransaction("unload", 41L, Arrays.asList(click("ore", 0, before, after)));
     }

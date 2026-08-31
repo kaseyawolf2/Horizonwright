@@ -18,9 +18,12 @@ import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
 
+import io.github.kaseyawolf2.horizonwright.core.logistics.NamedLoadout;
+import io.github.kaseyawolf2.horizonwright.core.logistics.StorageItemFilter;
 import io.github.kaseyawolf2.horizonwright.core.persistence.HorizonwrightPersistenceStore;
 import io.github.kaseyawolf2.horizonwright.core.persistence.NamedLocation;
 import io.github.kaseyawolf2.horizonwright.core.persistence.NamedRoute;
+import io.github.kaseyawolf2.horizonwright.core.persistence.NamedStorageEndpoint;
 import io.github.kaseyawolf2.horizonwright.core.persistence.PersistenceLoadStatus;
 import io.github.kaseyawolf2.horizonwright.core.persistence.ProfileBindingIndex;
 import io.github.kaseyawolf2.horizonwright.core.persistence.ProfileBindingIndexStore;
@@ -114,6 +117,22 @@ public class ClientProfileBindingCoordinatorTest {
         WorldProfileIdentity previous = identity("stable-profile", ENDPOINT, "world-before-reset", 10L);
         NamedLocation home = new NamedLocation("home", "Home", 0, 12, 64, -8);
         seed(stores, previousKey, previous, "confirm-original", 11L, Collections.singletonList(home));
+        NamedLoadout loadout = new NamedLoadout("mining", "Mining", Collections.emptyList());
+        NamedStorageEndpoint storage = new NamedStorageEndpoint(
+            "home-chest",
+            "Home chest",
+            home.getId(),
+            StorageItemFilter.acceptAll());
+        stores.profiles.saveProfile(
+            stores.profiles.pathsForProfile(previous.getProfileId()),
+            new ProfileEnvelope(
+                11L,
+                previous,
+                Collections.emptyList(),
+                Collections.singletonList(home),
+                Collections.emptyList(),
+                Collections.singletonList(loadout),
+                Collections.singletonList(storage)));
         ProfileBindingKey replacementKey = ProfileBindingKey.multiplayer(ENDPOINT, "world-after-reset");
         ClientProfileBindingCoordinator coordinator = coordinator(stores, ids(), ids("confirm-reset"), 20L);
 
@@ -146,6 +165,8 @@ public class ClientProfileBindingCoordinatorTest {
         ProfileEnvelope persisted = stores.profiles.loadProfile(stores.profiles.pathsForProfile("stable-profile"))
             .getValue();
         assertEquals(Collections.singletonList(home), persisted.getNamedLocations());
+        assertEquals(Collections.singletonList(loadout), persisted.getNamedLoadouts());
+        assertEquals(Collections.singletonList(storage), persisted.getNamedStorageEndpoints());
         assertEquals(
             1,
             persisted.getReassociations()

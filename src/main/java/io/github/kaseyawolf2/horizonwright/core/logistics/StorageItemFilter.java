@@ -3,6 +3,7 @@ package io.github.kaseyawolf2.horizonwright.core.logistics;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Objects;
 
 import io.github.kaseyawolf2.horizonwright.core.container.ItemFingerprint;
 
@@ -53,5 +54,18 @@ public final class StorageItemFilter {
             }
         }
         return mode == StorageFilterMode.ALLOW_MATCHES ? matched : !matched;
+    }
+
+    @Override
+    public boolean equals(Object other) {
+        if (this == other) return true;
+        if (!(other instanceof StorageItemFilter)) return false;
+        StorageItemFilter that = (StorageItemFilter) other;
+        return mode == that.mode && rules.equals(that.rules);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(mode, rules);
     }
 }

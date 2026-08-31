@@ -1,5 +1,7 @@
 package io.github.kaseyawolf2.horizonwright.core.logistics;
 
+import java.util.Objects;
+
 import io.github.kaseyawolf2.horizonwright.core.container.ItemFingerprint;
 
 /** Bounded item identity used by a storage destination filter. */
@@ -36,5 +38,18 @@ public final class StorageItemRule {
         return item != null && itemId.equals(item.getItemId())
             && (metadata == -1 || metadata == item.getMetadata())
             && (dataHash == null || dataHash.equals(item.getDataHash()));
+    }
+
+    @Override
+    public boolean equals(Object other) {
+        if (this == other) return true;
+        if (!(other instanceof StorageItemRule)) return false;
+        StorageItemRule that = (StorageItemRule) other;
+        return metadata == that.metadata && itemId.equals(that.itemId) && Objects.equals(dataHash, that.dataHash);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(itemId, metadata, dataHash);
     }
 }
