@@ -19,6 +19,9 @@ public final class ExcavationServicePolicy {
         this.repairStationId = normalizeRepair(repairStationId, reservedToolSlot, predictedWorkDamage);
         this.reservedToolSlot = normalizeNonNegative(reservedToolSlot, repairStationId, "reservedToolSlot");
         this.predictedWorkDamage = normalizeNonNegative(predictedWorkDamage, repairStationId, "predictedWorkDamage");
+        if (this.reservedToolSlot != null && this.reservedToolSlot > 35) {
+            throw new IllegalArgumentException("reservedToolSlot must be a player inventory slot from 0 to 35");
+        }
         if (this.loadoutId == null && this.repairStationId == null) {
             throw new IllegalArgumentException("at least one excavation service binding is required");
         }

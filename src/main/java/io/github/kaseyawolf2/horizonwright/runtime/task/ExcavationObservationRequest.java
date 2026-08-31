@@ -15,9 +15,11 @@ public final class ExcavationObservationRequest {
     private final String geometryKey;
     private final ExcavationFrontier startFrontier;
     private final BlockPosition position;
+    private final ExcavationServiceRequirements serviceRequirements;
 
     ExcavationObservationRequest(String taskId, int dimensionId, long taskRevision, long actionEpoch,
-        String geometryKey, ExcavationFrontier startFrontier, BlockPosition position) {
+        String geometryKey, ExcavationFrontier startFrontier, BlockPosition position,
+        ExcavationServiceRequirements serviceRequirements) {
         this.taskId = requireText(taskId, "taskId");
         this.dimensionId = dimensionId;
         if (taskRevision < 1L) {
@@ -31,6 +33,7 @@ public final class ExcavationObservationRequest {
         this.geometryKey = requireText(geometryKey, "geometryKey");
         this.startFrontier = Objects.requireNonNull(startFrontier, "startFrontier");
         this.position = Objects.requireNonNull(position, "position");
+        this.serviceRequirements = Objects.requireNonNull(serviceRequirements, "serviceRequirements");
     }
 
     public String getTaskId() {
@@ -59,6 +62,10 @@ public final class ExcavationObservationRequest {
 
     public BlockPosition getPosition() {
         return position;
+    }
+
+    public ExcavationServiceRequirements getServiceRequirements() {
+        return serviceRequirements;
     }
 
     private static String requireText(String value, String field) {

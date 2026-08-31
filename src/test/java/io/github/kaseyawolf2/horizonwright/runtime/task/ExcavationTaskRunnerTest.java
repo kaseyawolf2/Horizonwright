@@ -381,6 +381,42 @@ public class ExcavationTaskRunnerTest {
         assertEquals(0, harness.backend.submissions);
     }
 
+    @Test
+    public void configuredServiceRequirementsReachTheObservationBoundaryExactly() {
+        harness = new Harness();
+        TaskSpec spec = ExcavationTask.cleanVolumeCylinder(
+            "services",
+            -1,
+            8,
+            8,
+            1,
+            12,
+            12,
+            ExcavationServicePolicy.unloadAndRepair("mining", "ore-chest", "tool-forge", 4, 25));
+        harness.controller.submit(spec);
+        harness.controller.tick();
+
+        harness.controller.tick();
+
+        ExcavationObservationRequest request = harness.backend.lastObservationRequest;
+        assertNotNull(request);
+        assertEquals(-1, request.getDimensionId());
+        assertTrue(
+            request.getServiceRequirements()
+                .isUnloadConfigured());
+        assertTrue(
+            request.getServiceRequirements()
+                .isRepairConfigured());
+        assertEquals(
+            4,
+            request.getServiceRequirements()
+                .getReservedToolSlot());
+        assertEquals(
+            25,
+            request.getServiceRequirements()
+                .getPredictedWorkDamage());
+    }
+
     private static TaskSnapshot task(ControllerSnapshot snapshot, String taskId) {
         return snapshot.findTask(taskId)
             .orElseThrow(() -> new AssertionError("missing task " + taskId));
@@ -444,6 +480,7 @@ public class ExcavationTaskRunnerTest {
         private long observationRevisionOffset;
         private long confirmationEpochOffset;
         private ExcavationSuspensionReason suspensionReason = ExcavationSuspensionReason.NONE;
+        private ExcavationObservationRequest lastObservationRequest;
         private ExcavationActionRequest lastRequest;
         private ActionLease lastLease;
         private Handle active;
@@ -457,6 +494,7 @@ public class ExcavationTaskRunnerTest {
         @Override
         public ExcavationObservationResult observe(ExcavationObservationRequest request) {
             observations++;
+            lastObservationRequest = request;
             ExcavationObservation observation = new ExcavationObservation(
                 request.getPosition(),
                 ExcavationBlockClassification.BREAKABLE,

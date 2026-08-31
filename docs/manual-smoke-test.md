@@ -121,6 +121,14 @@ duplicate. A failed or cancelled child must leave the parent blocked for
 operator inspection. This checkpoint is automated-test covered but has not yet
 been physically recorded.
 
+For the trigger portion, leave two empty main-inventory slots and a healthy tool
+in the configured reserved slot; excavation should continue. Fill one more slot
+before an ordinary target and confirm an unload child appears before any dig.
+After unloading, damage the same Tinkers tool below fifteen percent remaining
+durability (or below the configured predicted-work requirement) and confirm a
+repair child appears at the unchanged frontier. Air, protected blocks, fluids,
+and unreachable targets must not repeatedly create service children.
+
 ## Pending live clean-volume excavation checkpoint
 
 Install only after the automated build remains green. In a disposable area,

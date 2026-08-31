@@ -200,6 +200,7 @@ final class ExcavationTaskRunner implements TaskRunner {
         }
         ExcavationTarget target = batch.getTargets()
             .get(0);
+        ExcavationServicePolicy policy = ExcavationTask.servicePolicy(spec);
         ExcavationObservationRequest observationRequest = new ExcavationObservationRequest(
             spec.getId(),
             cylinder.getDimensionId(),
@@ -207,7 +208,8 @@ final class ExcavationTaskRunner implements TaskRunner {
             context.getActionEpoch(),
             cylinder.getGeometryKey(),
             excavationCheckpoint.getFrontier(),
-            target.getPosition());
+            target.getPosition(),
+            serviceRequirements(policy));
         ExcavationObservationResult observed;
         try {
             observed = backend.observe(observationRequest);
@@ -305,6 +307,15 @@ final class ExcavationTaskRunner implements TaskRunner {
                 "Excavation action submission failed: " + describe(failure),
                 true);
         }
+    }
+
+    private static ExcavationServiceRequirements serviceRequirements(ExcavationServicePolicy policy) {
+        if (policy == null) return ExcavationServiceRequirements.none();
+        return ExcavationServiceRequirements.of(
+            policy.hasUnload(),
+            policy.hasRepair(),
+            policy.hasRepair() ? policy.getReservedToolSlot() : 0,
+            policy.hasRepair() ? policy.getPredictedWorkDamage() : 0);
     }
 
     private StepResult suspendForSharedOperation(TaskStepContext context, ExcavationPlan plan,

@@ -23,6 +23,9 @@ import io.github.kaseyawolf2.horizonwright.core.navigation.NavigationHandle;
 import io.github.kaseyawolf2.horizonwright.core.navigation.NavigationProgress;
 import io.github.kaseyawolf2.horizonwright.core.navigation.NavigationRequest;
 import io.github.kaseyawolf2.horizonwright.core.navigation.NavigationState;
+import io.github.kaseyawolf2.horizonwright.core.repair.RepairPolicy;
+import io.github.kaseyawolf2.horizonwright.core.repair.RepairToolSnapshot;
+import io.github.kaseyawolf2.horizonwright.forge.client.repair.TinkersInventoryToolReader;
 import io.github.kaseyawolf2.horizonwright.runtime.task.ConfirmedExcavationTargetResult;
 import io.github.kaseyawolf2.horizonwright.runtime.task.ExcavationActionHandle;
 import io.github.kaseyawolf2.horizonwright.runtime.task.ExcavationActionProgress;
@@ -32,6 +35,7 @@ import io.github.kaseyawolf2.horizonwright.runtime.task.ExcavationBackend;
 import io.github.kaseyawolf2.horizonwright.runtime.task.ExcavationBackendAvailability;
 import io.github.kaseyawolf2.horizonwright.runtime.task.ExcavationObservationRequest;
 import io.github.kaseyawolf2.horizonwright.runtime.task.ExcavationObservationResult;
+import io.github.kaseyawolf2.horizonwright.runtime.task.ExcavationServiceRequirements;
 
 /** Moves within reach, digs one fingerprint-bound ordinary block, then confirms the exact target is air. */
 public final class LiveExcavationBackend implements ExcavationBackend {
@@ -50,6 +54,9 @@ public final class LiveExcavationBackend implements ExcavationBackend {
     private final ActionSessionGuard guard;
     private final NavigationSource navigationSource;
     private final MinecraftExcavationObserver observer;
+    private final ExcavationServiceTriggerEvaluator serviceTriggers = new ExcavationServiceTriggerEvaluator(
+        RepairPolicy.planDefaults());
+    private final TinkersInventoryToolReader toolReader = new TinkersInventoryToolReader();
     private LiveHandle active;
 
     public LiveExcavationBackend(Minecraft minecraft, ActionSessionGuard guard, NavigationSource navigationSource) {
@@ -79,12 +86,28 @@ public final class LiveExcavationBackend implements ExcavationBackend {
     @Override
     public ExcavationObservationResult observe(ExcavationObservationRequest request) {
         ExcavationObservation observation = observer.observe(request);
+        ExcavationServiceRequirements requirements = request.getServiceRequirements();
+        RepairToolSnapshot tool = requirements.isRepairConfigured()
+            && observation.getClassification() == ExcavationBlockClassification.BREAKABLE
+                ? toolReader.read(
+                    minecraft.thePlayer.inventory.getStackInSlot(requirements.getReservedToolSlot()),
+                    requirements.getReservedToolSlot())
+                : null;
         return new ExcavationObservationResult(
             request.getTaskRevision(),
             request.getActionEpoch(),
             request.getGeometryKey(),
             request.getStartFrontier(),
-            observation);
+            observation,
+            serviceTriggers.evaluate(observation.getClassification(), requirements, emptyMainInventorySlots(), tool));
+    }
+
+    private int emptyMainInventorySlots() {
+        int empty = 0;
+        for (int slot = 0; slot < minecraft.thePlayer.inventory.mainInventory.length; slot++) {
+            if (minecraft.thePlayer.inventory.mainInventory[slot] == null) empty++;
+        }
+        return empty;
     }
 
     @Override

@@ -122,6 +122,14 @@ Cancellation, timeout, epoch loss, target replacement, or loss of reach stops
 the producer without advancing. The backend identity-binds and unbinds with its
 world session. Its pure classification, runner authority, and lifecycle pieces
 are automated-test covered; the direct dig path remains physically unverified.
+Before an ordinary block can acquire that lease, configured excavation services
+now inspect exact live inventory evidence. Fewer than two empty main-inventory
+slots requests unloading first. The configured reserved tool slot is decoded by
+the same pinned Tinkers adapter used by repair; the plan's fifteen-percent
+durability threshold or insufficient durability for the predicted work unit
+requests repair. Non-breaking targets never create service churn. These reasons
+are persisted at the current frontier and flow into the durable child-task
+coordinator; no runner or GUI directly performs the service operation.
 Unattended operation remains disabled.
 
 ## Pinned target
