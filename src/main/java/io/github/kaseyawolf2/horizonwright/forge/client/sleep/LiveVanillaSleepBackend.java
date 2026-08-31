@@ -42,7 +42,8 @@ public final class LiveVanillaSleepBackend implements SleepBackend {
 
     private static final EnumSet<ActionCapability> REQUIRED = EnumSet
         .of(ActionCapability.MOVEMENT, ActionCapability.LOOK, ActionCapability.USE);
-    private static final int APPROACH_TOLERANCE = 2;
+    private static final int APPROACH_TOLERANCE = 1;
+    private static final double MAX_INTERACTION_DISTANCE = 3.25D;
     private static final long TIMEOUT_NANOS = TimeUnit.SECONDS.toNanos(45L);
 
     private final Minecraft minecraft;
@@ -196,7 +197,7 @@ public final class LiveVanillaSleepBackend implements SleepBackend {
         EntityPlayer player = minecraft.thePlayer;
         Vec3 eyes = Vec3.createVectorHelper(player.posX, player.posY + player.getEyeHeight(), player.posZ);
         Vec3 center = Vec3.createVectorHelper(bed.getX() + 0.5D, bed.getY() + 0.5D, bed.getZ() + 0.5D);
-        double reach = minecraft.playerController.getBlockReachDistance() + 0.5D;
+        double reach = Math.min(minecraft.playerController.getBlockReachDistance(), MAX_INTERACTION_DISTANCE);
         if (eyes.squareDistanceTo(center) > reach * reach) return false;
         MovingObjectPosition hit = minecraft.theWorld.rayTraceBlocks(eyes, center, false);
         return hit != null && hit.typeOfHit == MovingObjectPosition.MovingObjectType.BLOCK
@@ -344,6 +345,11 @@ public final class LiveVanillaSleepBackend implements SleepBackend {
             }
             guard.begin(lease);
             ownsActionSession = true;
+            MovingObjectPosition hit = rayTraceBed(bed);
+            if (hit == null) {
+                fail("Registered bed no longer has an exact interaction face");
+                return;
+            }
             aimAt(bed);
             boolean accepted = minecraft.playerController.onPlayerRightClick(
                 minecraft.thePlayer,
@@ -352,9 +358,8 @@ public final class LiveVanillaSleepBackend implements SleepBackend {
                 bed.getX(),
                 bed.getY(),
                 bed.getZ(),
-                1,
-                Vec3.createVectorHelper(bed.getX() + 0.5D, bed.getY() + 0.5D, bed.getZ() + 0.5D));
-            minecraft.thePlayer.swingItem();
+                hit.sideHit,
+                hit.hitVec);
             stopActionSession();
             if (!accepted) {
                 fail("Minecraft rejected the registered bed interaction");
@@ -362,6 +367,17 @@ public final class LiveVanillaSleepBackend implements SleepBackend {
             }
             phase = Phase.CONFIRMING;
             detail = "Waiting for server-confirmed sleeping or daytime";
+        }
+
+        private MovingObjectPosition rayTraceBed(BasePosition target) {
+            EntityPlayer player = minecraft.thePlayer;
+            Vec3 eyes = Vec3.createVectorHelper(player.posX, player.posY + player.getEyeHeight(), player.posZ);
+            Vec3 center = Vec3.createVectorHelper(target.getX() + 0.5D, target.getY() + 0.5D, target.getZ() + 0.5D);
+            MovingObjectPosition hit = minecraft.theWorld.rayTraceBlocks(eyes, center, false);
+            return hit != null && hit.typeOfHit == MovingObjectPosition.MovingObjectType.BLOCK
+                && hit.blockX == target.getX()
+                && hit.blockY == target.getY()
+                && hit.blockZ == target.getZ() ? hit : null;
         }
 
         private void confirmSleep() {

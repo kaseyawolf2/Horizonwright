@@ -23,6 +23,8 @@ import io.github.kaseyawolf2.horizonwright.runtime.task.FarmTask;
 /** Nontechnical two-corner named work-area editor for farms, pens, and later bounded jobs. */
 public final class GuiProfileAreas extends GuiScreen {
 
+    private static final ProfileAreaCaptureDrafts CAPTURE_DRAFTS = new ProfileAreaCaptureDrafts();
+
     private static final int BACK_BUTTON = 1;
     private static final int FIRST_BUTTON = 2;
     private static final int SECOND_BUTTON = 3;
@@ -33,7 +35,8 @@ public final class GuiProfileAreas extends GuiScreen {
     private final GuiScreen parent;
     private final CurrentRuntimeProvider runtimeProvider;
     private final ProfileAssetEditorProvider editorProvider;
-    private final ProfileAreaCapture capture = new ProfileAreaCapture();
+    private ProfileAreaCapture capture = new ProfileAreaCapture();
+    private String captureProfileId;
     private GuiTextField areaId;
     private GuiTextField seedReserve;
     private GuiTextField intervalMinutes;
@@ -68,6 +71,7 @@ public final class GuiProfileAreas extends GuiScreen {
         intervalMinutes = new GuiTextField(fontRendererObj, left + 370, top + 78, 52, 18);
         intervalMinutes.setMaxStringLength(8);
         intervalMinutes.setText("30");
+        restoreCaptureDraft();
         buttonList.add(new GuiButton(FIRST_BUTTON, left + 18, top + 110, 190, 20, "Capture corner 1 here"));
         buttonList.add(new GuiButton(SECOND_BUTTON, left + 232, top + 110, 190, 20, "Capture corner 2 here"));
         buttonList.add(new GuiButton(SAVE_BUTTON, left + 18, top + 188, panelWidth - 36, 22, "Save work area"));
@@ -89,6 +93,9 @@ public final class GuiProfileAreas extends GuiScreen {
                 "Schedule recurring farm passes"));
         buttonList.add(new GuiButton(BACK_BUTTON, left + panelWidth - 82, top + 278, 70, 20, "Back"));
         refreshCount();
+        if (capture.hasFirst() || capture.hasSecond()) {
+            status = "Corner draft retained while the page was closed. Capture the remaining corner.";
+        }
     }
 
     @Override
@@ -164,11 +171,25 @@ public final class GuiProfileAreas extends GuiScreen {
             .orElseThrow(() -> new IllegalStateException("join the bound world before saving an area"));
         NamedArea area = capture.build(areaId.getText());
         ProfileEnvelope saved = editor.apply(ProfileAssetUpdate.ofArea(area));
+        captureProfileId = saved.getIdentity()
+            .getProfileId();
+        CAPTURE_DRAFTS.clear(captureProfileId);
+        capture = CAPTURE_DRAFTS.forProfile(captureProfileId);
         status = "Saved '" + area.getId()
             + "'. "
             + saved.getNamedAreas()
                 .size()
             + " work area(s) in this world.";
+    }
+
+    private void restoreCaptureDraft() {
+        Optional<ProfileAssetEditor> editor = editorProvider.getCurrentProfileAssetEditor();
+        if (!editor.isPresent()) return;
+        captureProfileId = editor.get()
+            .load()
+            .getIdentity()
+            .getProfileId();
+        capture = CAPTURE_DRAFTS.forProfile(captureProfileId);
     }
 
     private BasePosition currentPosition() {

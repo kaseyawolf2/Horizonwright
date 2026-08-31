@@ -21,6 +21,14 @@ final class ProfileAreaCapture {
         return first != null && second != null;
     }
 
+    boolean hasFirst() {
+        return first != null;
+    }
+
+    boolean hasSecond() {
+        return second != null;
+    }
+
     NamedArea build(String id) {
         if (!isComplete()) throw new IllegalStateException("capture both area corners first");
         if (first.getDimensionId() != second.getDimensionId()) {

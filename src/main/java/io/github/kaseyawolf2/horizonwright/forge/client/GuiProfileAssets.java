@@ -76,24 +76,24 @@ public final class GuiProfileAssets extends GuiScreen {
         buttonList.clear();
         panelWidth = Math.min(500, width - 24);
         left = (width - panelWidth) / 2;
-        top = Math.max(8, (height - 368) / 2);
+        top = Math.max(6, (height - 342) / 2);
         loadoutId = field(left + 132, top + 50, 126, "mining");
         toolSlot = field(left + 334, top + 50, 38, "0");
         materialSlot = field(left + 132, top + 76, 38, "1");
         materialMinimum = field(left + 334, top + 76, 38, "16");
-        storageId = field(left + 132, top + 142, 126, "ore-chest");
-        stationId = field(left + 132, top + 208, 126, "tool-forge");
-        bedId = field(left + 132, top + 258, 126, "home-bed");
-        buttonList.add(new GuiButton(SAVE_LOADOUT_BUTTON, left + 382, top + 50, 96, 46, "Save loadout"));
-        buttonList.add(new GuiButton(SAVE_CHEST_BUTTON, left + 282, top + 142, 196, 20, "Save targeted vanilla chest"));
+        storageId = field(left + 132, top + 132, 126, "ore-chest");
+        stationId = field(left + 132, top + 188, 126, "tool-forge");
+        bedId = field(left + 132, top + 238, 126, "home-bed");
+        buttonList.add(new GuiButton(SAVE_LOADOUT_BUTTON, left + 382, top + 50, 96, 20, "Save loadout"));
+        buttonList.add(new GuiButton(SAVE_CHEST_BUTTON, left + 282, top + 132, 196, 20, "Save targeted vanilla chest"));
         buttonList
-            .add(new GuiButton(SAVE_STATION_BUTTON, left + 282, top + 208, 196, 20, "Save targeted repair station"));
-        buttonList.add(new GuiButton(SAVE_BED_BUTTON, left + 282, top + 258, 196, 20, "Save targeted vanilla bed"));
-        buttonList.add(new GuiButton(QUEUE_SLEEP_BUTTON, left + 282, top + 282, 94, 20, "Sleep once"));
-        buttonList.add(new GuiButton(SCHEDULE_SLEEP_BUTTON, left + 382, top + 282, 96, 20, "Every night"));
-        buttonList.add(new GuiButton(BACK_BUTTON, left + panelWidth - 82, top + 336, 70, 20, "Back"));
-        buttonList.add(new GuiButton(NEW_EXCAVATION_BUTTON, left + 12, top + 336, 128, 20, "New excavation"));
-        buttonList.add(new GuiButton(WORK_AREAS_BUTTON, left + 146, top + 336, 110, 20, "Work areas"));
+            .add(new GuiButton(SAVE_STATION_BUTTON, left + 282, top + 188, 196, 20, "Save targeted repair station"));
+        buttonList.add(new GuiButton(SAVE_BED_BUTTON, left + 282, top + 238, 196, 20, "Save targeted vanilla bed"));
+        buttonList.add(new GuiButton(QUEUE_SLEEP_BUTTON, left + 282, top + 262, 94, 20, "Sleep once"));
+        buttonList.add(new GuiButton(SCHEDULE_SLEEP_BUTTON, left + 382, top + 262, 96, 20, "Every night"));
+        buttonList.add(new GuiButton(BACK_BUTTON, left + panelWidth - 82, top + 310, 70, 20, "Back"));
+        buttonList.add(new GuiButton(NEW_EXCAVATION_BUTTON, left + 12, top + 310, 128, 20, "New excavation"));
+        buttonList.add(new GuiButton(WORK_AREAS_BUTTON, left + 146, top + 310, 110, 20, "Work areas"));
         refreshStatus();
     }
 
@@ -266,7 +266,7 @@ public final class GuiProfileAssets extends GuiScreen {
     @Override
     public void drawScreen(int mouseX, int mouseY, float partialTicks) {
         drawDefaultBackground();
-        drawRect(left, top, left + panelWidth, top + 368, 0xE010141B);
+        drawRect(left, top, left + panelWidth, top + 342, 0xE010141B);
         drawCenteredString(fontRendererObj, "Horizonwright profile assets", width / 2, top + 14, 0xFFF0C674);
         drawCenteredString(
             fontRendererObj,
@@ -275,7 +275,7 @@ public final class GuiProfileAssets extends GuiScreen {
             top + 29,
             0xFF8FAAD0);
         label("Loadout name", left + 18, top + 56);
-        label("Tool slot (0-35)", left + 270, top + 56);
+        label("Tool slot", left + 270, top + 56);
         label("Material slot", left + 18, top + 82);
         label("Keep at least", left + 220, top + 82);
         drawString(fontRendererObj, "Tool: " + selectedStackName(toolSlot), left + 18, top + 106, 0xFFB8C8DE);
@@ -285,26 +285,26 @@ public final class GuiProfileAssets extends GuiScreen {
             left + 18,
             top + 118,
             0xFFB8C8DE);
-        label("Chest name", left + 18, top + 148);
+        label("Chest name", left + 18, top + 138);
         drawString(
             fontRendererObj,
             "2. Close this page, look at the vanilla chest, reopen and save.",
             left + 18,
-            top + 174,
+            top + 158,
             0xFFB8C8DE);
-        label("Station name", left + 18, top + 214);
+        label("Station name", left + 18, top + 194);
         drawString(
             fontRendererObj,
             "3. Look at the Tinkers station block and save it.",
             left + 18,
-            top + 240,
+            top + 214,
             0xFFB8C8DE);
-        label("Bed name", left + 18, top + 264);
+        label("Bed name", left + 18, top + 244);
         drawString(
             fontRendererObj,
             truncate(status, 76),
             left + 18,
-            top + 312,
+            top + 288,
             status.startsWith("Nothing") ? 0xFFFF7777 : 0xFFB8C8DE);
         for (GuiTextField field : fields()) field.drawTextBox();
         super.drawScreen(mouseX, mouseY, partialTicks);
