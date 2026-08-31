@@ -2,6 +2,12 @@ package io.github.kaseyawolf2.horizonwright.forge.client.safety;
 
 import java.util.Optional;
 
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.entity.EntityClientPlayerMP;
+import net.minecraft.network.play.client.C08PacketPlayerBlockPlacement;
+import net.minecraft.network.play.client.C09PacketHeldItemChange;
+import net.minecraft.network.play.client.C0BPacketEntityAction;
+
 import io.github.kaseyawolf2.horizonwright.HorizonwrightMod;
 import io.github.kaseyawolf2.horizonwright.HorizonwrightRuntime;
 import io.github.kaseyawolf2.horizonwright.core.action.ActionLease;
@@ -12,9 +18,11 @@ import io.github.kaseyawolf2.horizonwright.core.navigation.NavigationProgress;
 import io.github.kaseyawolf2.horizonwright.core.navigation.NavigationRequest;
 import io.github.kaseyawolf2.horizonwright.core.navigation.NavigationState;
 import io.github.kaseyawolf2.horizonwright.core.safety.death.DeathSafetySnapshot;
+import io.github.kaseyawolf2.horizonwright.core.safety.death.GraveActivationPermit;
 import io.github.kaseyawolf2.horizonwright.core.safety.death.ManualHoldReason;
 import io.github.kaseyawolf2.horizonwright.core.safety.death.RecoveryNavigationRequest;
 import io.github.kaseyawolf2.horizonwright.core.safety.death.RecoveryNavigationStatus;
+import io.github.kaseyawolf2.horizonwright.core.safety.death.RecoveryPhase;
 
 /** Conservative production controls for the live death-safety directive effect. */
 final class LiveDeathSafetyControls implements MinecraftDeathSafetyDirectiveEffect.TaskWorkControl,
@@ -26,6 +34,11 @@ final class LiveDeathSafetyControls implements MinecraftDeathSafetyDirectiveEffe
     private ActionLease recoveryLease;
     private long recoveryDeathEpoch;
     private String recoveryFailure;
+    private long preparedGravePermitId;
+    private int preparedEmptySlot = -1;
+    private boolean preparationSent;
+    private boolean activationSent;
+    private boolean automaticSneaking;
     private ManualHoldReason manualHoldReason;
 
     LiveDeathSafetyControls(HorizonwrightRuntime runtime) {
@@ -196,6 +209,76 @@ final class LiveDeathSafetyControls implements MinecraftDeathSafetyDirectiveEffe
         return manualHoldReason;
     }
 
+    synchronized Optional<GravePreparationPacketSnapshot> prepareGraveActivation(Minecraft minecraft,
+        DeathSafetySnapshot snapshot) {
+        if (minecraft == null || snapshot == null) {
+            throw new IllegalArgumentException("minecraft and death-safety snapshot must not be null");
+        }
+        if (snapshot.getRecoveryPhase() != RecoveryPhase.AWAITING_SCOPED_ACTIVATION
+            || !snapshot.getGraveActivationPermit()
+                .isPresent()) {
+            releaseGravePreparation(minecraft.thePlayer);
+            return Optional.empty();
+        }
+        GraveActivationPermit permit = snapshot.getGraveActivationPermit()
+            .get();
+        if (preparedGravePermitId != permit.getPermitId() || preparedEmptySlot < 0
+            || minecraft.thePlayer.inventory.mainInventory[preparedEmptySlot] != null) {
+            preparedGravePermitId = permit.getPermitId();
+            preparedEmptySlot = firstEmptyHotbarSlot(minecraft.thePlayer);
+            preparationSent = false;
+            activationSent = false;
+        }
+        return preparedEmptySlot < 0 ? Optional.empty()
+            : Optional.of(new GravePreparationPacketSnapshot(preparedGravePermitId, preparedEmptySlot));
+    }
+
+    synchronized void sendGravePreparation(Minecraft minecraft) {
+        if (preparedEmptySlot < 0 || preparationSent) {
+            return;
+        }
+        EntityClientPlayerMP player = minecraft.thePlayer;
+        player.inventory.currentItem = preparedEmptySlot;
+        player.sendQueue.addToSendQueue(new C09PacketHeldItemChange(preparedEmptySlot));
+        player.setSneaking(true);
+        player.sendQueue.addToSendQueue(new C0BPacketEntityAction(player, 1));
+        automaticSneaking = true;
+        preparationSent = true;
+    }
+
+    synchronized void sendGraveActivation(Minecraft minecraft, DeathSafetySnapshot snapshot,
+        boolean exactPacketSnapshotReady) {
+        if (!exactPacketSnapshotReady || activationSent
+            || !preparationSent
+            || snapshot.getRecoveryPhase() != RecoveryPhase.AWAITING_SCOPED_ACTIVATION
+            || !snapshot.getGraveActivationPermit()
+                .isPresent()) {
+            return;
+        }
+        GraveActivationPermit permit = snapshot.getGraveActivationPermit()
+            .get();
+        if (permit.getPermitId() != preparedGravePermitId) {
+            return;
+        }
+        player(minecraft).sendQueue.addToSendQueue(
+            new C08PacketPlayerBlockPlacement(
+                permit.getGraveIdentity()
+                    .getPosition()
+                    .getX(),
+                permit.getGraveIdentity()
+                    .getPosition()
+                    .getY(),
+                permit.getGraveIdentity()
+                    .getPosition()
+                    .getZ(),
+                1,
+                null,
+                0.5F,
+                0.5F,
+                0.5F));
+        activationSent = true;
+    }
+
     private synchronized void cancelRecoveryNavigation(String reason) {
         NavigationHandle handle = recoveryHandle;
         recoveryHandle = null;
@@ -209,6 +292,35 @@ final class LiveDeathSafetyControls implements MinecraftDeathSafetyDirectiveEffe
             }
         }
         closeRecoveryLease();
+    }
+
+    private void releaseGravePreparation(EntityClientPlayerMP player) {
+        if (automaticSneaking && player != null) {
+            player.setSneaking(false);
+            player.sendQueue.addToSendQueue(new C0BPacketEntityAction(player, 2));
+        }
+        preparedGravePermitId = 0L;
+        preparedEmptySlot = -1;
+        preparationSent = false;
+        activationSent = false;
+        automaticSneaking = false;
+    }
+
+    private static int firstEmptyHotbarSlot(EntityClientPlayerMP player) {
+        int hotbarSlots = Math.min(9, player.inventory.mainInventory.length);
+        for (int slot = 0; slot < hotbarSlots; slot++) {
+            if (player.inventory.mainInventory[slot] == null) {
+                return slot;
+            }
+        }
+        return -1;
+    }
+
+    private static EntityClientPlayerMP player(Minecraft minecraft) {
+        if (minecraft.thePlayer == null) {
+            throw new IllegalStateException("grave activation requires a joined client player");
+        }
+        return minecraft.thePlayer;
     }
 
     private void closeRecoveryLease() {

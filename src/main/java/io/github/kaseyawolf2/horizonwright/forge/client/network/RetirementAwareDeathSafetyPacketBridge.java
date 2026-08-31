@@ -48,6 +48,16 @@ public final class RetirementAwareDeathSafetyPacketBridge implements DeathSafety
     }
 
     @Override
+    public GravePreparationWriteDecision tryAuthorizeGravePreparationPacket(Object packet,
+        Runnable finalWriteContinuation) {
+        if (packet == null || finalWriteContinuation == null) {
+            throw new IllegalArgumentException("packet and final write continuation must not be null");
+        }
+        return active.getAsBoolean() ? delegate.tryAuthorizeGravePreparationPacket(packet, finalWriteContinuation)
+            : GravePreparationWriteDecision.NOT_APPLICABLE;
+    }
+
+    @Override
     public void onBoundaryUnavailable(boolean transportClosed) {
         delegate.onBoundaryUnavailable(transportClosed);
     }

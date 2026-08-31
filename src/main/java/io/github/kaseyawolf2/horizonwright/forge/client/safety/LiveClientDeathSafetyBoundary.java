@@ -53,11 +53,13 @@ final class LiveClientDeathSafetyBoundary implements RuntimeSessionDeathStateBou
     private final int gravePlacementRadius;
     private final OpenBlocksGraveTileReader graveTileReader = new OpenBlocksGraveTileReader();
     private final GraveActivationPacketMatcher graveActivationPacketMatcher = new GraveActivationPacketMatcher();
+    private final GravePreparationPacketMatcher gravePreparationPacketMatcher = new GravePreparationPacketMatcher();
 
     private UnresolvedDeathState unresolvedDeath;
     private long clientTick;
     private volatile double maximumHealth = 20.0D;
     private volatile GraveActivationPacketSnapshot graveActivationPacketSnapshot;
+    private volatile GravePreparationPacketSnapshot gravePreparationPacketSnapshot;
     private GraveScanner graveScanner;
     private boolean graveAdapterFailureLogged;
     private boolean restored;
@@ -121,7 +123,11 @@ final class LiveClientDeathSafetyBoundary implements RuntimeSessionDeathStateBou
             }
         }
         snapshot = advanceGraveRecovery(minecraft, tick, snapshot);
+        gravePreparationPacketSnapshot = controls.prepareGraveActivation(minecraft, snapshot)
+            .orElse(null);
+        controls.sendGravePreparation(minecraft);
         refreshGraveActivationPacketSnapshot(minecraft, snapshot);
+        controls.sendGraveActivation(minecraft, snapshot, graveActivationPacketSnapshot != null);
     }
 
     @Override
@@ -134,6 +140,7 @@ final class LiveClientDeathSafetyBoundary implements RuntimeSessionDeathStateBou
             deathSafety.disconnect(advanceClientTick());
         } finally {
             graveActivationPacketSnapshot = null;
+            gravePreparationPacketSnapshot = null;
             disconnected = true;
         }
     }
@@ -203,6 +210,11 @@ final class LiveClientDeathSafetyBoundary implements RuntimeSessionDeathStateBou
     }
 
     @Override
+    public boolean matchesGravePreparation(Object packet) {
+        return gravePreparationPacketMatcher.matches(packet, gravePreparationPacketSnapshot);
+    }
+
+    @Override
     public synchronized void onBoundaryUnavailable(boolean transportClosed) {
         if (closed || disconnected) {
             return;
@@ -233,6 +245,7 @@ final class LiveClientDeathSafetyBoundary implements RuntimeSessionDeathStateBou
         }
         closed = true;
         graveActivationPacketSnapshot = null;
+        gravePreparationPacketSnapshot = null;
         retirementListener.onRetired(this);
         if (failure != null) {
             throw failure;

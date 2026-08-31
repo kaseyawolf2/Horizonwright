@@ -17,5 +17,9 @@ public interface DeathSafetyPacketContext {
 
     Optional<GraveActivationAttempt> matchGraveActivation(C08PacketPlayerBlockPlacement packet);
 
+    default boolean matchesGravePreparation(Object packet) {
+        return false;
+    }
+
     void onBoundaryUnavailable(boolean transportClosed);
 }

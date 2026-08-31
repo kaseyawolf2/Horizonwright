@@ -55,6 +55,19 @@ public final class GateBackedDeathSafetyPacketBridge implements DeathSafetyPacke
     }
 
     @Override
+    public GravePreparationWriteDecision tryAuthorizeGravePreparationPacket(Object packet,
+        Runnable finalWriteContinuation) {
+        if (packet == null || finalWriteContinuation == null) {
+            throw new IllegalArgumentException("packet and final write continuation must not be null");
+        }
+        if (!context.matchesGravePreparation(packet)) {
+            return GravePreparationWriteDecision.NOT_APPLICABLE;
+        }
+        finalWriteContinuation.run();
+        return GravePreparationWriteDecision.AUTHORIZED;
+    }
+
+    @Override
     public void onBoundaryUnavailable(boolean transportClosed) {
         context.onBoundaryUnavailable(transportClosed);
     }

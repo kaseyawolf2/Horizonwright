@@ -19,6 +19,12 @@ public interface DeathSafetyPacketBridge {
         REJECTED
     }
 
+    enum GravePreparationWriteDecision {
+        NOT_APPLICABLE,
+        AUTHORIZED,
+        REJECTED
+    }
+
     /** Called in the inbound S06 call stack before the packet is forwarded to {@code packet_handler}. */
     void beforeLethalHealthPacket(double health);
 
@@ -31,6 +37,12 @@ public interface DeathSafetyPacketBridge {
      */
     GraveActivationWriteDecision tryAuthorizeGraveActivationPacket(C08PacketPlayerBlockPlacement packet,
         Runnable finalWriteContinuation);
+
+    /** Authorizes only the exact empty-slot selection and start-sneaking packets for an active grave permit. */
+    default GravePreparationWriteDecision tryAuthorizeGravePreparationPacket(Object packet,
+        Runnable finalWriteContinuation) {
+        return GravePreparationWriteDecision.NOT_APPLICABLE;
+    }
 
     /** Retires this connection-scoped authority when its packet boundary becomes unavailable. */
     void onBoundaryUnavailable(boolean transportClosed);

@@ -1,6 +1,8 @@
 package io.github.kaseyawolf2.horizonwright.forge.client.network;
 
 import net.minecraft.network.play.client.C08PacketPlayerBlockPlacement;
+import net.minecraft.network.play.client.C09PacketHeldItemChange;
+import net.minecraft.network.play.client.C0BPacketEntityAction;
 import net.minecraft.network.play.client.C16PacketClientStatus;
 import net.minecraft.network.play.server.S06PacketUpdateHealth;
 
@@ -8,6 +10,7 @@ import io.github.kaseyawolf2.horizonwright.HorizonwrightMod;
 import io.github.kaseyawolf2.horizonwright.core.action.ActionAuthorizationDecision;
 import io.github.kaseyawolf2.horizonwright.core.action.ActionSessionGuard;
 import io.github.kaseyawolf2.horizonwright.forge.client.network.DeathSafetyPacketBridge.GraveActivationWriteDecision;
+import io.github.kaseyawolf2.horizonwright.forge.client.network.DeathSafetyPacketBridge.GravePreparationWriteDecision;
 import io.netty.channel.ChannelDuplexHandler;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelPromise;
@@ -68,6 +71,11 @@ final class OutboundPacketFirewall extends ChannelDuplexHandler {
             if (authorizeGraveActivationWrite(context, (C08PacketPlayerBlockPlacement) message, promise)) {
                 return;
             }
+        }
+        if (deathSafetyBridge != null
+            && (message instanceof C09PacketHeldItemChange || message instanceof C0BPacketEntityAction)
+            && authorizeGravePreparationWrite(context, message, promise)) {
+            return;
         }
         PacketActionRequirement requirement = OutboundPacketClassifier.classify(message);
         if (!requirement.isRestricted()) {
@@ -181,6 +189,37 @@ final class OutboundPacketFirewall extends ChannelDuplexHandler {
         }
         ReferenceCountUtil.release(message);
         promise.trySuccess();
+    }
+
+    /** @return true when the bridge handled the packet, whether authorized or rejected. */
+    private boolean authorizeGravePreparationWrite(ChannelHandlerContext context, Object packet,
+        ChannelPromise promise) {
+        OneShotWriteContinuation continuation = new OneShotWriteContinuation();
+        final GravePreparationWriteDecision decision;
+        try {
+            decision = deathSafetyBridge.tryAuthorizeGravePreparationPacket(packet, continuation);
+            continuation.close();
+            if (decision == null) {
+                throw new IllegalStateException("grave preparation bridge returned no decision");
+            }
+            boolean authorized = decision == GravePreparationWriteDecision.AUTHORIZED;
+            if (authorized != continuation.wasInvoked()) {
+                throw new IllegalStateException("grave preparation decision did not match its write continuation");
+            }
+        } catch (RuntimeException failure) {
+            continuation.close();
+            failClosedOutbound(context, packet, promise, failure);
+            return true;
+        }
+        if (decision == GravePreparationWriteDecision.NOT_APPLICABLE) {
+            return false;
+        }
+        if (decision == GravePreparationWriteDecision.AUTHORIZED) {
+            context.write(packet, promise);
+        } else {
+            rejectSpecializedWrite(packet, promise, "grave activation preparation");
+        }
+        return true;
     }
 
     private void failClosedInbound(ChannelHandlerContext context, Object message, RuntimeException failure) {

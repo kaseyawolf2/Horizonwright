@@ -23,9 +23,11 @@ fabricated. Exact activation packets are matched solely against immutable
 Minecraft-thread evidence. Interaction-disabled recovery navigation now uses
 one death-scoped `MOVEMENT`/`LOOK` lease while the ordinary death lockdown
 continues blocking every integrated interaction packet; unintegrated mod
-traffic remains pass-through. The automatic empty-hand/sneak activation
-sequence, restart evidence persistence, and physical recovery test remain
-incomplete. Unattended operation remains disabled.
+traffic remains pass-through. Automatic activation selects a client-verified
+empty hotbar slot, authorizes only that exact slot-change and start-sneaking
+pair, then sends the one exact permit-bound grave use and releases sneaking.
+Restart evidence persistence and the physical recovery test remain incomplete.
+Unattended operation remains disabled.
 
 ## Pinned target
 
