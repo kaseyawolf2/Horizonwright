@@ -356,7 +356,8 @@ final class FarmTaskRunner implements TaskRunner {
                     ActionCapability.MOVEMENT,
                     ActionCapability.LOOK,
                     ActionCapability.DIG,
-                    ActionCapability.PLACE));
+                    ActionCapability.PLACE,
+                    ActionCapability.HELD_USE));
         }
         if (action == FarmActionKind.RIGHT_CLICK_HARVEST) {
             return Collections

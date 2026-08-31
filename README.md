@@ -126,8 +126,14 @@ movement/look/dig/place or movement/look/use capabilities required by a planned
 mutation, and advances only after a changed, verified immature crop is observed.
 Pause cancels an unconfirmed action at the same crop. A version-isolated backend
 contract now carries all scan, target, seed-reserve, action, and confirmation
-authority; the live Minecraft vanilla-crop adapter is the next slice, so farm
-tasks are not yet exposed for submission.
+authority. The live observation half now resolves only an exact identity-bound
+named area, refuses cross-dimension, oversized, or partially unloaded plots,
+and recognizes only pinned vanilla wheat, carrots, potatoes, and nether wart.
+Its finite scan order, block/meta fingerprint, exact replant item identity, full
+inventory digest, current count, and configured reserve cross the backend
+boundary without mod objects. Unknown mod crops are never guessed. The live
+movement/harvest/replant action half is the next slice, so farm tasks are not
+yet exposed for submission.
 Clean-volume excavation is now attached to a live, session-owned backend. Every
 observation and action carries the explicit dimension as well as the existing
 geometry, frontier, revision, epoch, and block fingerprint. The observer treats
