@@ -11,7 +11,36 @@ public interface HusbandryBackend {
 
     ObservationSnapshot observe(ObservationRequest request);
 
+    ActionReadiness readiness(HusbandryPlan plan);
+
     ActionHandle execute(ActionRequest request, ActionLease lease);
+
+    final class ActionReadiness {
+
+        private final boolean ready;
+        private final String diagnostic;
+
+        private ActionReadiness(boolean ready, String diagnostic) {
+            this.ready = ready;
+            this.diagnostic = required(diagnostic, "diagnostic");
+        }
+
+        public static ActionReadiness ready(String diagnostic) {
+            return new ActionReadiness(true, diagnostic);
+        }
+
+        public static ActionReadiness unavailable(String diagnostic) {
+            return new ActionReadiness(false, diagnostic);
+        }
+
+        public boolean isReady() {
+            return ready;
+        }
+
+        public String getDiagnostic() {
+            return diagnostic;
+        }
+    }
 
     final class Availability {
 

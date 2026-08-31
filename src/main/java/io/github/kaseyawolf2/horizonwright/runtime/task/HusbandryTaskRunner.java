@@ -102,6 +102,12 @@ final class HusbandryTaskRunner implements TaskRunner {
                     "Husbandry pass reached its configured action cap",
                     "operator review of the pen policy");
             }
+            HusbandryBackend.ActionReadiness readiness = backend.readiness(plan);
+            if (readiness == null || !readiness.isReady()) {
+                String diagnostic = readiness == null ? "Husbandry backend returned no action preflight"
+                    : readiness.getDiagnostic();
+                return blocked(context, diagnostic, "the exact species-specific action prerequisite");
+            }
             return submit(context, backend, plan);
         } catch (RuntimeException failure) {
             return StepResult.failed(

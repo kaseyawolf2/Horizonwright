@@ -145,6 +145,28 @@ public class HusbandryTaskRunnerTest {
         assertEquals(1, harness.backend.actions);
     }
 
+    @Test
+    public void missingSpeciesPrerequisiteBlocksBeforeActionAuthority() {
+        harness = new Harness(observation(1L, twoReadyAdults()), null);
+        harness.backend.ready = false;
+        TaskSpec spec = task(4, 6, 8);
+        harness.controller.submit(spec);
+
+        TaskSnapshot blocked = task(harness.controller.tick(), spec.getId());
+
+        assertEquals(TaskState.BLOCKED, blocked.getState());
+        assertEquals(0, harness.backend.actions);
+        assertTrue(
+            harness.broker.snapshot()
+                .getActiveOwners()
+                .isEmpty());
+        assertTrue(
+            blocked.getBlockedReason()
+                .get()
+                .getDetail()
+                .contains("feed unavailable"));
+    }
+
     private static TaskSpec task(int minimum, int maximum, int actionCap) {
         return HusbandryTask.finitePass("animals", "cow-pen", LivestockSpecies.COW, minimum, maximum, actionCap);
     }
@@ -244,6 +266,7 @@ public class HusbandryTaskRunnerTest {
         private HusbandryActionKind kind;
         private ActionLease lease;
         private Handle handle;
+        private boolean ready = true;
 
         private RecordingBackend(HusbandryObservation initial, HusbandryObservation after) {
             current = initial;
@@ -264,6 +287,12 @@ public class HusbandryTaskRunnerTest {
                 request.getActionEpoch(),
                 request.getVerifiedActions(),
                 current);
+        }
+
+        @Override
+        public ActionReadiness readiness(io.github.kaseyawolf2.horizonwright.core.base.HusbandryPlan plan) {
+            return ready ? ActionReadiness.ready("recording prerequisites ready")
+                : ActionReadiness.unavailable("exact feed unavailable");
         }
 
         @Override
