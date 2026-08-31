@@ -30,6 +30,7 @@ import io.github.kaseyawolf2.horizonwright.core.safety.death.DeathSafetyPolicy;
 import io.github.kaseyawolf2.horizonwright.forge.client.container.LiveContainerTransactionExecutor;
 import io.github.kaseyawolf2.horizonwright.forge.client.container.LiveVanillaChestUnloadBackend;
 import io.github.kaseyawolf2.horizonwright.forge.client.container.ProfileVanillaChestUnloadConfiguration;
+import io.github.kaseyawolf2.horizonwright.forge.client.excavation.LiveExcavationBackend;
 import io.github.kaseyawolf2.horizonwright.forge.client.network.ClientPacketFirewallInstaller;
 import io.github.kaseyawolf2.horizonwright.forge.client.network.ContainerTransactionPacketCoordinator;
 import io.github.kaseyawolf2.horizonwright.forge.client.persistence.SingleplayerWorldBindingEvidence;
@@ -75,6 +76,7 @@ public final class ClientBootstrap {
     private ClientPacketFirewallInstaller packetFirewall;
     private ContainerTransactionPacketCoordinator containerTransactions;
     private LiveContainerTransactionExecutor containerTransactionExecutor;
+    private LiveExcavationBackend liveExcavationBackend;
     private LiveVanillaChestUnloadBackend liveUnloadBackend;
     private LiveTinkersRepairBackend liveRepairBackend;
     private boolean initialized;
@@ -261,6 +263,12 @@ public final class ClientBootstrap {
             attachedRuntime.getActionBroker()
                 .addRevocationListener(inputArbiter);
             ClientNavigationBootstrap.initialize(attachedRuntime);
+            liveExcavationBackend = new LiveExcavationBackend(
+                minecraft,
+                attachedRuntime.getActionSessionGuard(),
+                attachedRuntime::getNavigationBackend);
+            attachedRuntime.getTaskServices()
+                .bindExcavationBackend(liveExcavationBackend);
             containerTransactions = new ContainerTransactionPacketCoordinator();
             containerTransactionExecutor = new LiveContainerTransactionExecutor(
                 minecraft,
@@ -305,6 +313,10 @@ public final class ClientBootstrap {
     }
 
     private void retireProfile() {
+        if (attachedRuntime != null && liveExcavationBackend != null) {
+            attachedRuntime.getTaskServices()
+                .unbindExcavationBackend(liveExcavationBackend);
+        }
         if (attachedRuntime != null && liveUnloadBackend != null) {
             attachedRuntime.getTaskServices()
                 .unbindUnloadBackend(liveUnloadBackend);
@@ -326,6 +338,7 @@ public final class ClientBootstrap {
         packetFirewall = null;
         containerTransactions = null;
         containerTransactionExecutor = null;
+        liveExcavationBackend = null;
         liveUnloadBackend = null;
         liveRepairBackend = null;
     }

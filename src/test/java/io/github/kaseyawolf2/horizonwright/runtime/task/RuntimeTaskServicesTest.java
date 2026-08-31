@@ -16,6 +16,12 @@ public class RuntimeTaskServicesTest {
     public void bindsAndIdentityUnbindsSessionAdapters() {
         MutableDryRun dryRun = new MutableDryRun();
         RuntimeTaskServices services = new RuntimeTaskServices(dryRun);
+        StubExcavation excavation = new StubExcavation();
+        services.bindExcavationBackend(excavation);
+        assertSame(excavation, services.getExcavationBackend());
+        assertFalse(services.unbindExcavationBackend(new StubExcavation()));
+        assertTrue(services.unbindExcavationBackend(excavation));
+        assertNull(services.getExcavationBackend());
         StubUnload first = new StubUnload();
         StubUnload stale = new StubUnload();
 
@@ -75,6 +81,24 @@ public class RuntimeTaskServicesTest {
 
         @Override
         public UnloadActionHandle execute(UnloadActionRequest request, ActionLease lease) {
+            throw new UnsupportedOperationException();
+        }
+    }
+
+    private static final class StubExcavation implements ExcavationBackend {
+
+        @Override
+        public ExcavationBackendAvailability availability() {
+            return ExcavationBackendAvailability.available("test");
+        }
+
+        @Override
+        public ExcavationObservationResult observe(ExcavationObservationRequest request) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public ExcavationActionHandle execute(ExcavationActionRequest request, ActionLease lease) {
             throw new UnsupportedOperationException();
         }
     }

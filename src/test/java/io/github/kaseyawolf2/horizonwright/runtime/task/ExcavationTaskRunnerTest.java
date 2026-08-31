@@ -111,6 +111,9 @@ public class ExcavationTaskRunnerTest {
         assertTrue(
             harness.backend.lastLease.getCapabilities()
                 .contains(ActionCapability.DIG));
+        assertTrue(
+            harness.backend.lastLease.getCapabilities()
+                .contains(ActionCapability.MOVEMENT));
 
         TaskSnapshot waiting = task(harness.controller.tick(), spec.getId());
         assertEquals(TaskState.RUNNING, waiting.getState());

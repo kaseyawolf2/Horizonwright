@@ -9,7 +9,7 @@ package io.github.kaseyawolf2.horizonwright.runtime.task;
  * attachment from clearing a newer one.
  * </p>
  */
-public final class RuntimeTaskServices implements UnloadRuntimeAccess, RepairRuntimeAccess {
+public final class RuntimeTaskServices implements ExcavationRuntimeAccess, UnloadRuntimeAccess, RepairRuntimeAccess {
 
     public interface DryRunSource {
 
@@ -17,6 +17,7 @@ public final class RuntimeTaskServices implements UnloadRuntimeAccess, RepairRun
     }
 
     private final DryRunSource dryRun;
+    private volatile ExcavationBackend excavationBackend;
     private volatile UnloadBackend unloadBackend;
     private volatile RepairBackend repairBackend;
 
@@ -35,6 +36,24 @@ public final class RuntimeTaskServices implements UnloadRuntimeAccess, RepairRun
             throw new IllegalStateException("another unload backend is already bound to this runtime session");
         }
         unloadBackend = backend;
+    }
+
+    public synchronized void bindExcavationBackend(ExcavationBackend backend) {
+        if (backend == null) {
+            throw new IllegalArgumentException("excavation backend must not be null");
+        }
+        if (excavationBackend != null && excavationBackend != backend) {
+            throw new IllegalStateException("another excavation backend is already bound to this runtime session");
+        }
+        excavationBackend = backend;
+    }
+
+    public synchronized boolean unbindExcavationBackend(ExcavationBackend expected) {
+        if (expected == null || excavationBackend != expected) {
+            return false;
+        }
+        excavationBackend = null;
+        return true;
     }
 
     public synchronized boolean unbindUnloadBackend(UnloadBackend expected) {
@@ -64,8 +83,14 @@ public final class RuntimeTaskServices implements UnloadRuntimeAccess, RepairRun
     }
 
     public synchronized void clear() {
+        excavationBackend = null;
         unloadBackend = null;
         repairBackend = null;
+    }
+
+    @Override
+    public ExcavationBackend getExcavationBackend() {
+        return excavationBackend;
     }
 
     @Override

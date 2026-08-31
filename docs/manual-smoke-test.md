@@ -121,6 +121,20 @@ duplicate. A failed or cancelled child must leave the parent blocked for
 operator inspection. This checkpoint is automated-test covered but has not yet
 been physically recorded.
 
+## Pending live clean-volume excavation checkpoint
+
+Install only after the automated build remains green. In a disposable area,
+start with a one-block-radius, one-layer clean-volume cylinder containing only
+ordinary cheap blocks. Confirm Horizonwright approaches without breaking route
+blocks, digs exactly the current frontier target, and advances only after that
+block is visibly air. Pause, direct player input, automation stop, disconnect,
+and a block replacement during approach must stop without advancing the target.
+Then place a vanilla chest, another tile entity, an OpenBlocks grave, bedrock,
+flowing fluid, and source fluid at separate test targets: the grave and tile
+entities must be protected, bedrock and unloaded positions must be unreachable,
+and fluid must never receive a blind dig action. This checkpoint has not yet
+been physically recorded.
+
 ## Recorded physical result
 
 On 2026-08-30, the operator completed the long-route, inventory-during-walk,

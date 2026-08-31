@@ -10,16 +10,18 @@ public final class ExcavationActionRequest {
 
     private final String requestId;
     private final String taskId;
+    private final int dimensionId;
     private final long taskRevision;
     private final long actionEpoch;
     private final String geometryKey;
     private final ExcavationFrontier startFrontier;
     private final ExcavationIntent intent;
 
-    ExcavationActionRequest(String requestId, String taskId, long taskRevision, long actionEpoch, String geometryKey,
-        ExcavationFrontier startFrontier, ExcavationIntent intent) {
+    ExcavationActionRequest(String requestId, String taskId, int dimensionId, long taskRevision, long actionEpoch,
+        String geometryKey, ExcavationFrontier startFrontier, ExcavationIntent intent) {
         this.requestId = requireText(requestId, "requestId");
         this.taskId = requireText(taskId, "taskId");
+        this.dimensionId = dimensionId;
         if (taskRevision < 1L) {
             throw new IllegalArgumentException("taskRevision must be positive");
         }
@@ -39,6 +41,10 @@ public final class ExcavationActionRequest {
 
     public String getTaskId() {
         return taskId;
+    }
+
+    public int getDimensionId() {
+        return dimensionId;
     }
 
     public long getTaskRevision() {

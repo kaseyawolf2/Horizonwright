@@ -43,7 +43,7 @@ final class ExcavationTaskRunner implements TaskRunner {
     private static final int TARGETS_PER_PLAN = 1;
     private static final long POLL_DELAY_MILLIS = 0L;
     private static final Set<ActionCapability> REQUIRED_CAPABILITIES = Collections
-        .unmodifiableSet(EnumSet.of(ActionCapability.LOOK, ActionCapability.DIG));
+        .unmodifiableSet(EnumSet.of(ActionCapability.MOVEMENT, ActionCapability.LOOK, ActionCapability.DIG));
 
     private final TaskSpec spec;
     private final CylinderExcavationSpec cylinder;
@@ -202,6 +202,7 @@ final class ExcavationTaskRunner implements TaskRunner {
             .get(0);
         ExcavationObservationRequest observationRequest = new ExcavationObservationRequest(
             spec.getId(),
+            cylinder.getDimensionId(),
             excavationCheckpoint.getTaskRevision(),
             context.getActionEpoch(),
             cylinder.getGeometryKey(),
@@ -253,7 +254,7 @@ final class ExcavationTaskRunner implements TaskRunner {
                 context.getActionEpoch(),
                 taskCheckpoint,
                 POLL_DELAY_MILLIS,
-                "waiting for LOOK and DIG capabilities");
+                "waiting for MOVEMENT, LOOK, and DIG capabilities");
         }
         ActionLease lease = acquired.get();
         ExcavationIntent intent = plan.getIntents()
@@ -262,6 +263,7 @@ final class ExcavationTaskRunner implements TaskRunner {
         ExcavationActionRequest actionRequest = new ExcavationActionRequest(
             requestId,
             spec.getId(),
+            cylinder.getDimensionId(),
             plan.getTaskRevision(),
             plan.getActionEpoch(),
             plan.getGeometryKey(),

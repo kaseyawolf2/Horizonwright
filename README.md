@@ -108,6 +108,20 @@ unrelated assets remain intact, and a stale page cannot write after a profile
 or world binding changes. The first chest editor deliberately creates an
 accept-all destination: loadout reservations remain protected, while a future
 filter editor will narrow which unreserved items belong in each chest.
+Clean-volume excavation is now attached to a live, session-owned backend. Every
+observation and action carries the explicit dimension as well as the existing
+geometry, frontier, revision, epoch, and block fingerprint. The observer treats
+the tested OpenBlocks grave tile as a grave, protects every other tile entity as
+infrastructure, refuses blind fluid clearing, and marks unloaded or unbreakable
+targets unreachable. Ordinary blocks require one combined movement/look/dig
+lease. Horizonwright first uses the movement-only navigation context to approach
+the exact target, waits for that packet session to drain, rechecks fingerprint,
+classification, reach, and line of sight, then begins one vanilla dig. Only a
+fresh observation proving that exact target is air advances the frontier.
+Cancellation, timeout, epoch loss, target replacement, or loss of reach stops
+the producer without advancing. The backend identity-binds and unbinds with its
+world session. Its pure classification, runner authority, and lifecycle pieces
+are automated-test covered; the direct dig path remains physically unverified.
 Unattended operation remains disabled.
 
 ## Pinned target
