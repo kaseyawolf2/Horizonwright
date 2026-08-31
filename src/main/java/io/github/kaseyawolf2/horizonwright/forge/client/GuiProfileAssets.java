@@ -36,6 +36,7 @@ public final class GuiProfileAssets extends GuiScreen {
     private static final int SAVE_CHEST_BUTTON = 3;
     private static final int SAVE_STATION_BUTTON = 4;
     private static final int NEW_EXCAVATION_BUTTON = 5;
+    private static final int WORK_AREAS_BUTTON = 6;
 
     private final GuiScreen parent;
     private final CurrentRuntimeProvider runtimeProvider;
@@ -82,6 +83,7 @@ public final class GuiProfileAssets extends GuiScreen {
             .add(new GuiButton(SAVE_STATION_BUTTON, left + 282, top + 208, 196, 20, "Save targeted repair station"));
         buttonList.add(new GuiButton(BACK_BUTTON, left + panelWidth - 82, top + 278, 70, 20, "Back"));
         buttonList.add(new GuiButton(NEW_EXCAVATION_BUTTON, left + 12, top + 278, 128, 20, "New excavation"));
+        buttonList.add(new GuiButton(WORK_AREAS_BUTTON, left + 146, top + 278, 110, 20, "Work areas"));
         refreshStatus();
     }
 
@@ -98,6 +100,10 @@ public final class GuiProfileAssets extends GuiScreen {
         }
         if (button.id == NEW_EXCAVATION_BUTTON) {
             mc.displayGuiScreen(new GuiExcavationSetup(this, runtimeProvider, editorProvider));
+            return;
+        }
+        if (button.id == WORK_AREAS_BUTTON) {
+            mc.displayGuiScreen(new GuiProfileAreas(this, editorProvider));
             return;
         }
         Optional<ProfileAssetEditor> editor = editorProvider.getCurrentProfileAssetEditor();

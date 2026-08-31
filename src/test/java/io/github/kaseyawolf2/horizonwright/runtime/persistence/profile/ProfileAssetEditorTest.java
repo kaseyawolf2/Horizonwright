@@ -11,6 +11,8 @@ import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
 
+import io.github.kaseyawolf2.horizonwright.core.base.BasePosition;
+import io.github.kaseyawolf2.horizonwright.core.base.NamedArea;
 import io.github.kaseyawolf2.horizonwright.core.logistics.LoadoutReservation;
 import io.github.kaseyawolf2.horizonwright.core.logistics.LoadoutRole;
 import io.github.kaseyawolf2.horizonwright.core.logistics.NamedLoadout;
@@ -90,6 +92,33 @@ public class ProfileAssetEditorTest {
         assertEquals(40L, saved.getWrittenAtEpochMillis());
         assertEquals(Arrays.asList(replacement, second), saved.getNamedLocations());
         assertEquals(Collections.singletonList(replacementLoadout), saved.getNamedLoadouts());
+    }
+
+    @Test
+    public void namedAreaIsAtomicallyAddedAndReplacedWithoutDuplicatingItsId() throws Exception {
+        HorizonwrightPersistenceStore store = store();
+        WorldProfileIdentity identity = identity("world-one");
+        store.saveProfile(
+            store.pathsForProfile(identity.getProfileId()),
+            new ProfileEnvelope(
+                20L,
+                identity,
+                Collections.emptyList(),
+                Collections.emptyList(),
+                Collections.emptyList()));
+        ProfileAssetEditor editor = new ProfileAssetEditor(store, identity, () -> 30L);
+        NamedArea first = new NamedArea("farm", "Farm", new BasePosition(0, 1, 60, 1), new BasePosition(0, 5, 70, 5));
+        NamedArea replacement = new NamedArea(
+            "farm",
+            "Expanded farm",
+            new BasePosition(0, -2, 58, -2),
+            new BasePosition(0, 8, 72, 8));
+
+        editor.apply(ProfileAssetUpdate.ofArea(first));
+        ProfileEnvelope saved = editor.apply(ProfileAssetUpdate.ofArea(replacement));
+
+        assertEquals(Collections.singletonList(replacement), saved.getNamedAreas());
+        assertEquals(saved, editor.load());
     }
 
     @Test

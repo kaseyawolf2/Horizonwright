@@ -3,6 +3,7 @@ package io.github.kaseyawolf2.horizonwright.runtime.persistence.profile;
 import java.util.ArrayList;
 import java.util.List;
 
+import io.github.kaseyawolf2.horizonwright.core.base.NamedArea;
 import io.github.kaseyawolf2.horizonwright.core.logistics.NamedLoadout;
 import io.github.kaseyawolf2.horizonwright.core.persistence.HorizonwrightPersistenceStore;
 import io.github.kaseyawolf2.horizonwright.core.persistence.NamedLocation;
@@ -56,7 +57,8 @@ public final class ProfileAssetEditor {
             previous.getNamedRoutes(),
             mergeLoadouts(previous.getNamedLoadouts(), update.getLoadouts()),
             mergeStorage(previous.getNamedStorageEndpoints(), update.getStorageEndpoints()),
-            mergeStations(previous.getNamedRepairStations(), update.getRepairStations()));
+            mergeStations(previous.getNamedRepairStations(), update.getRepairStations()),
+            mergeAreas(previous.getNamedAreas(), update.getAreas()));
         try {
             store.saveProfile(paths, replacement);
         } catch (PersistenceException failure) {
@@ -111,6 +113,14 @@ public final class ProfileAssetEditor {
         return merged;
     }
 
+    private static List<NamedArea> mergeAreas(List<NamedArea> existing, List<NamedArea> updates) {
+        List<NamedArea> merged = new ArrayList<>(existing);
+        for (NamedArea update : updates) {
+            replaceArea(merged, update);
+        }
+        return merged;
+    }
+
     private static void replaceLocation(List<NamedLocation> values, NamedLocation replacement) {
         for (int index = 0; index < values.size(); index++) {
             if (values.get(index)
@@ -148,6 +158,18 @@ public final class ProfileAssetEditor {
     }
 
     private static void replaceStation(List<NamedRepairStation> values, NamedRepairStation replacement) {
+        for (int index = 0; index < values.size(); index++) {
+            if (values.get(index)
+                .getId()
+                .equals(replacement.getId())) {
+                values.set(index, replacement);
+                return;
+            }
+        }
+        values.add(replacement);
+    }
+
+    private static void replaceArea(List<NamedArea> values, NamedArea replacement) {
         for (int index = 0; index < values.size(); index++) {
             if (values.get(index)
                 .getId()

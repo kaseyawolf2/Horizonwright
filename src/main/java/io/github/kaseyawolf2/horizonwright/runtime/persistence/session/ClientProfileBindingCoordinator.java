@@ -529,7 +529,8 @@ public final class ClientProfileBindingCoordinator {
             previous.getNamedRoutes(),
             previous.getNamedLoadouts(),
             previous.getNamedStorageEndpoints(),
-            previous.getNamedRepairStations());
+            previous.getNamedRepairStations(),
+            previous.getNamedAreas());
     }
 
     private boolean containsConfirmation(ProfileBindingIndex index, ProfileBindingTransaction transaction) {

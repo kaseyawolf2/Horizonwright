@@ -108,6 +108,12 @@ unrelated assets remain intact, and a stale page cannot write after a profile
 or world binding changes. The first chest editor deliberately creates an
 accept-all destination: loadout reservations remain protected, while a future
 filter editor will narrow which unreserved items belong in each chest.
+The same page now opens a guided **Work areas** editor. The operator stands at
+two opposite corners and captures the current feet position at each one;
+Horizonwright normalizes the inclusive bounds, refuses cross-dimension corners,
+and atomically saves the named area to the active world profile. Existing
+schema-v1 profiles without the optional area field load with an empty list, so
+this foundation for farms and animal pens does not invalidate enrolled worlds.
 Clean-volume excavation is now attached to a live, session-owned backend. Every
 observation and action carries the explicit dimension as well as the existing
 geometry, frontier, revision, epoch, and block fingerprint. The observer treats

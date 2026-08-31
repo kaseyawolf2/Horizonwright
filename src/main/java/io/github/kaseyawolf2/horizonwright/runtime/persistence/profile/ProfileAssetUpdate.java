@@ -6,6 +6,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
+import io.github.kaseyawolf2.horizonwright.core.base.NamedArea;
 import io.github.kaseyawolf2.horizonwright.core.logistics.NamedLoadout;
 import io.github.kaseyawolf2.horizonwright.core.persistence.NamedLocation;
 import io.github.kaseyawolf2.horizonwright.core.persistence.NamedRepairStation;
@@ -18,17 +19,25 @@ public final class ProfileAssetUpdate {
     private final List<NamedLoadout> loadouts;
     private final List<NamedStorageEndpoint> storageEndpoints;
     private final List<NamedRepairStation> repairStations;
+    private final List<NamedArea> areas;
 
     public ProfileAssetUpdate(List<NamedLocation> locations, List<NamedLoadout> loadouts,
         List<NamedStorageEndpoint> storageEndpoints, List<NamedRepairStation> repairStations) {
+        this(locations, loadouts, storageEndpoints, repairStations, Collections.<NamedArea>emptyList());
+    }
+
+    public ProfileAssetUpdate(List<NamedLocation> locations, List<NamedLoadout> loadouts,
+        List<NamedStorageEndpoint> storageEndpoints, List<NamedRepairStation> repairStations, List<NamedArea> areas) {
         this.locations = copy(locations, "locations");
         this.loadouts = copy(loadouts, "loadouts");
         this.storageEndpoints = copy(storageEndpoints, "storageEndpoints");
         this.repairStations = copy(repairStations, "repairStations");
+        this.areas = copy(areas, "areas");
         requireUniqueLocationIds(this.locations);
         requireUniqueLoadoutIds(this.loadouts);
         requireUniqueStorageIds(this.storageEndpoints);
         requireUniqueStationIds(this.repairStations);
+        requireUniqueAreaIds(this.areas);
         if (isEmpty()) throw new IllegalArgumentException("profile asset update must not be empty");
     }
 
@@ -39,6 +48,15 @@ public final class ProfileAssetUpdate {
             singleton(loadout),
             singleton(storageEndpoint),
             singleton(repairStation));
+    }
+
+    public static ProfileAssetUpdate ofArea(NamedArea area) {
+        return new ProfileAssetUpdate(
+            Collections.<NamedLocation>emptyList(),
+            Collections.<NamedLoadout>emptyList(),
+            Collections.<NamedStorageEndpoint>emptyList(),
+            Collections.<NamedRepairStation>emptyList(),
+            singleton(area));
     }
 
     public List<NamedLocation> getLocations() {
@@ -57,8 +75,15 @@ public final class ProfileAssetUpdate {
         return repairStations;
     }
 
+    public List<NamedArea> getAreas() {
+        return areas;
+    }
+
     private boolean isEmpty() {
-        return locations.isEmpty() && loadouts.isEmpty() && storageEndpoints.isEmpty() && repairStations.isEmpty();
+        return locations.isEmpty() && loadouts.isEmpty()
+            && storageEndpoints.isEmpty()
+            && repairStations.isEmpty()
+            && areas.isEmpty();
     }
 
     private static <T> List<T> copy(List<T> source, String field) {
@@ -90,6 +115,11 @@ public final class ProfileAssetUpdate {
     private static void requireUniqueStationIds(List<NamedRepairStation> values) {
         Set<String> ids = new HashSet<>();
         for (NamedRepairStation value : values) requireUnique(ids, value.getId(), "repair station");
+    }
+
+    private static void requireUniqueAreaIds(List<NamedArea> values) {
+        Set<String> ids = new HashSet<>();
+        for (NamedArea value : values) requireUnique(ids, value.getId(), "area");
     }
 
     private static void requireUnique(Set<String> ids, String id, String kind) {

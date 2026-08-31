@@ -13,6 +13,7 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParseException;
 import com.google.gson.JsonParser;
 
+import io.github.kaseyawolf2.horizonwright.core.base.NamedArea;
 import io.github.kaseyawolf2.horizonwright.core.logistics.NamedLoadout;
 import io.github.kaseyawolf2.horizonwright.core.task.TaskControllerState;
 
@@ -58,6 +59,8 @@ final class PersistenceJsonCodec {
                     java.util.List<NamedRepairStation> repairStations = root.has("namedRepairStations")
                         ? value.getNamedRepairStations()
                         : java.util.Collections.<NamedRepairStation>emptyList();
+                    java.util.List<NamedArea> areas = root.has("namedAreas") ? value.getNamedAreas()
+                        : java.util.Collections.<NamedArea>emptyList();
                     if (loadouts == null) {
                         throw new IllegalArgumentException("namedLoadouts must not be null");
                     }
@@ -67,6 +70,9 @@ final class PersistenceJsonCodec {
                     if (repairStations == null) {
                         throw new IllegalArgumentException("namedRepairStations must not be null");
                     }
+                    if (areas == null) {
+                        throw new IllegalArgumentException("namedAreas must not be null");
+                    }
                     return new ProfileEnvelope(
                         value.getWrittenAtEpochMillis(),
                         value.getIdentity(),
@@ -75,7 +81,8 @@ final class PersistenceJsonCodec {
                         value.getNamedRoutes(),
                         loadouts,
                         storageEndpoints,
-                        repairStations);
+                        repairStations,
+                        areas);
                 }
             });
     }

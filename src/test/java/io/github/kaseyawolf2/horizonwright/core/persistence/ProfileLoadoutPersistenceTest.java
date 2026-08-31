@@ -12,6 +12,8 @@ import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
 
+import io.github.kaseyawolf2.horizonwright.core.base.BasePosition;
+import io.github.kaseyawolf2.horizonwright.core.base.NamedArea;
 import io.github.kaseyawolf2.horizonwright.core.logistics.LoadoutReservation;
 import io.github.kaseyawolf2.horizonwright.core.logistics.LoadoutRole;
 import io.github.kaseyawolf2.horizonwright.core.logistics.NamedLoadout;
@@ -77,6 +79,9 @@ public class ProfileLoadoutPersistenceTest {
         assertTrue(
             reloaded.getNamedRepairStations()
                 .isEmpty());
+        assertTrue(
+            reloaded.getNamedAreas()
+                .isEmpty());
     }
 
     @Test
@@ -123,6 +128,7 @@ public class ProfileLoadoutPersistenceTest {
         String encoded = new String(codec.encodeProfile(profile), StandardCharsets.UTF_8);
         String legacy = encoded.replaceFirst(",?\\s*\"namedStorageEndpoints\"\\s*:\\s*\\[\\s*\\]", "");
         legacy = legacy.replaceFirst(",?\\s*\"namedRepairStations\"\\s*:\\s*\\[\\s*\\]", "");
+        legacy = legacy.replaceFirst(",?\\s*\"namedAreas\"\\s*:\\s*\\[\\s*\\]", "");
 
         PersistenceJsonCodec.DecodeResult<ProfileEnvelope> decoded = codec
             .decodeProfile(legacy.getBytes(StandardCharsets.UTF_8));
@@ -136,6 +142,48 @@ public class ProfileLoadoutPersistenceTest {
             decoded.getValue()
                 .getNamedRepairStations()
                 .isEmpty());
+        assertTrue(
+            decoded.getValue()
+                .getNamedAreas()
+                .isEmpty());
+    }
+
+    @Test
+    public void namedAreaRoundTripsNormalizedInclusiveCorners() throws Exception {
+        NamedArea plot = new NamedArea(
+            "north-field",
+            "North field",
+            new BasePosition(0, 12, 70, -4),
+            new BasePosition(0, 2, 60, 8));
+        ProfileEnvelope profile = new ProfileEnvelope(
+            20L,
+            identity(),
+            Collections.emptyList(),
+            Collections.emptyList(),
+            Collections.emptyList(),
+            Collections.emptyList(),
+            Collections.emptyList(),
+            Collections.emptyList(),
+            Collections.singletonList(plot));
+        HorizonwrightPersistenceStore store = store();
+        ProfileStatePaths paths = store.pathsForProfile("profile");
+
+        store.saveProfile(paths, profile);
+        ProfileEnvelope reloaded = store.loadProfile(paths)
+            .getValue();
+
+        assertEquals(profile, reloaded);
+        assertEquals(Collections.singletonList(plot), reloaded.getNamedAreas());
+        assertEquals(
+            new BasePosition(0, 2, 60, -4),
+            reloaded.getNamedAreas()
+                .get(0)
+                .getMinimum());
+        assertEquals(
+            new BasePosition(0, 12, 70, 8),
+            reloaded.getNamedAreas()
+                .get(0)
+                .getMaximum());
     }
 
     @Test

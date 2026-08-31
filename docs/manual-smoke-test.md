@@ -151,6 +151,17 @@ entities must be protected, bedrock and unloaded positions must be unreachable,
 and fluid must never receive a blind dig action. This checkpoint has not yet
 been physically recorded.
 
+## Pending named work-area checkpoint
+
+Open **Dashboard > Profile assets > Work areas** in the bound disposable world.
+Stand at one corner of a small plot and capture corner 1, then stand at the
+opposite corner and capture corner 2. Save it as `smoke-plot`, close the world,
+rejoin, and confirm the page reports the saved-area count. Saving `smoke-plot`
+again with wider corners must replace the old bounds rather than create a
+duplicate. A missing corner or corners captured in different dimensions must
+leave the profile unchanged with a clear diagnostic. This checkpoint is
+automated-test covered but has not yet been physically recorded.
+
 ## Recorded physical result
 
 On 2026-08-30, the operator completed the long-route, inventory-during-walk,
