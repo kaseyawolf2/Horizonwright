@@ -75,6 +75,31 @@ public final class MinecraftVanillaFarmObserver {
         return observation;
     }
 
+    CropObservation observeSupported(BasePosition position) {
+        requireClient();
+        if (position == null || position.getDimensionId() != minecraft.theWorld.provider.dimensionId
+            || !minecraft.theWorld.getChunkProvider()
+                .chunkExists(position.getX() >> 4, position.getZ() >> 4))
+            return null;
+        return observeIfCrop(position);
+    }
+
+    int findHotbarSeed(String requiredSeedFingerprint) {
+        requireClient();
+        for (int slot = 0; slot < 9; slot++) {
+            ItemFingerprint fingerprint = items.fingerprint(minecraft.thePlayer.inventory.mainInventory[slot]);
+            if (fingerprint != null && requiredSeedFingerprint.equals(materialIdentity(fingerprint))) return slot;
+        }
+        return -1;
+    }
+
+    String hotbarMaterialIdentity(int slot) {
+        requireClient();
+        if (slot < 0 || slot > 8) throw new IllegalArgumentException("hotbar slot must be from 0 to 8");
+        ItemFingerprint fingerprint = items.fingerprint(minecraft.thePlayer.inventory.mainInventory[slot]);
+        return fingerprint == null ? null : materialIdentity(fingerprint);
+    }
+
     public SeedReserveEvidence reserve(long inventoryRevision, String requiredSeedFingerprint, int minimumReserve) {
         requireClient();
         int count = 0;

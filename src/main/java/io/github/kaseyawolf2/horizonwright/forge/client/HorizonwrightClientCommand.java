@@ -29,6 +29,7 @@ import io.github.kaseyawolf2.horizonwright.runtime.persistence.session.ClientPro
 import io.github.kaseyawolf2.horizonwright.runtime.persistence.session.ClientProfileBindingState;
 import io.github.kaseyawolf2.horizonwright.runtime.persistence.session.CurrentRuntimeProvider;
 import io.github.kaseyawolf2.horizonwright.runtime.task.ExcavationTaskSubmission;
+import io.github.kaseyawolf2.horizonwright.runtime.task.FarmTask;
 
 public final class HorizonwrightClientCommand extends CommandBase {
 
@@ -63,7 +64,7 @@ public final class HorizonwrightClientCommand extends CommandBase {
 
     @Override
     public String getCommandUsage(ICommandSender sender) {
-        return "/hw [panel|profile [status|enroll|recover|reassociate <id>]|status|task [id]|goto <x> <y> <z> [tolerance]|excavate cylinder <id> <radius> <bottom-y> <top-y> [<loadout> <storage> <station> <tool-slot> <work-damage>]|pause [id]|resume [id]|cancel <id>|navcancel|dryrun [on|off]|stop|reset]";
+        return "/hw [panel|profile [status|enroll|recover|reassociate <id>]|status|task [id]|goto <x> <y> <z> [tolerance]|excavate cylinder <id> <radius> <bottom-y> <top-y> [<loadout> <storage> <station> <tool-slot> <work-damage>]|farm <task-id> <plot-id> [seed-reserve]|pause [id]|resume [id]|cancel <id>|navcancel|dryrun [on|off]|stop|reset]";
     }
 
     @Override
@@ -103,6 +104,10 @@ public final class HorizonwrightClientCommand extends CommandBase {
         }
         if ("excavate".equals(subcommand)) {
             startExcavation(sender, arguments, runtime);
+            return;
+        }
+        if ("farm".equals(subcommand)) {
+            startFarm(sender, arguments, runtime);
             return;
         }
         if ("navcancel".equals(subcommand)) {
@@ -159,6 +164,7 @@ public final class HorizonwrightClientCommand extends CommandBase {
         return "status".equals(subcommand) || "task".equals(subcommand)
             || "goto".equals(subcommand)
             || "excavate".equals(subcommand)
+            || "farm".equals(subcommand)
             || "navcancel".equals(subcommand)
             || "pause".equals(subcommand)
             || "resume".equals(subcommand)
@@ -185,6 +191,7 @@ public final class HorizonwrightClientCommand extends CommandBase {
                 "task",
                 "goto",
                 "excavate",
+                "farm",
                 "pause",
                 "resume",
                 "cancel",
@@ -371,6 +378,42 @@ public final class HorizonwrightClientCommand extends CommandBase {
         } catch (RuntimeException failure) {
             sender.addChatMessage(
                 new ChatComponentText(EnumChatFormatting.RED + "Excavation not started: " + safeMessage(failure)));
+        }
+    }
+
+    private void startFarm(ICommandSender sender, String[] arguments, HorizonwrightRuntime runtime) {
+        if (arguments.length != 3 && arguments.length != 4) {
+            sender.addChatMessage(new ChatComponentText(EnumChatFormatting.RED + getCommandUsage(sender)));
+            return;
+        }
+        try {
+            String taskId = ProfileAssetInput.stableId(arguments[1], "farm task name");
+            String plotId = ProfileAssetInput.stableId(arguments[2], "farm plot name");
+            int reserve = arguments.length == 4 ? ProfileAssetInput.nonNegativeInteger(arguments[3], "seed reserve")
+                : 2;
+            ProfileAssetEditor editor = profileEditorProvider.getCurrentProfileAssetEditor()
+                .orElseThrow(() -> new IllegalStateException("active profile assets are unavailable"));
+            boolean found = false;
+            for (io.github.kaseyawolf2.horizonwright.core.base.NamedArea area : editor.load()
+                .getNamedAreas()) {
+                if (area.getId()
+                    .equals(plotId)) found = true;
+            }
+            if (!found) throw new IllegalStateException("active profile has no named area '" + plotId + "'");
+            TaskSnapshot submitted = runtime.submitFarm(FarmTask.finitePass(taskId, plotId, reserve));
+            sender.addChatMessage(
+                new ChatComponentText(
+                    EnumChatFormatting.AQUA + "Horizonwright queued farm pass '"
+                        + submitted.getSpec()
+                            .getId()
+                        + "' for plot '"
+                        + plotId
+                        + "' with seed reserve "
+                        + reserve
+                        + "."));
+        } catch (RuntimeException failure) {
+            sender.addChatMessage(
+                new ChatComponentText(EnumChatFormatting.RED + "Farm pass not started: " + safeMessage(failure)));
         }
     }
 

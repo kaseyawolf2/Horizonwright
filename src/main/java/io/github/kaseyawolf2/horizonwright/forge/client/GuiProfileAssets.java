@@ -103,7 +103,7 @@ public final class GuiProfileAssets extends GuiScreen {
             return;
         }
         if (button.id == WORK_AREAS_BUTTON) {
-            mc.displayGuiScreen(new GuiProfileAreas(this, editorProvider));
+            mc.displayGuiScreen(new GuiProfileAreas(this, runtimeProvider, editorProvider));
             return;
         }
         Optional<ProfileAssetEditor> editor = editorProvider.getCurrentProfileAssetEditor();

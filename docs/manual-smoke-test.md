@@ -164,17 +164,20 @@ automated-test covered but has not yet been physically recorded.
 
 ## Pending finite farm-pass checkpoint
 
-This check remains unavailable until the live vanilla-crop adapter and task
-submission UI are installed. When enabled, create a small named plot containing
-one immature crop and one mature vanilla crop, with verified seed inventory
-above the configured reserve. The finite pass must skip the immature crop
+After installing the automated-test-green build, create a small named plot
+containing one immature crop and one mature vanilla crop. Put the exact replant
+seed in the hotbar with total verified seed inventory above the configured
+reserve, then use **Work areas > Queue one farm pass**. The finite pass must skip the immature crop
 without acquiring an action lease, harvest and replant the mature crop, and
 advance it only after the replacement is visibly immature. Pause during the
 mutation and reconnect after one confirmed target; Horizonwright must reobserve
 the same unadvanced target after pause and retain the exact next index after
 reconnect. Manually alter a frozen target before its turn and confirm the pass
 stops without touching it. These runner behaviors are automated-test covered;
-the live adapter is not yet present or physically verified.
+the live adapter is present but not yet physically verified. Repeat the basic
+pass with `/hw farm smoke-farm smoke-plot 2`; missing plots, seeds outside the
+hotbar, insufficient reserve, oversized plots, unloaded plot chunks, and
+unknown mod crops must stop without a harvest.
 
 ## Recorded physical result
 

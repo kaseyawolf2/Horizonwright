@@ -132,8 +132,18 @@ and recognizes only pinned vanilla wheat, carrots, potatoes, and nether wart.
 Its finite scan order, block/meta fingerprint, exact replant item identity, full
 inventory digest, current count, and configured reserve cross the backend
 boundary without mod objects. Unknown mod crops are never guessed. The live
-movement/harvest/replant action half is the next slice, so farm tasks are not
-yet exposed for submission.
+mutation half approaches under the same task lease, waits for the navigation
+packet drain, revalidates the crop and complete seed snapshot, and requires the
+exact approved seed in a stable hotbar slot. It breaks one mature crop, selects
+that slot only while the action session is active, performs one normal replant
+interaction, restores the prior selected slot, and ends its packet-producing
+session before waiting for synchronization. Only a changed, same-family,
+same-seed, unprotected, visibly immature replacement confirms the action. The
+backend identity-binds to one world runtime and is removed on retirement.
+Operators can queue one pass from **Profile assets > Work areas** or with
+`/hw farm <task-id> <plot-id> [seed-reserve]`. This live path is automated-test
+covered at its planner, runner, authority, classifier, and proof boundaries but
+remains physically unverified.
 Clean-volume excavation is now attached to a live, session-owned backend. Every
 observation and action carries the explicit dimension as well as the existing
 geometry, frontier, revision, epoch, and block fingerprint. The observer treats
@@ -242,6 +252,10 @@ was installed for this test.
   Append `<loadout> <storage> <station> <tool-slot> <work-damage>` to bind all
   guided unload and repair services, or use **Dashboard > Profile assets > New
   excavation** for the nontechnical form.
+- Use `/hw farm <task-id> <plot-id> [seed-reserve]` for one finite CHORE-lane
+  pass over a saved work area, or use **Dashboard > Profile assets > Work areas
+  > Queue one farm pass**. Keep the exact replant seed in the hotbar; the
+  default reserve is 2.
   Relative coordinates such as `~256 ~ ~` are accepted; Horizonwright does not
   impose the old 128-block smoke-test radius.
 - Use `/hw navcancel` to cancel the current navigation request and release

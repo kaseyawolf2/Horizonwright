@@ -21,6 +21,7 @@ import io.github.kaseyawolf2.horizonwright.core.task.TaskSpec;
 import io.github.kaseyawolf2.horizonwright.core.task.TaskState;
 import io.github.kaseyawolf2.horizonwright.runtime.task.ExcavationServiceCoordinator;
 import io.github.kaseyawolf2.horizonwright.runtime.task.ExcavationTask;
+import io.github.kaseyawolf2.horizonwright.runtime.task.FarmTask;
 import io.github.kaseyawolf2.horizonwright.runtime.task.GoToTask;
 import io.github.kaseyawolf2.horizonwright.runtime.task.NavigationRuntimeAccess;
 import io.github.kaseyawolf2.horizonwright.runtime.task.RuntimeTaskRunnerFactory;
@@ -225,6 +226,20 @@ public final class HorizonwrightRuntime implements AutoCloseable {
         ensureOpen();
         if (spec == null || !ExcavationTask.TYPE.equals(spec.getType())) {
             throw new IllegalArgumentException("an excavation task specification is required");
+        }
+        if (actionBroker.isDeathSafetyLocked()) {
+            throw new IllegalStateException("death safety is active; new automation is unavailable");
+        }
+        if (actionBroker.isAutomationLocked()) {
+            throw new IllegalStateException("automation is stopped; use /hw reset before submitting new work");
+        }
+        return controller.submit(spec);
+    }
+
+    public TaskSnapshot submitFarm(TaskSpec spec) {
+        ensureOpen();
+        if (spec == null || !FarmTask.TYPE.equals(spec.getType())) {
+            throw new IllegalArgumentException("a farm-pass task specification is required");
         }
         if (actionBroker.isDeathSafetyLocked()) {
             throw new IllegalStateException("death safety is active; new automation is unavailable");

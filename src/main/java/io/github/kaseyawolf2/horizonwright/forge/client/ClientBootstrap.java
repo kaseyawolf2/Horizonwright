@@ -31,6 +31,8 @@ import io.github.kaseyawolf2.horizonwright.forge.client.container.LiveContainerT
 import io.github.kaseyawolf2.horizonwright.forge.client.container.LiveVanillaChestUnloadBackend;
 import io.github.kaseyawolf2.horizonwright.forge.client.container.ProfileVanillaChestUnloadConfiguration;
 import io.github.kaseyawolf2.horizonwright.forge.client.excavation.LiveExcavationBackend;
+import io.github.kaseyawolf2.horizonwright.forge.client.farm.LiveVanillaFarmBackend;
+import io.github.kaseyawolf2.horizonwright.forge.client.farm.ProfileFarmConfiguration;
 import io.github.kaseyawolf2.horizonwright.forge.client.network.ClientPacketFirewallInstaller;
 import io.github.kaseyawolf2.horizonwright.forge.client.network.ContainerTransactionPacketCoordinator;
 import io.github.kaseyawolf2.horizonwright.forge.client.persistence.SingleplayerWorldBindingEvidence;
@@ -77,6 +79,7 @@ public final class ClientBootstrap {
     private ContainerTransactionPacketCoordinator containerTransactions;
     private LiveContainerTransactionExecutor containerTransactionExecutor;
     private LiveExcavationBackend liveExcavationBackend;
+    private LiveVanillaFarmBackend liveFarmBackend;
     private LiveVanillaChestUnloadBackend liveUnloadBackend;
     private LiveTinkersRepairBackend liveRepairBackend;
     private boolean initialized;
@@ -270,6 +273,13 @@ public final class ClientBootstrap {
                 attachedRuntime::getNavigationBackend);
             attachedRuntime.getTaskServices()
                 .bindExcavationBackend(liveExcavationBackend);
+            liveFarmBackend = new LiveVanillaFarmBackend(
+                minecraft,
+                attachedRuntime.getActionSessionGuard(),
+                attachedRuntime::getNavigationBackend,
+                new ProfileFarmConfiguration(profileEditorProvider()));
+            attachedRuntime.getTaskServices()
+                .bindFarmBackend(liveFarmBackend);
             containerTransactions = new ContainerTransactionPacketCoordinator();
             containerTransactionExecutor = new LiveContainerTransactionExecutor(
                 minecraft,
@@ -318,6 +328,10 @@ public final class ClientBootstrap {
             attachedRuntime.getTaskServices()
                 .unbindExcavationBackend(liveExcavationBackend);
         }
+        if (attachedRuntime != null && liveFarmBackend != null) {
+            attachedRuntime.getTaskServices()
+                .unbindFarmBackend(liveFarmBackend);
+        }
         if (attachedRuntime != null && liveUnloadBackend != null) {
             attachedRuntime.getTaskServices()
                 .unbindUnloadBackend(liveUnloadBackend);
@@ -340,6 +354,7 @@ public final class ClientBootstrap {
         containerTransactions = null;
         containerTransactionExecutor = null;
         liveExcavationBackend = null;
+        liveFarmBackend = null;
         liveUnloadBackend = null;
         liveRepairBackend = null;
     }

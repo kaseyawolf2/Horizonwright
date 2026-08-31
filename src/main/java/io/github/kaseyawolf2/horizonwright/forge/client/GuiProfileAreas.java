@@ -9,12 +9,16 @@ import net.minecraft.util.ChunkCoordinates;
 
 import org.lwjgl.input.Keyboard;
 
+import io.github.kaseyawolf2.horizonwright.HorizonwrightRuntime;
 import io.github.kaseyawolf2.horizonwright.core.base.BasePosition;
 import io.github.kaseyawolf2.horizonwright.core.base.NamedArea;
 import io.github.kaseyawolf2.horizonwright.core.persistence.ProfileEnvelope;
+import io.github.kaseyawolf2.horizonwright.core.task.TaskSnapshot;
 import io.github.kaseyawolf2.horizonwright.runtime.persistence.profile.ProfileAssetEditor;
 import io.github.kaseyawolf2.horizonwright.runtime.persistence.profile.ProfileAssetEditorProvider;
 import io.github.kaseyawolf2.horizonwright.runtime.persistence.profile.ProfileAssetUpdate;
+import io.github.kaseyawolf2.horizonwright.runtime.persistence.session.CurrentRuntimeProvider;
+import io.github.kaseyawolf2.horizonwright.runtime.task.FarmTask;
 
 /** Nontechnical two-corner named work-area editor for farms, pens, and later bounded jobs. */
 public final class GuiProfileAreas extends GuiScreen {
@@ -23,21 +27,26 @@ public final class GuiProfileAreas extends GuiScreen {
     private static final int FIRST_BUTTON = 2;
     private static final int SECOND_BUTTON = 3;
     private static final int SAVE_BUTTON = 4;
+    private static final int QUEUE_FARM_BUTTON = 5;
 
     private final GuiScreen parent;
+    private final CurrentRuntimeProvider runtimeProvider;
     private final ProfileAssetEditorProvider editorProvider;
     private final ProfileAreaCapture capture = new ProfileAreaCapture();
     private GuiTextField areaId;
+    private GuiTextField seedReserve;
     private int left;
     private int top;
     private int panelWidth;
     private String status = "Stand at each opposite corner and capture your feet position.";
 
-    public GuiProfileAreas(GuiScreen parent, ProfileAssetEditorProvider editorProvider) {
-        if (parent == null || editorProvider == null) {
-            throw new IllegalArgumentException("parent and editorProvider are required");
+    public GuiProfileAreas(GuiScreen parent, CurrentRuntimeProvider runtimeProvider,
+        ProfileAssetEditorProvider editorProvider) {
+        if (parent == null || runtimeProvider == null || editorProvider == null) {
+            throw new IllegalArgumentException("parent, runtimeProvider, and editorProvider are required");
         }
         this.parent = parent;
+        this.runtimeProvider = runtimeProvider;
         this.editorProvider = editorProvider;
     }
 
@@ -47,14 +56,25 @@ public final class GuiProfileAreas extends GuiScreen {
         buttonList.clear();
         panelWidth = Math.min(440, width - 24);
         left = (width - panelWidth) / 2;
-        top = Math.max(8, (height - 240) / 2);
+        top = Math.max(8, (height - 270) / 2);
         areaId = new GuiTextField(fontRendererObj, left + 132, top + 52, 180, 18);
         areaId.setMaxStringLength(48);
         areaId.setText("north-field");
+        seedReserve = new GuiTextField(fontRendererObj, left + 352, top + 52, 70, 18);
+        seedReserve.setMaxStringLength(8);
+        seedReserve.setText("2");
         buttonList.add(new GuiButton(FIRST_BUTTON, left + 18, top + 88, 190, 20, "Capture corner 1 here"));
         buttonList.add(new GuiButton(SECOND_BUTTON, left + 232, top + 88, 190, 20, "Capture corner 2 here"));
         buttonList.add(new GuiButton(SAVE_BUTTON, left + 18, top + 166, panelWidth - 36, 22, "Save work area"));
-        buttonList.add(new GuiButton(BACK_BUTTON, left + panelWidth - 82, top + 204, 70, 20, "Back"));
+        buttonList.add(
+            new GuiButton(
+                QUEUE_FARM_BUTTON,
+                left + 18,
+                top + 194,
+                panelWidth - 36,
+                22,
+                "Queue one farm pass for this area"));
+        buttonList.add(new GuiButton(BACK_BUTTON, left + panelWidth - 82, top + 234, 70, 20, "Back"));
         refreshCount();
     }
 
@@ -78,10 +98,33 @@ public final class GuiProfileAreas extends GuiScreen {
                 status = "Corner 2 captured. Review both positions, then save.";
             } else if (button.id == SAVE_BUTTON) {
                 save();
+            } else if (button.id == QUEUE_FARM_BUTTON) {
+                queueFarmPass();
             }
         } catch (RuntimeException failure) {
             status = "Nothing changed: " + safeMessage(failure);
         }
+    }
+
+    private void queueFarmPass() {
+        if (mc == null || mc.theWorld == null) throw new IllegalStateException("join the bound world first");
+        String plotId = ProfileAssetInput.stableId(areaId.getText(), "area name");
+        ProfileAssetEditor editor = editorProvider.getCurrentProfileAssetEditor()
+            .orElseThrow(() -> new IllegalStateException("active profile assets are unavailable"));
+        boolean found = false;
+        for (NamedArea area : editor.load()
+            .getNamedAreas()) {
+            if (area.getId()
+                .equals(plotId)) found = true;
+        }
+        if (!found) throw new IllegalStateException("save work area '" + plotId + "' first");
+        int reserve = ProfileAssetInput.nonNegativeInteger(seedReserve.getText(), "minimum seed reserve");
+        String taskId = "farm-" + plotId + "-" + mc.theWorld.getTotalWorldTime();
+        HorizonwrightRuntime runtime = CurrentRuntimeUiResolver.resolve(runtimeProvider)
+            .getRuntime();
+        TaskSnapshot submitted = runtime.submitFarm(FarmTask.finitePass(taskId, plotId, reserve));
+        status = "Queued '" + submitted.getSpec()
+            .getId() + "' with seed reserve " + reserve + ".";
     }
 
     private void save() {
@@ -121,6 +164,7 @@ public final class GuiProfileAreas extends GuiScreen {
     @Override
     public void updateScreen() {
         areaId.updateCursorCounter();
+        seedReserve.updateCursorCounter();
     }
 
     @Override
@@ -130,18 +174,20 @@ public final class GuiProfileAreas extends GuiScreen {
             return;
         }
         areaId.textboxKeyTyped(character, keyCode);
+        seedReserve.textboxKeyTyped(character, keyCode);
     }
 
     @Override
     protected void mouseClicked(int mouseX, int mouseY, int mouseButton) {
         super.mouseClicked(mouseX, mouseY, mouseButton);
         areaId.mouseClicked(mouseX, mouseY, mouseButton);
+        seedReserve.mouseClicked(mouseX, mouseY, mouseButton);
     }
 
     @Override
     public void drawScreen(int mouseX, int mouseY, float partialTicks) {
         drawDefaultBackground();
-        drawRect(left, top, left + panelWidth, top + 240, 0xE010141B);
+        drawRect(left, top, left + panelWidth, top + 270, 0xE010141B);
         drawCenteredString(fontRendererObj, "Named work areas", width / 2, top + 15, 0xFFF0C674);
         drawCenteredString(
             fontRendererObj,
@@ -150,6 +196,7 @@ public final class GuiProfileAreas extends GuiScreen {
             top + 30,
             0xFF8FAAD0);
         drawString(fontRendererObj, "Area name", left + 18, top + 58, 0xFFE0E0E0);
+        drawString(fontRendererObj, "Seed reserve", left + 278, top + 58, 0xFFE0E0E0);
         drawString(
             fontRendererObj,
             "Corner 1: " + truncate(capture.firstSummary(), 48),
@@ -169,6 +216,7 @@ public final class GuiProfileAreas extends GuiScreen {
             top + 152,
             status.startsWith("Nothing") ? 0xFFFF7777 : 0xFFB8C8DE);
         areaId.drawTextBox();
+        seedReserve.drawTextBox();
         super.drawScreen(mouseX, mouseY, partialTicks);
     }
 
