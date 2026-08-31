@@ -79,11 +79,12 @@ packet semantics with an explicit tested integration may be gated.
 
 ## Pending live vanilla-chest unload checkpoint
 
-Do not run this checkpoint until the profile editor can create named loadouts
-and storage endpoints without hand-editing JSON. When enabled, use only a
-disposable vanilla chest at the endpoint's exact named dimension and block
-position. Verify reserved stacks remain in the player inventory, disallowed
-items remain deferred, allowed items follow vanilla shift-click merge order,
+Use the dashboard's **Profile assets** page to create the named loadout and
+targeted storage endpoint without hand-editing JSON. The first guided editor
+creates an accept-all endpoint, so use only a disposable vanilla chest and test
+selective destination rules later when the filter editor is present. Verify
+reserved stacks remain in the player inventory and unreserved items follow
+vanilla shift-click merge order,
 and every click receives an accepted server confirmation plus the exact
 synchronized after-state. Also verify a full chest, held cursor stack, wrong
 chest coordinate, modded/subclassed container, disconnect, rejection, and
@@ -92,10 +93,11 @@ recorded physical result.
 
 ## Pending live Tinkers repair checkpoint
 
-Do not run this checkpoint until the profile editor can create the named repair
-station and its loadout without hand-editing JSON. Use the pinned Tool Station
-or Tool Forge at the configured named location, a disposable damaged tool, and
-cheap approved repair material. For the current prepared-station slice, place
+Use the dashboard's **Profile assets** page to capture the tool and repair
+material slots, then target and save the named repair station without
+hand-editing JSON. Use the pinned Tool Station or Tool Forge, a disposable
+damaged tool, and cheap approved repair material. For the current
+prepared-station slice, place
 the damaged tool in semantic input slot `1` and material in slots `2...`, leave
 the configured reserved player slot and cursor empty, and confirm slot `0`
 shows a lower-damage output preview. Verify Horizonwright takes that exact
@@ -108,8 +110,8 @@ automatic station population is still outstanding.
 
 ## Pending excavation service-composition checkpoint
 
-After the profile editors are available, configure one disposable excavation
-with both a named unload endpoint and a named repair station. Cause an unload
+After installing a build containing the guided editor, configure one disposable
+excavation with both a named unload endpoint and a named repair station. Cause an unload
 threshold at a recognizable frontier and confirm exactly one unload child is
 shown, the parent remains blocked until the child is verified complete, and the
 parent then resumes the identical frontier. Repeat for repair. Disconnect once

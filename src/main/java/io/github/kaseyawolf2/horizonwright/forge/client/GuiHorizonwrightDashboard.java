@@ -17,6 +17,7 @@ import io.github.kaseyawolf2.horizonwright.core.task.ControllerSnapshot;
 import io.github.kaseyawolf2.horizonwright.core.task.TaskLane;
 import io.github.kaseyawolf2.horizonwright.core.task.TaskResumeCandidates;
 import io.github.kaseyawolf2.horizonwright.core.task.TaskSnapshot;
+import io.github.kaseyawolf2.horizonwright.runtime.persistence.profile.ProfileAssetEditorProvider;
 import io.github.kaseyawolf2.horizonwright.runtime.persistence.session.CurrentRuntimeProvider;
 
 public final class GuiHorizonwrightDashboard extends GuiScreen {
@@ -26,6 +27,7 @@ public final class GuiHorizonwrightDashboard extends GuiScreen {
     private static final int PAUSE_BUTTON = 3;
     private static final int DRY_RUN_BUTTON = 4;
     private static final int BARITONE_TAB_BUTTON = 5;
+    private static final int PROFILE_ASSETS_TAB_BUTTON = 6;
     private static final int RESUME_CHOICE_BUTTON_BASE = 100;
     private static final int RESUME_PREVIOUS_BUTTON = 200;
     private static final int RESUME_NEXT_BUTTON = 201;
@@ -33,6 +35,7 @@ public final class GuiHorizonwrightDashboard extends GuiScreen {
     private static final int RESUME_CHOICES_PER_PAGE = 5;
 
     private final CurrentRuntimeProvider runtimeProvider;
+    private final ProfileAssetEditorProvider profileEditorProvider;
     private int left;
     private int top;
     private int panelWidth;
@@ -49,10 +52,19 @@ public final class GuiHorizonwrightDashboard extends GuiScreen {
     private String operatorMessage = "";
 
     public GuiHorizonwrightDashboard(CurrentRuntimeProvider runtimeProvider) {
+        this(runtimeProvider, () -> java.util.Optional.empty());
+    }
+
+    public GuiHorizonwrightDashboard(CurrentRuntimeProvider runtimeProvider,
+        ProfileAssetEditorProvider profileEditorProvider) {
         if (runtimeProvider == null) {
             throw new IllegalArgumentException("runtimeProvider must not be null");
         }
+        if (profileEditorProvider == null) {
+            throw new IllegalArgumentException("profileEditorProvider must not be null");
+        }
         this.runtimeProvider = runtimeProvider;
+        this.profileEditorProvider = profileEditorProvider;
     }
 
     @Override
@@ -73,6 +85,7 @@ public final class GuiHorizonwrightDashboard extends GuiScreen {
         buttonList.add(automationStopButton);
         buttonList.add(new GuiButton(CLOSE_BUTTON, left + panelWidth - 82, top + 232, 70, 20, "Close"));
         buttonList.add(new GuiButton(BARITONE_TAB_BUTTON, left + panelWidth - 94, top + 8, 82, 20, "Baritone"));
+        buttonList.add(new GuiButton(PROFILE_ASSETS_TAB_BUTTON, left + 12, top + 8, 92, 20, "Profile assets"));
 
         resumeChoiceButtons.clear();
         for (int index = 0; index < RESUME_CHOICES_PER_PAGE; index++) {
@@ -104,6 +117,10 @@ public final class GuiHorizonwrightDashboard extends GuiScreen {
         }
         if (button.id == BARITONE_TAB_BUTTON) {
             mc.displayGuiScreen(new GuiBaritoneSettings(this));
+            return;
+        }
+        if (button.id == PROFILE_ASSETS_TAB_BUTTON) {
+            mc.displayGuiScreen(new GuiProfileAssets(this, profileEditorProvider));
             return;
         }
         CurrentRuntimeUiResolver.Resolution resolution = CurrentRuntimeUiResolver.resolve(runtimeProvider);

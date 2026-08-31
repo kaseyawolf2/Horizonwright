@@ -39,6 +39,8 @@ import io.github.kaseyawolf2.horizonwright.forge.client.repair.LiveTinkersRepair
 import io.github.kaseyawolf2.horizonwright.forge.client.repair.ProfileTinkersRepairConfiguration;
 import io.github.kaseyawolf2.horizonwright.forge.client.repair.TinkersRepairCompatibilityProbe;
 import io.github.kaseyawolf2.horizonwright.forge.client.safety.LiveClientDeathSafetyBoundaryFactory;
+import io.github.kaseyawolf2.horizonwright.runtime.persistence.profile.ProfileAssetEditor;
+import io.github.kaseyawolf2.horizonwright.runtime.persistence.profile.ProfileAssetEditorProvider;
 import io.github.kaseyawolf2.horizonwright.runtime.persistence.session.ClientProfileBindingCoordinator;
 import io.github.kaseyawolf2.horizonwright.runtime.persistence.session.ClientProfileBindingObservation;
 import io.github.kaseyawolf2.horizonwright.runtime.persistence.session.ClientProfileBindingSnapshot;
@@ -186,7 +188,21 @@ public final class ClientBootstrap {
             return;
         }
         Minecraft.getMinecraft()
-            .displayGuiScreen(new GuiHorizonwrightDashboard(provider));
+            .displayGuiScreen(new GuiHorizonwrightDashboard(provider, INSTANCE.profileEditorProvider()));
+    }
+
+    private synchronized ProfileAssetEditorProvider profileEditorProvider() {
+        return () -> {
+            synchronized (ClientBootstrap.this) {
+                if (persistenceStore == null || activeIdentity == null
+                    || runtimeSessions == null
+                    || !runtimeSessions.getCurrentRuntime()
+                        .isPresent()) {
+                    return Optional.empty();
+                }
+                return Optional.of(new ProfileAssetEditor(persistenceStore, activeIdentity, System::currentTimeMillis));
+            }
+        };
     }
 
     private void synchronizeSingleplayerProfile() {
