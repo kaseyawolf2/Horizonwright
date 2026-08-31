@@ -21,6 +21,7 @@ public final class UnresolvedDeathState {
     private final String oldPlayerIdentity;
     private final String activeTaskId;
     private final String preDeathInventoryFingerprint;
+    private final PersistedInventoryManifest preDeathInventory;
     private final DeathSignal deathSignal;
     private final DeathSafetyState safetyState;
     private final RecoveryPhase recoveryPhase;
@@ -37,6 +38,37 @@ public final class UnresolvedDeathState {
         String preDeathInventoryFingerprint, DeathSignal deathSignal, DeathSafetyState safetyState,
         RecoveryPhase recoveryPhase, boolean respawnRequestConsumed, ManualHoldReason manualHoldReason,
         boolean connectedAtCheckpoint, int healthyStableTicks, int respawnStableTicks, PersistedGraveState graveState) {
+        this(
+            deathEpoch,
+            deathConnectionEpoch,
+            lastObservedConnectionEpoch,
+            recordedAtClientTick,
+            recordedAtEpochMillis,
+            serverIdentity,
+            worldIdentity,
+            deathLocation,
+            oldPlayerIdentity,
+            activeTaskId,
+            preDeathInventoryFingerprint,
+            null,
+            deathSignal,
+            safetyState,
+            recoveryPhase,
+            respawnRequestConsumed,
+            manualHoldReason,
+            connectedAtCheckpoint,
+            healthyStableTicks,
+            respawnStableTicks,
+            graveState);
+    }
+
+    public UnresolvedDeathState(long deathEpoch, long deathConnectionEpoch, long lastObservedConnectionEpoch,
+        long recordedAtClientTick, long recordedAtEpochMillis, String serverIdentity, String worldIdentity,
+        DimensionPosition deathLocation, String oldPlayerIdentity, String activeTaskId,
+        String preDeathInventoryFingerprint, PersistedInventoryManifest preDeathInventory, DeathSignal deathSignal,
+        DeathSafetyState safetyState, RecoveryPhase recoveryPhase, boolean respawnRequestConsumed,
+        ManualHoldReason manualHoldReason, boolean connectedAtCheckpoint, int healthyStableTicks,
+        int respawnStableTicks, PersistedGraveState graveState) {
         this.deathEpoch = deathEpoch;
         this.deathConnectionEpoch = deathConnectionEpoch;
         this.lastObservedConnectionEpoch = lastObservedConnectionEpoch;
@@ -49,6 +81,7 @@ public final class UnresolvedDeathState {
         this.activeTaskId = PersistenceValidation.normalizeOptionalText(activeTaskId);
         this.preDeathInventoryFingerprint = PersistenceValidation
             .requireText(preDeathInventoryFingerprint, "preDeathInventoryFingerprint");
+        this.preDeathInventory = preDeathInventory;
         this.deathSignal = deathSignal;
         this.safetyState = safetyState;
         this.recoveryPhase = recoveryPhase;
@@ -103,6 +136,10 @@ public final class UnresolvedDeathState {
 
     public String getPreDeathInventoryFingerprint() {
         return preDeathInventoryFingerprint;
+    }
+
+    public PersistedInventoryManifest getPreDeathInventory() {
+        return preDeathInventory;
     }
 
     public DeathSignal getDeathSignal() {
@@ -163,6 +200,7 @@ public final class UnresolvedDeathState {
             oldPlayerIdentity,
             activeTaskId,
             preDeathInventoryFingerprint,
+            preDeathInventory,
             deathSignal,
             safetyState,
             recoveryPhase,
@@ -193,6 +231,14 @@ public final class UnresolvedDeathState {
         PersistenceValidation.requireText(oldPlayerIdentity, "unresolved death oldPlayerIdentity");
         PersistenceValidation
             .requireText(preDeathInventoryFingerprint, "unresolved death preDeathInventoryFingerprint");
+        if (preDeathInventory != null) {
+            preDeathInventory.validate();
+            if (!preDeathInventoryFingerprint.equals(
+                preDeathInventory.toManifest()
+                    .getContentFingerprint())) {
+                throw new IllegalArgumentException("persisted pre-death inventory does not match its fingerprint");
+            }
+        }
         if (safetyState == null || recoveryPhase == null) {
             throw new IllegalArgumentException("unresolved death safetyState and recoveryPhase must not be null");
         }
@@ -251,6 +297,7 @@ public final class UnresolvedDeathState {
             && Objects.equals(oldPlayerIdentity, that.oldPlayerIdentity)
             && Objects.equals(activeTaskId, that.activeTaskId)
             && Objects.equals(preDeathInventoryFingerprint, that.preDeathInventoryFingerprint)
+            && Objects.equals(preDeathInventory, that.preDeathInventory)
             && deathSignal == that.deathSignal
             && safetyState == that.safetyState
             && recoveryPhase == that.recoveryPhase
@@ -272,6 +319,7 @@ public final class UnresolvedDeathState {
             oldPlayerIdentity,
             activeTaskId,
             preDeathInventoryFingerprint,
+            preDeathInventory,
             deathSignal,
             safetyState,
             recoveryPhase,

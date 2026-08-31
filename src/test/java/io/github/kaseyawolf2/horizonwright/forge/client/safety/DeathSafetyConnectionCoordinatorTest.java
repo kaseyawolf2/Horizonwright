@@ -1,5 +1,6 @@
 package io.github.kaseyawolf2.horizonwright.forge.client.safety;
 
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
@@ -28,6 +29,7 @@ import io.github.kaseyawolf2.horizonwright.core.safety.death.InventoryManifest;
 import io.github.kaseyawolf2.horizonwright.core.safety.death.InventoryStack;
 import io.github.kaseyawolf2.horizonwright.core.safety.death.RecoveryNavigationObservation;
 import io.github.kaseyawolf2.horizonwright.core.safety.death.RecoveryNavigationStatus;
+import io.github.kaseyawolf2.horizonwright.core.safety.death.RecoveryPhase;
 import io.github.kaseyawolf2.horizonwright.core.safety.death.RespawnObservation;
 
 public class DeathSafetyConnectionCoordinatorTest {
@@ -122,6 +124,21 @@ public class DeathSafetyConnectionCoordinatorTest {
         assertTrue(
             first.getReplayBlock()
                 .isBlocked());
+        assertEquals(
+            RecoveryPhase.VERIFYING_RECOVERY,
+            first.getController()
+                .snapshot()
+                .getRecoveryPhase());
+        assertTrue(
+            first.getController()
+                .snapshot()
+                .getPreDeathInventory()
+                .isPresent());
+        assertTrue(
+            first.getController()
+                .snapshot()
+                .getStableGrave()
+                .isPresent());
 
         coordinator.disconnect(first, 1L);
         DeathSafetyConnectionCoordinator.Session second = coordinator

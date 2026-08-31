@@ -2,6 +2,7 @@ package io.github.kaseyawolf2.horizonwright.core.persistence.death;
 
 import io.github.kaseyawolf2.horizonwright.core.persistence.DimensionPosition;
 import io.github.kaseyawolf2.horizonwright.core.persistence.PersistedGraveState;
+import io.github.kaseyawolf2.horizonwright.core.persistence.PersistedInventoryManifest;
 import io.github.kaseyawolf2.horizonwright.core.persistence.UnresolvedDeathState;
 import io.github.kaseyawolf2.horizonwright.core.safety.death.ConnectionIdentity;
 import io.github.kaseyawolf2.horizonwright.core.safety.death.DeathLatchRecord;
@@ -9,11 +10,12 @@ import io.github.kaseyawolf2.horizonwright.core.safety.death.DeathSafetySnapshot
 import io.github.kaseyawolf2.horizonwright.core.safety.death.DeathSignal;
 import io.github.kaseyawolf2.horizonwright.core.safety.death.DimensionBlockPosition;
 import io.github.kaseyawolf2.horizonwright.core.safety.death.GraveActivationPermit;
+import io.github.kaseyawolf2.horizonwright.core.safety.death.GraveCandidate;
 import io.github.kaseyawolf2.horizonwright.core.safety.death.GraveIdentity;
 import io.github.kaseyawolf2.horizonwright.core.safety.death.RecoveryPhase;
 import io.github.kaseyawolf2.horizonwright.core.safety.death.UnresolvedDeathProjection;
 
-/** Lossless, pure-core adaptation between the death kernel and schema-v1 persistence. */
+/** Lossless, pure-core adaptation between the death kernel and additive schema-v1 persistence. */
 public final class UnresolvedDeathPersistenceAdapter {
 
     private UnresolvedDeathPersistenceAdapter() {}
@@ -85,6 +87,9 @@ public final class UnresolvedDeathPersistenceAdapter {
             projection.getActiveTaskId()
                 .orElse(null),
             projection.getPreDeathInventoryFingerprint(),
+            projection.getPreDeathInventory()
+                .map(PersistedInventoryManifest::fromManifest)
+                .orElse(null),
             null,
             projection.getState(),
             projection.getRecoveryPhase(),
@@ -104,6 +109,10 @@ public final class UnresolvedDeathPersistenceAdapter {
         if (state == null) {
             throw new IllegalArgumentException("state must not be null");
         }
+        boolean missingConsumedEvidence = state.getGraveState()
+            .isActivationConsumed()
+            && !state.getGraveState()
+                .hasStableEvidence();
         return new UnresolvedDeathProjection(
             state.getDeathEpoch(),
             state.getRecordedAtClientTick(),
@@ -113,10 +122,19 @@ public final class UnresolvedDeathPersistenceAdapter {
             state.getOldPlayerIdentity(),
             state.getActiveTaskId(),
             state.getPreDeathInventoryFingerprint(),
-            state.getSafetyState(),
-            state.getRecoveryPhase(),
+            state.getPreDeathInventory() == null ? null
+                : state.getPreDeathInventory()
+                    .toManifest(),
+            missingConsumedEvidence ? null : toGraveCandidate(state.getGraveState()),
+            state.getGraveState()
+                .isActivationConsumed() && !missingConsumedEvidence,
+            missingConsumedEvidence ? io.github.kaseyawolf2.horizonwright.core.safety.death.DeathSafetyState.MANUAL_HOLD
+                : state.getSafetyState(),
+            missingConsumedEvidence ? RecoveryPhase.MANUAL_HOLD : state.getRecoveryPhase(),
             state.isRespawnRequestConsumed(),
-            state.getManualHoldReason());
+            missingConsumedEvidence
+                ? io.github.kaseyawolf2.horizonwright.core.safety.death.ManualHoldReason.GRAVE_EVIDENCE_UNAVAILABLE
+                : state.getManualHoldReason());
     }
 
     /**
@@ -161,6 +179,9 @@ public final class UnresolvedDeathPersistenceAdapter {
             projection.getActiveTaskId()
                 .orElse(null),
             projection.getPreDeathInventoryFingerprint(),
+            projection.getPreDeathInventory()
+                .map(PersistedInventoryManifest::fromManifest)
+                .orElse(null),
             deathSignal,
             projection.getState(),
             projection.getRecoveryPhase(),
@@ -183,6 +204,13 @@ public final class UnresolvedDeathPersistenceAdapter {
                 identity.getTileIdentity(),
                 toPersistencePosition(identity.getPosition()),
                 snapshot.getGraveStableTicks(),
+                snapshot.getStableGrave()
+                    .map(GraveCandidate::getOwnerIdentity)
+                    .orElse(null),
+                snapshot.getStableGrave()
+                    .map(GraveCandidate::getContents)
+                    .map(PersistedInventoryManifest::fromManifest)
+                    .orElse(null),
                 permit.getPermitId(),
                 permit.getConnectionEpoch(),
                 permit.getDeathEpoch(),
@@ -192,10 +220,24 @@ public final class UnresolvedDeathPersistenceAdapter {
         PersistedGraveState previousGrave = previous == null ? PersistedGraveState.none() : previous.getGraveState();
         boolean activationConsumed = previousGrave.isActivationConsumed()
             || snapshot.getRecoveryPhase() == RecoveryPhase.VERIFYING_RECOVERY;
+        GraveCandidate currentGrave = snapshot.getStableGrave()
+            .orElse(null);
         return new PersistedGraveState(
-            previousGrave.getGraveTileIdentity(),
-            previousGrave.getGravePosition(),
+            currentGrave == null ? previousGrave.getGraveTileIdentity()
+                : currentGrave.getIdentity()
+                    .getTileIdentity(),
+            currentGrave == null ? previousGrave.getGravePosition()
+                : toPersistencePosition(
+                    currentGrave.getIdentity()
+                        .getPosition()),
             snapshot.getGraveStableTicks(),
+            snapshot.getStableGrave()
+                .map(GraveCandidate::getOwnerIdentity)
+                .orElse(previousGrave.getOwnerIdentity()),
+            snapshot.getStableGrave()
+                .map(GraveCandidate::getContents)
+                .map(PersistedInventoryManifest::fromManifest)
+                .orElse(previousGrave.getContents()),
             0L,
             0L,
             0L,
@@ -213,5 +255,16 @@ public final class UnresolvedDeathPersistenceAdapter {
 
     private static DimensionBlockPosition toDeathPosition(DimensionPosition position) {
         return new DimensionBlockPosition(position.getDimensionId(), position.getX(), position.getY(), position.getZ());
+    }
+
+    private static GraveCandidate toGraveCandidate(PersistedGraveState state) {
+        if (state == null || !state.hasStableEvidence()) {
+            return null;
+        }
+        return new GraveCandidate(
+            new GraveIdentity(state.getGraveTileIdentity(), toDeathPosition(state.getGravePosition())),
+            state.getOwnerIdentity(),
+            state.getContents()
+                .toManifest());
     }
 }

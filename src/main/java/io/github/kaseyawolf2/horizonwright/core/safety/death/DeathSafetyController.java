@@ -106,12 +106,18 @@ public final class DeathSafetyController {
         controller.activeTaskId = projection.getActiveTaskId()
             .orElse(null);
         controller.preDeathInventoryFingerprint = projection.getPreDeathInventoryFingerprint();
+        controller.preDeathInventory = projection.getPreDeathInventory()
+            .orElse(null);
         controller.respawnRequestConsumed = projection.isRespawnRequestConsumed();
         controller.state = projection.getState();
         controller.manualHoldReason = projection.getManualHoldReason()
             .orElse(null);
-        controller.recoveryPhase = controller.manualHoldReason == null ? RecoveryPhase.REVALIDATING_RESPAWN
-            : RecoveryPhase.MANUAL_HOLD;
+        controller.stableGrave = projection.getStableGrave()
+            .orElse(null);
+        controller.graveActivationConsumed = projection.isGraveActivationConsumed();
+        controller.recoveryPhase = controller.manualHoldReason != null ? RecoveryPhase.MANUAL_HOLD
+            : controller.graveActivationConsumed ? RecoveryPhase.VERIFYING_RECOVERY
+                : RecoveryPhase.REVALIDATING_RESPAWN;
         if (!controller.profileMatchesCurrentDeath()) {
             controller.state = DeathSafetyState.MANUAL_HOLD;
             controller.recoveryPhase = RecoveryPhase.MANUAL_HOLD;
@@ -824,6 +830,9 @@ public final class DeathSafetyController {
             oldPlayerIdentity,
             activeTaskId,
             preDeathInventoryFingerprint,
+            preDeathInventory,
+            stableGrave,
+            graveActivationConsumed,
             state,
             recoveryPhase,
             respawnRequestConsumed,

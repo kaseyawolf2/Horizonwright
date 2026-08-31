@@ -8,7 +8,8 @@ import java.util.Optional;
  *
  * <p>
  * The persistence adapter must store this projection before allowing respawn or recovery progress. Raw inventory
- * NBT is intentionally omitted; only the canonical pre-death content fingerprint is retained.
+ * NBT is intentionally omitted; stable item-and-NBT fingerprints, counts, and stack limits retain the evidence
+ * needed to resume conservative recovery after restart.
  */
 public final class UnresolvedDeathProjection {
 
@@ -20,6 +21,9 @@ public final class UnresolvedDeathProjection {
     private final String oldPlayerIdentity;
     private final String activeTaskId;
     private final String preDeathInventoryFingerprint;
+    private final InventoryManifest preDeathInventory;
+    private final GraveCandidate stableGrave;
+    private final boolean graveActivationConsumed;
     private final DeathSafetyState state;
     private final RecoveryPhase recoveryPhase;
     private final boolean respawnRequestConsumed;
@@ -28,6 +32,29 @@ public final class UnresolvedDeathProjection {
     public UnresolvedDeathProjection(long deathEpoch, long recordedAtClientTick, String serverIdentity,
         String worldIdentity, DimensionBlockPosition deathPosition, String oldPlayerIdentity, String activeTaskId,
         String preDeathInventoryFingerprint, DeathSafetyState state, RecoveryPhase recoveryPhase,
+        boolean respawnRequestConsumed, ManualHoldReason manualHoldReason) {
+        this(
+            deathEpoch,
+            recordedAtClientTick,
+            serverIdentity,
+            worldIdentity,
+            deathPosition,
+            oldPlayerIdentity,
+            activeTaskId,
+            preDeathInventoryFingerprint,
+            null,
+            null,
+            false,
+            state,
+            recoveryPhase,
+            respawnRequestConsumed,
+            manualHoldReason);
+    }
+
+    public UnresolvedDeathProjection(long deathEpoch, long recordedAtClientTick, String serverIdentity,
+        String worldIdentity, DimensionBlockPosition deathPosition, String oldPlayerIdentity, String activeTaskId,
+        String preDeathInventoryFingerprint, InventoryManifest preDeathInventory, GraveCandidate stableGrave,
+        boolean graveActivationConsumed, DeathSafetyState state, RecoveryPhase recoveryPhase,
         boolean respawnRequestConsumed, ManualHoldReason manualHoldReason) {
         if (deathEpoch <= 0L || recordedAtClientTick < 0L) {
             throw new IllegalArgumentException("deathEpoch must be positive and recorded tick nonnegative");
@@ -53,6 +80,16 @@ public final class UnresolvedDeathProjection {
             .isEmpty() ? null : activeTaskId.trim();
         this.preDeathInventoryFingerprint = ConnectionIdentity
             .requireText(preDeathInventoryFingerprint, "preDeathInventoryFingerprint");
+        if (preDeathInventory != null
+            && !this.preDeathInventoryFingerprint.equals(preDeathInventory.getContentFingerprint())) {
+            throw new IllegalArgumentException("pre-death inventory does not match its fingerprint");
+        }
+        if (graveActivationConsumed && stableGrave == null) {
+            throw new IllegalArgumentException("consumed grave activation requires stable grave evidence");
+        }
+        this.preDeathInventory = preDeathInventory;
+        this.stableGrave = stableGrave;
+        this.graveActivationConsumed = graveActivationConsumed;
         this.state = state;
         this.recoveryPhase = recoveryPhase;
         this.respawnRequestConsumed = respawnRequestConsumed;
@@ -91,6 +128,18 @@ public final class UnresolvedDeathProjection {
         return preDeathInventoryFingerprint;
     }
 
+    public Optional<InventoryManifest> getPreDeathInventory() {
+        return Optional.ofNullable(preDeathInventory);
+    }
+
+    public Optional<GraveCandidate> getStableGrave() {
+        return Optional.ofNullable(stableGrave);
+    }
+
+    public boolean isGraveActivationConsumed() {
+        return graveActivationConsumed;
+    }
+
     public DeathSafetyState getState() {
         return state;
     }
@@ -118,12 +167,15 @@ public final class UnresolvedDeathProjection {
         UnresolvedDeathProjection that = (UnresolvedDeathProjection) other;
         return deathEpoch == that.deathEpoch && recordedAtClientTick == that.recordedAtClientTick
             && respawnRequestConsumed == that.respawnRequestConsumed
+            && graveActivationConsumed == that.graveActivationConsumed
             && serverIdentity.equals(that.serverIdentity)
             && worldIdentity.equals(that.worldIdentity)
             && deathPosition.equals(that.deathPosition)
             && oldPlayerIdentity.equals(that.oldPlayerIdentity)
             && Objects.equals(activeTaskId, that.activeTaskId)
             && preDeathInventoryFingerprint.equals(that.preDeathInventoryFingerprint)
+            && Objects.equals(preDeathInventory, that.preDeathInventory)
+            && Objects.equals(stableGrave, that.stableGrave)
             && state == that.state
             && recoveryPhase == that.recoveryPhase
             && manualHoldReason == that.manualHoldReason;
@@ -140,6 +192,9 @@ public final class UnresolvedDeathProjection {
             oldPlayerIdentity,
             activeTaskId,
             preDeathInventoryFingerprint,
+            preDeathInventory,
+            stableGrave,
+            graveActivationConsumed,
             state,
             recoveryPhase,
             respawnRequestConsumed,

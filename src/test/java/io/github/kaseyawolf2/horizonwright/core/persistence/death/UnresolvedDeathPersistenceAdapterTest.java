@@ -77,6 +77,11 @@ public class UnresolvedDeathPersistenceAdapterTest {
             .getValue()
             .getUnresolvedDeathState();
         assertEquals(checkpoint, reloaded);
+        assertTrue(reloaded.getPreDeathInventory() != null);
+        assertTrue(
+            reloaded.getPreDeathInventory()
+                .toManifest()
+                .hasSameContents(inventory));
 
         ConnectionIdentity restartConnection = new ConnectionIdentity(
             reloaded.minimumNextConnectionEpoch(),

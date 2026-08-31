@@ -15,6 +15,8 @@ public final class PersistedGraveState {
     private final String graveTileIdentity;
     private final DimensionPosition gravePosition;
     private final int stableTicks;
+    private final String ownerIdentity;
+    private final PersistedInventoryManifest contents;
     private final long activationPermitId;
     private final long activationPermitConnectionEpoch;
     private final long activationPermitDeathEpoch;
@@ -23,9 +25,26 @@ public final class PersistedGraveState {
     public PersistedGraveState(String graveTileIdentity, DimensionPosition gravePosition, int stableTicks,
         long activationPermitId, long activationPermitConnectionEpoch, long activationPermitDeathEpoch,
         boolean activationConsumed) {
+        this(
+            graveTileIdentity,
+            gravePosition,
+            stableTicks,
+            null,
+            null,
+            activationPermitId,
+            activationPermitConnectionEpoch,
+            activationPermitDeathEpoch,
+            activationConsumed);
+    }
+
+    public PersistedGraveState(String graveTileIdentity, DimensionPosition gravePosition, int stableTicks,
+        String ownerIdentity, PersistedInventoryManifest contents, long activationPermitId,
+        long activationPermitConnectionEpoch, long activationPermitDeathEpoch, boolean activationConsumed) {
         this.graveTileIdentity = PersistenceValidation.normalizeOptionalText(graveTileIdentity);
         this.gravePosition = gravePosition;
         this.stableTicks = stableTicks;
+        this.ownerIdentity = PersistenceValidation.normalizeOptionalText(ownerIdentity);
+        this.contents = contents;
         this.activationPermitId = activationPermitId;
         this.activationPermitConnectionEpoch = activationPermitConnectionEpoch;
         this.activationPermitDeathEpoch = activationPermitDeathEpoch;
@@ -51,6 +70,18 @@ public final class PersistedGraveState {
 
     public long getActivationPermitId() {
         return activationPermitId;
+    }
+
+    public String getOwnerIdentity() {
+        return ownerIdentity;
+    }
+
+    public PersistedInventoryManifest getContents() {
+        return contents;
+    }
+
+    public boolean hasStableEvidence() {
+        return graveTileIdentity != null && ownerIdentity != null && contents != null;
     }
 
     public long getActivationPermitConnectionEpoch() {
@@ -79,7 +110,16 @@ public final class PersistedGraveState {
     }
 
     public PersistedGraveState invalidatePermitForRestart() {
-        return new PersistedGraveState(graveTileIdentity, gravePosition, stableTicks, 0L, 0L, 0L, activationConsumed);
+        return new PersistedGraveState(
+            graveTileIdentity,
+            gravePosition,
+            stableTicks,
+            ownerIdentity,
+            contents,
+            0L,
+            0L,
+            0L,
+            activationConsumed);
     }
 
     void validate() {
@@ -89,6 +129,15 @@ public final class PersistedGraveState {
         }
         if (stableTicks < 0) {
             throw new IllegalArgumentException("grave stableTicks must not be negative");
+        }
+        if ((ownerIdentity == null) != (contents == null)) {
+            throw new IllegalArgumentException("grave owner and contents must either both exist or both be absent");
+        }
+        if (ownerIdentity != null && graveTileIdentity == null) {
+            throw new IllegalArgumentException("grave evidence requires an exact grave identity");
+        }
+        if (contents != null) {
+            contents.validate();
         }
         boolean hasPermitId = activationPermitId > 0L;
         boolean hasPermitConnection = activationPermitConnectionEpoch > 0L;
@@ -123,7 +172,9 @@ public final class PersistedGraveState {
             && activationPermitDeathEpoch == that.activationPermitDeathEpoch
             && activationConsumed == that.activationConsumed
             && Objects.equals(graveTileIdentity, that.graveTileIdentity)
-            && Objects.equals(gravePosition, that.gravePosition);
+            && Objects.equals(gravePosition, that.gravePosition)
+            && Objects.equals(ownerIdentity, that.ownerIdentity)
+            && Objects.equals(contents, that.contents);
     }
 
     @Override
@@ -132,6 +183,8 @@ public final class PersistedGraveState {
             graveTileIdentity,
             gravePosition,
             stableTicks,
+            ownerIdentity,
+            contents,
             activationPermitId,
             activationPermitConnectionEpoch,
             activationPermitDeathEpoch,
