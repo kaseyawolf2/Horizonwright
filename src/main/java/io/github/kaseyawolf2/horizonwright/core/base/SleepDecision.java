@@ -64,6 +64,10 @@ public final class SleepDecision {
         return provider;
     }
 
+    public BasePosition getDecisionBed() {
+        return registeredBed;
+    }
+
     public boolean requiresInteraction() {
         return action == SleepActionKind.USE_REGISTERED_BED || action == SleepActionKind.USE_PORTABLE_PROVIDER;
     }

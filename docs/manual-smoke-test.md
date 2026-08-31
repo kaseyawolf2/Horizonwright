@@ -186,6 +186,24 @@ runs once, and lets the exact excavation frontier resume. Disconnect for longer
 than two minutes: offline time must not create a burst of runs after rejoin, and
 at most one occurrence for this schedule may be queued or active at once.
 
+## Pending registered-bed sleep checkpoint
+
+After installing the automated-test-green build, look directly at a vanilla bed
+and use **Profile assets > Save targeted vanilla bed** with the name
+`smoke-bed`. Move outside click reach, keep a FALLBACK excavation active, and
+choose **Every night** (or run `/hw sleepschedule smoke-sleep smoke-bed`). At the
+vanilla night window, the sleep CHORE must suspend excavation at its safe
+frontier, navigate to the registered location, interact only with that exact
+bed, confirm sleeping or daytime, and let the exact excavation frontier resume.
+
+Repeat with a hostile mob inside the vanilla bed danger radius, with the bed
+removed, and from a dimension that does not permit normal sleep. Each case must
+stop before bed interaction with a clear blocked reason. Pause during the
+approach and reconnect before interaction; resume must perform a fresh bed,
+dimension, danger, and reach observation. Unknown mod sleep providers remain
+unsupported and must not be invoked. This path is automated-test covered but
+has not yet been physically recorded.
+
 ## Recorded physical result
 
 On 2026-08-30, the operator completed the long-route, inventory-during-walk,

@@ -28,6 +28,7 @@ import io.github.kaseyawolf2.horizonwright.runtime.task.GoToTask;
 import io.github.kaseyawolf2.horizonwright.runtime.task.NavigationRuntimeAccess;
 import io.github.kaseyawolf2.horizonwright.runtime.task.RuntimeTaskRunnerFactory;
 import io.github.kaseyawolf2.horizonwright.runtime.task.RuntimeTaskServices;
+import io.github.kaseyawolf2.horizonwright.runtime.task.SleepTask;
 
 /** Session-scoped composition root for action authority, tasks, and optional navigation. */
 public final class HorizonwrightRuntime implements AutoCloseable {
@@ -276,6 +277,38 @@ public final class HorizonwrightRuntime implements AutoCloseable {
                 intervalMillis,
                 java.util.Collections.<String>emptySet(),
                 0));
+    }
+
+    public TaskSnapshot submitSleep(TaskSpec spec) {
+        ensureOpen();
+        if (spec == null || !SleepTask.TYPE.equals(spec.getType())) {
+            throw new IllegalArgumentException("a sleep task specification is required");
+        }
+        requireAutomationAvailable("submitting new work");
+        return controller.submit(spec);
+    }
+
+    public ScheduleSnapshot scheduleNightSleep(String scheduleId, String bedLocationId) {
+        ensureOpen();
+        requireAutomationAvailable("scheduling new work");
+        return controller.submitSchedule(
+            ScheduleRule.worldTimeWindow(
+                scheduleId,
+                SleepTask.scheduled(bedLocationId),
+                12_542,
+                23_461,
+                java.util.Collections.<String>emptySet(),
+                0,
+                false));
+    }
+
+    private void requireAutomationAvailable(String operation) {
+        if (actionBroker.isDeathSafetyLocked()) {
+            throw new IllegalStateException("death safety is active; new automation is unavailable");
+        }
+        if (actionBroker.isAutomationLocked()) {
+            throw new IllegalStateException("automation is stopped; use /hw reset before " + operation);
+        }
     }
 
     /** Controller-backed compatibility entry point retained for existing integrations. */

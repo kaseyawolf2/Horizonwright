@@ -144,6 +144,20 @@ Operators can queue one pass from **Profile assets > Work areas** or with
 `/hw farm <task-id> <plot-id> [seed-reserve]`. This live path is automated-test
 covered at its planner, runner, authority, classifier, and proof boundaries but
 remains physically unverified.
+Registered-bed sleep is now a finite CHORE-lane task and a once-per-world-night
+schedule, so it can safely preempt FALLBACK excavation. The task records no
+completion until daytime is freshly observed or the live backend confirms the
+player sleeping. Danger, invalid or wrong dimensions, missing beds, unavailable
+navigation, and stale authority stop before interaction. The live vanilla
+adapter may navigate toward an unloaded registered location, but after arrival
+it requires the exact bed block, the vanilla hostile-mob exclusion area, click
+reach, a fresh normal-sleep decision, and movement/look/use authority before one
+ordinary right-click. Pause or reconnect cancels the unconfirmed action and
+forces a fresh observation. Operators can target a vanilla bed from
+**Profile assets**, save its short name, then choose **Sleep once** or **Every
+night**. Equivalent commands are `/hw sleep <task-id> <bed-location>` and
+`/hw sleepschedule <id> <bed-location>`. This path is automated-test covered but
+has not been installed or physically verified.
 Clean-volume excavation is now attached to a live, session-owned backend. Every
 observation and action carries the explicit dimension as well as the existing
 geometry, frontier, revision, epoch, and block fingerprint. The observer treats
@@ -260,6 +274,10 @@ was installed for this test.
   **Schedule recurring farm passes** button, to persist a CHORE-lane connected-
   time interval. Offline process time is not counted; the existing scheduler
   prevents duplicate concurrent occurrences and persists the next due state.
+- Look directly at a vanilla bed and use **Dashboard > Profile assets > Save
+  targeted vanilla bed**. **Sleep once** queues one CHORE task; **Every night**
+  persists a world-time-window schedule. The command equivalents are `/hw sleep
+  <task-id> <bed-location>` and `/hw sleepschedule <id> <bed-location>`.
   Relative coordinates such as `~256 ~ ~` are accepted; Horizonwright does not
   impose the old 128-block smoke-test radius.
 - Use `/hw navcancel` to cancel the current navigation request and release

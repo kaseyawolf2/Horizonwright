@@ -24,9 +24,12 @@ import io.github.kaseyawolf2.horizonwright.core.navigation.NavigationState;
 import io.github.kaseyawolf2.horizonwright.core.task.MonotonicClock;
 import io.github.kaseyawolf2.horizonwright.core.task.ScheduleEnvironment;
 import io.github.kaseyawolf2.horizonwright.core.task.ScheduleSnapshot;
+import io.github.kaseyawolf2.horizonwright.core.task.ScheduleTrigger;
+import io.github.kaseyawolf2.horizonwright.core.task.TaskLane;
 import io.github.kaseyawolf2.horizonwright.core.task.TaskState;
 import io.github.kaseyawolf2.horizonwright.runtime.task.ExcavationTask;
 import io.github.kaseyawolf2.horizonwright.runtime.task.FarmTask;
+import io.github.kaseyawolf2.horizonwright.runtime.task.SleepTask;
 
 public class HorizonwrightRuntimeTest {
 
@@ -285,6 +288,53 @@ public class HorizonwrightRuntimeTest {
             1_800_000L,
             scheduled.getRule()
                 .getInitialDelayMillis());
+        runtime.close();
+    }
+
+    @Test
+    public void nightlySleepScheduleIsTypedChoreAndDoesNotCatchUpAfterReconnect() {
+        HorizonwrightRuntime runtime = new HorizonwrightRuntime(
+            new InMemoryActionBroker(),
+            new ActionSessionGuard(),
+            new FixedClock());
+
+        ScheduleSnapshot scheduled = runtime.scheduleNightSleep("night-sleep", "home-bed");
+
+        assertEquals(
+            "night-sleep",
+            scheduled.getRule()
+                .getId());
+        assertEquals(
+            ScheduleTrigger.WORLD_TIME_WINDOW,
+            scheduled.getRule()
+                .getTrigger());
+        assertEquals(
+            12_542,
+            scheduled.getRule()
+                .getWindowStartTick());
+        assertEquals(
+            23_461,
+            scheduled.getRule()
+                .getWindowEndTick());
+        assertFalse(
+            scheduled.getRule()
+                .isCatchUpAfterReconnect());
+        assertEquals(
+            SleepTask.TYPE,
+            scheduled.getRule()
+                .getTask()
+                .getType());
+        assertEquals(
+            TaskLane.CHORE,
+            scheduled.getRule()
+                .getTask()
+                .getLane());
+        assertEquals(
+            "home-bed",
+            scheduled.getRule()
+                .getTask()
+                .getParameters()
+                .get("bedLocationId"));
         runtime.close();
     }
 

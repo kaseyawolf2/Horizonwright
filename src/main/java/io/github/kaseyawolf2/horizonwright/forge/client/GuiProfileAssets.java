@@ -6,6 +6,7 @@ import java.util.Optional;
 import net.minecraft.client.gui.GuiButton;
 import net.minecraft.client.gui.GuiScreen;
 import net.minecraft.client.gui.GuiTextField;
+import net.minecraft.init.Blocks;
 import net.minecraft.item.ItemStack;
 import net.minecraft.tileentity.TileEntity;
 import net.minecraft.tileentity.TileEntityChest;
@@ -27,6 +28,7 @@ import io.github.kaseyawolf2.horizonwright.runtime.persistence.profile.ProfileAs
 import io.github.kaseyawolf2.horizonwright.runtime.persistence.profile.ProfileAssetEditorProvider;
 import io.github.kaseyawolf2.horizonwright.runtime.persistence.profile.ProfileAssetUpdate;
 import io.github.kaseyawolf2.horizonwright.runtime.persistence.session.CurrentRuntimeProvider;
+import io.github.kaseyawolf2.horizonwright.runtime.task.SleepTask;
 
 /** Guided named-asset editor which captures inventory and world evidence instead of requiring JSON. */
 public final class GuiProfileAssets extends GuiScreen {
@@ -37,6 +39,9 @@ public final class GuiProfileAssets extends GuiScreen {
     private static final int SAVE_STATION_BUTTON = 4;
     private static final int NEW_EXCAVATION_BUTTON = 5;
     private static final int WORK_AREAS_BUTTON = 6;
+    private static final int SAVE_BED_BUTTON = 7;
+    private static final int QUEUE_SLEEP_BUTTON = 8;
+    private static final int SCHEDULE_SLEEP_BUTTON = 9;
 
     private final GuiScreen parent;
     private final CurrentRuntimeProvider runtimeProvider;
@@ -49,6 +54,7 @@ public final class GuiProfileAssets extends GuiScreen {
     private GuiTextField materialMinimum;
     private GuiTextField storageId;
     private GuiTextField stationId;
+    private GuiTextField bedId;
     private String status = "Choose inventory slots, or look at a block and save it.";
     private int left;
     private int top;
@@ -70,20 +76,24 @@ public final class GuiProfileAssets extends GuiScreen {
         buttonList.clear();
         panelWidth = Math.min(500, width - 24);
         left = (width - panelWidth) / 2;
-        top = Math.max(8, (height - 310) / 2);
+        top = Math.max(8, (height - 368) / 2);
         loadoutId = field(left + 132, top + 50, 126, "mining");
         toolSlot = field(left + 334, top + 50, 38, "0");
         materialSlot = field(left + 132, top + 76, 38, "1");
         materialMinimum = field(left + 334, top + 76, 38, "16");
         storageId = field(left + 132, top + 142, 126, "ore-chest");
         stationId = field(left + 132, top + 208, 126, "tool-forge");
+        bedId = field(left + 132, top + 258, 126, "home-bed");
         buttonList.add(new GuiButton(SAVE_LOADOUT_BUTTON, left + 382, top + 50, 96, 46, "Save loadout"));
         buttonList.add(new GuiButton(SAVE_CHEST_BUTTON, left + 282, top + 142, 196, 20, "Save targeted vanilla chest"));
         buttonList
             .add(new GuiButton(SAVE_STATION_BUTTON, left + 282, top + 208, 196, 20, "Save targeted repair station"));
-        buttonList.add(new GuiButton(BACK_BUTTON, left + panelWidth - 82, top + 278, 70, 20, "Back"));
-        buttonList.add(new GuiButton(NEW_EXCAVATION_BUTTON, left + 12, top + 278, 128, 20, "New excavation"));
-        buttonList.add(new GuiButton(WORK_AREAS_BUTTON, left + 146, top + 278, 110, 20, "Work areas"));
+        buttonList.add(new GuiButton(SAVE_BED_BUTTON, left + 282, top + 258, 196, 20, "Save targeted vanilla bed"));
+        buttonList.add(new GuiButton(QUEUE_SLEEP_BUTTON, left + 282, top + 282, 94, 20, "Sleep once"));
+        buttonList.add(new GuiButton(SCHEDULE_SLEEP_BUTTON, left + 382, top + 282, 96, 20, "Every night"));
+        buttonList.add(new GuiButton(BACK_BUTTON, left + panelWidth - 82, top + 336, 70, 20, "Back"));
+        buttonList.add(new GuiButton(NEW_EXCAVATION_BUTTON, left + 12, top + 336, 128, 20, "New excavation"));
+        buttonList.add(new GuiButton(WORK_AREAS_BUTTON, left + 146, top + 336, 110, 20, "Work areas"));
         refreshStatus();
     }
 
@@ -115,6 +125,9 @@ public final class GuiProfileAssets extends GuiScreen {
             if (button.id == SAVE_LOADOUT_BUTTON) saveLoadout(editor.get());
             else if (button.id == SAVE_CHEST_BUTTON) saveChest(editor.get());
             else if (button.id == SAVE_STATION_BUTTON) saveStation(editor.get());
+            else if (button.id == SAVE_BED_BUTTON) saveBed(editor.get());
+            else if (button.id == QUEUE_SLEEP_BUTTON) queueSleep();
+            else if (button.id == SCHEDULE_SLEEP_BUTTON) scheduleSleep();
         } catch (RuntimeException failure) {
             status = "Nothing changed: " + safeMessage(failure);
         }
@@ -180,6 +193,50 @@ public final class GuiProfileAssets extends GuiScreen {
         status = "Saved repair station '" + id + "' at " + target.coordinates() + ".";
     }
 
+    private void saveBed(ProfileAssetEditor editor) {
+        Target target = target();
+        if (mc.theWorld.getBlock(target.x, target.y, target.z) != Blocks.bed) {
+            throw new IllegalArgumentException("look directly at a vanilla bed block first");
+        }
+        String id = ProfileAssetInput.stableId(bedId.getText(), "bed name");
+        editor.apply(ProfileAssetUpdate.of(target.location(id, displayName(id)), null, null, null));
+        status = "Saved registered bed '" + id + "' at " + target.coordinates() + ".";
+    }
+
+    private void queueSleep() {
+        String id = ProfileAssetInput.stableId(bedId.getText(), "bed name");
+        requireSavedLocation(id);
+        io.github.kaseyawolf2.horizonwright.HorizonwrightRuntime runtime = requireRuntime();
+        long suffix = mc.theWorld == null ? 0L : Math.max(0L, mc.theWorld.getTotalWorldTime());
+        runtime.submitSleep(SleepTask.once("sleep-" + id + "-" + suffix, id));
+        status = "Queued one safe sleep attempt at '" + id + "'.";
+    }
+
+    private void scheduleSleep() {
+        String id = ProfileAssetInput.stableId(bedId.getText(), "bed name");
+        requireSavedLocation(id);
+        requireRuntime().scheduleNightSleep("sleep-" + id, id);
+        status = "Scheduled one safe attempt per vanilla night at '" + id + "'.";
+    }
+
+    private io.github.kaseyawolf2.horizonwright.HorizonwrightRuntime requireRuntime() {
+        CurrentRuntimeUiResolver.Resolution resolution = CurrentRuntimeUiResolver.resolve(runtimeProvider);
+        if (!resolution.isAvailable()) throw new IllegalStateException(resolution.getDiagnostic());
+        return resolution.getRuntime();
+    }
+
+    private void requireSavedLocation(String id) {
+        Optional<ProfileAssetEditor> editor = editorProvider.getCurrentProfileAssetEditor();
+        if (!editor.isPresent()) throw new IllegalStateException("active profile assets are unavailable");
+        for (NamedLocation location : editor.get()
+            .load()
+            .getNamedLocations()) {
+            if (location.getId()
+                .equals(id)) return;
+        }
+        throw new IllegalStateException("save registered bed '" + id + "' first");
+    }
+
     @Override
     public void updateScreen() {
         loadoutId.updateCursorCounter();
@@ -188,6 +245,7 @@ public final class GuiProfileAssets extends GuiScreen {
         materialMinimum.updateCursorCounter();
         storageId.updateCursorCounter();
         stationId.updateCursorCounter();
+        bedId.updateCursorCounter();
     }
 
     @Override
@@ -208,7 +266,7 @@ public final class GuiProfileAssets extends GuiScreen {
     @Override
     public void drawScreen(int mouseX, int mouseY, float partialTicks) {
         drawDefaultBackground();
-        drawRect(left, top, left + panelWidth, top + 310, 0xE010141B);
+        drawRect(left, top, left + panelWidth, top + 368, 0xE010141B);
         drawCenteredString(fontRendererObj, "Horizonwright profile assets", width / 2, top + 14, 0xFFF0C674);
         drawCenteredString(
             fontRendererObj,
@@ -241,11 +299,12 @@ public final class GuiProfileAssets extends GuiScreen {
             left + 18,
             top + 240,
             0xFFB8C8DE);
+        label("Bed name", left + 18, top + 264);
         drawString(
             fontRendererObj,
             truncate(status, 76),
             left + 18,
-            top + 260,
+            top + 312,
             status.startsWith("Nothing") ? 0xFFFF7777 : 0xFFB8C8DE);
         for (GuiTextField field : fields()) field.drawTextBox();
         super.drawScreen(mouseX, mouseY, partialTicks);
@@ -287,7 +346,7 @@ public final class GuiProfileAssets extends GuiScreen {
     }
 
     private GuiTextField[] fields() {
-        return new GuiTextField[] { loadoutId, toolSlot, materialSlot, materialMinimum, storageId, stationId };
+        return new GuiTextField[] { loadoutId, toolSlot, materialSlot, materialMinimum, storageId, stationId, bedId };
     }
 
     private void label(String text, int x, int y) {

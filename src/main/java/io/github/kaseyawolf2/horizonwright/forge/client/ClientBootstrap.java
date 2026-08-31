@@ -42,6 +42,8 @@ import io.github.kaseyawolf2.horizonwright.forge.client.repair.LiveTinkersRepair
 import io.github.kaseyawolf2.horizonwright.forge.client.repair.ProfileTinkersRepairConfiguration;
 import io.github.kaseyawolf2.horizonwright.forge.client.repair.TinkersRepairCompatibilityProbe;
 import io.github.kaseyawolf2.horizonwright.forge.client.safety.LiveClientDeathSafetyBoundaryFactory;
+import io.github.kaseyawolf2.horizonwright.forge.client.sleep.LiveVanillaSleepBackend;
+import io.github.kaseyawolf2.horizonwright.forge.client.sleep.ProfileSleepConfiguration;
 import io.github.kaseyawolf2.horizonwright.runtime.persistence.profile.ProfileAssetEditor;
 import io.github.kaseyawolf2.horizonwright.runtime.persistence.profile.ProfileAssetEditorProvider;
 import io.github.kaseyawolf2.horizonwright.runtime.persistence.session.ClientProfileBindingCoordinator;
@@ -82,6 +84,7 @@ public final class ClientBootstrap {
     private LiveVanillaFarmBackend liveFarmBackend;
     private LiveVanillaChestUnloadBackend liveUnloadBackend;
     private LiveTinkersRepairBackend liveRepairBackend;
+    private LiveVanillaSleepBackend liveSleepBackend;
     private boolean initialized;
 
     private ClientBootstrap() {}
@@ -280,6 +283,13 @@ public final class ClientBootstrap {
                 new ProfileFarmConfiguration(profileEditorProvider()));
             attachedRuntime.getTaskServices()
                 .bindFarmBackend(liveFarmBackend);
+            liveSleepBackend = new LiveVanillaSleepBackend(
+                minecraft,
+                attachedRuntime.getActionSessionGuard(),
+                attachedRuntime::getNavigationBackend,
+                new ProfileSleepConfiguration(persistenceStore, identity));
+            attachedRuntime.getTaskServices()
+                .bindSleepBackend(liveSleepBackend);
             containerTransactions = new ContainerTransactionPacketCoordinator();
             containerTransactionExecutor = new LiveContainerTransactionExecutor(
                 minecraft,
@@ -340,6 +350,10 @@ public final class ClientBootstrap {
             attachedRuntime.getTaskServices()
                 .unbindRepairBackend(liveRepairBackend);
         }
+        if (attachedRuntime != null && liveSleepBackend != null) {
+            attachedRuntime.getTaskServices()
+                .unbindSleepBackend(liveSleepBackend);
+        }
         if (runtimeSessions != null && activeIdentity != null && connectionToken != null) {
             runtimeSessions.worldUnavailable(activeIdentity, connectionToken);
             runtimeSessions.unbindProfile();
@@ -357,6 +371,7 @@ public final class ClientBootstrap {
         liveFarmBackend = null;
         liveUnloadBackend = null;
         liveRepairBackend = null;
+        liveSleepBackend = null;
     }
 
     private void preemptForPhysicalInput(int keyCode) {

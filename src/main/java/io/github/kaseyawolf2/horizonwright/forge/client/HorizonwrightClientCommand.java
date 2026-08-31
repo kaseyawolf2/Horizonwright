@@ -30,6 +30,7 @@ import io.github.kaseyawolf2.horizonwright.runtime.persistence.session.ClientPro
 import io.github.kaseyawolf2.horizonwright.runtime.persistence.session.CurrentRuntimeProvider;
 import io.github.kaseyawolf2.horizonwright.runtime.task.ExcavationTaskSubmission;
 import io.github.kaseyawolf2.horizonwright.runtime.task.FarmTask;
+import io.github.kaseyawolf2.horizonwright.runtime.task.SleepTask;
 
 public final class HorizonwrightClientCommand extends CommandBase {
 
@@ -64,7 +65,7 @@ public final class HorizonwrightClientCommand extends CommandBase {
 
     @Override
     public String getCommandUsage(ICommandSender sender) {
-        return "/hw [panel|profile [status|enroll|recover|reassociate <id>]|status|task [id]|goto <x> <y> <z> [tolerance]|excavate cylinder <id> <radius> <bottom-y> <top-y> [<loadout> <storage> <station> <tool-slot> <work-damage>]|farm <task-id> <plot-id> [seed-reserve]|farmschedule <id> <plot-id> <minutes> [seed-reserve]|pause [id]|resume [id]|cancel <id>|navcancel|dryrun [on|off]|stop|reset]";
+        return "/hw [panel|profile [status|enroll|recover|reassociate <id>]|status|task [id]|goto <x> <y> <z> [tolerance]|excavate cylinder <id> <radius> <bottom-y> <top-y> [<loadout> <storage> <station> <tool-slot> <work-damage>]|farm <task-id> <plot-id> [seed-reserve]|farmschedule <id> <plot-id> <minutes> [seed-reserve]|sleep <task-id> <bed-location>|sleepschedule <id> <bed-location>|pause [id]|resume [id]|cancel <id>|navcancel|dryrun [on|off]|stop|reset]";
     }
 
     @Override
@@ -112,6 +113,14 @@ public final class HorizonwrightClientCommand extends CommandBase {
         }
         if ("farmschedule".equals(subcommand)) {
             scheduleFarm(sender, arguments, runtime);
+            return;
+        }
+        if ("sleep".equals(subcommand)) {
+            startSleep(sender, arguments, runtime);
+            return;
+        }
+        if ("sleepschedule".equals(subcommand)) {
+            scheduleSleep(sender, arguments, runtime);
             return;
         }
         if ("navcancel".equals(subcommand)) {
@@ -170,6 +179,8 @@ public final class HorizonwrightClientCommand extends CommandBase {
             || "excavate".equals(subcommand)
             || "farm".equals(subcommand)
             || "farmschedule".equals(subcommand)
+            || "sleep".equals(subcommand)
+            || "sleepschedule".equals(subcommand)
             || "navcancel".equals(subcommand)
             || "pause".equals(subcommand)
             || "resume".equals(subcommand)
@@ -198,6 +209,8 @@ public final class HorizonwrightClientCommand extends CommandBase {
                 "excavate",
                 "farm",
                 "farmschedule",
+                "sleep",
+                "sleepschedule",
                 "pause",
                 "resume",
                 "cancel",
@@ -463,6 +476,66 @@ public final class HorizonwrightClientCommand extends CommandBase {
                 .equals(plotId)) return;
         }
         throw new IllegalStateException("active profile has no named area '" + plotId + "'");
+    }
+
+    private void startSleep(ICommandSender sender, String[] arguments, HorizonwrightRuntime runtime) {
+        if (arguments.length != 3) {
+            sender.addChatMessage(new ChatComponentText(EnumChatFormatting.RED + getCommandUsage(sender)));
+            return;
+        }
+        try {
+            String taskId = ProfileAssetInput.stableId(arguments[1], "sleep task name");
+            String bedId = ProfileAssetInput.stableId(arguments[2], "bed location name");
+            requireNamedLocation(bedId);
+            TaskSnapshot submitted = runtime.submitSleep(SleepTask.once(taskId, bedId));
+            sender.addChatMessage(
+                new ChatComponentText(
+                    EnumChatFormatting.AQUA + "Horizonwright queued sleep task '"
+                        + submitted.getSpec()
+                            .getId()
+                        + "' for registered bed '"
+                        + bedId
+                        + "'."));
+        } catch (RuntimeException failure) {
+            sender.addChatMessage(
+                new ChatComponentText(EnumChatFormatting.RED + "Sleep not started: " + safeMessage(failure)));
+        }
+    }
+
+    private void scheduleSleep(ICommandSender sender, String[] arguments, HorizonwrightRuntime runtime) {
+        if (arguments.length != 3) {
+            sender.addChatMessage(new ChatComponentText(EnumChatFormatting.RED + getCommandUsage(sender)));
+            return;
+        }
+        try {
+            String scheduleId = ProfileAssetInput.stableId(arguments[1], "sleep schedule name");
+            String bedId = ProfileAssetInput.stableId(arguments[2], "bed location name");
+            requireNamedLocation(bedId);
+            io.github.kaseyawolf2.horizonwright.core.task.ScheduleSnapshot scheduled = runtime
+                .scheduleNightSleep(scheduleId, bedId);
+            sender.addChatMessage(
+                new ChatComponentText(
+                    EnumChatFormatting.AQUA + "Horizonwright scheduled '"
+                        + scheduled.getRule()
+                            .getId()
+                        + "' once per safe vanilla night at registered bed '"
+                        + bedId
+                        + "'."));
+        } catch (RuntimeException failure) {
+            sender.addChatMessage(
+                new ChatComponentText(EnumChatFormatting.RED + "Sleep schedule not created: " + safeMessage(failure)));
+        }
+    }
+
+    private void requireNamedLocation(String locationId) {
+        ProfileAssetEditor editor = profileEditorProvider.getCurrentProfileAssetEditor()
+            .orElseThrow(() -> new IllegalStateException("active profile assets are unavailable"));
+        for (io.github.kaseyawolf2.horizonwright.core.persistence.NamedLocation location : editor.load()
+            .getNamedLocations()) {
+            if (location.getId()
+                .equals(locationId)) return;
+        }
+        throw new IllegalStateException("active profile has no named location '" + locationId + "'");
     }
 
     private void showStatus(ICommandSender sender, HorizonwrightRuntime runtime) {
