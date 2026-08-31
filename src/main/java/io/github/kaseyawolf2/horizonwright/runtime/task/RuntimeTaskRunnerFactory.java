@@ -12,38 +12,60 @@ public final class RuntimeTaskRunnerFactory implements TaskRunnerFactory {
     private final ExcavationRuntimeAccess excavation;
     private final UnloadRuntimeAccess unload;
     private final RepairRuntimeAccess repair;
+    private final FarmRuntimeAccess farm;
 
     public RuntimeTaskRunnerFactory(NavigationRuntimeAccess navigation) {
         this(
             navigation,
             DisabledExcavationRuntimeAccess.INSTANCE,
             DisabledUnloadRuntimeAccess.INSTANCE,
-            DisabledRepairRuntimeAccess.INSTANCE);
+            DisabledRepairRuntimeAccess.INSTANCE,
+            DisabledFarmRuntimeAccess.INSTANCE);
     }
 
     public RuntimeTaskRunnerFactory(NavigationRuntimeAccess navigation, ExcavationRuntimeAccess excavation) {
-        this(navigation, excavation, DisabledUnloadRuntimeAccess.INSTANCE, DisabledRepairRuntimeAccess.INSTANCE);
+        this(
+            navigation,
+            excavation,
+            DisabledUnloadRuntimeAccess.INSTANCE,
+            DisabledRepairRuntimeAccess.INSTANCE,
+            DisabledFarmRuntimeAccess.INSTANCE);
     }
 
     public RuntimeTaskRunnerFactory(NavigationRuntimeAccess navigation, UnloadRuntimeAccess unload,
         RepairRuntimeAccess repair) {
-        this(navigation, DisabledExcavationRuntimeAccess.INSTANCE, unload, repair);
+        this(navigation, DisabledExcavationRuntimeAccess.INSTANCE, unload, repair, DisabledFarmRuntimeAccess.INSTANCE);
     }
 
     public RuntimeTaskRunnerFactory(NavigationRuntimeAccess navigation, ExcavationRuntimeAccess excavation,
         UnloadRuntimeAccess unload) {
-        this(navigation, excavation, unload, DisabledRepairRuntimeAccess.INSTANCE);
+        this(navigation, excavation, unload, DisabledRepairRuntimeAccess.INSTANCE, DisabledFarmRuntimeAccess.INSTANCE);
     }
 
     public RuntimeTaskRunnerFactory(NavigationRuntimeAccess navigation, ExcavationRuntimeAccess excavation,
         UnloadRuntimeAccess unload, RepairRuntimeAccess repair) {
-        if (navigation == null || excavation == null || unload == null || repair == null) {
-            throw new IllegalArgumentException("navigation, excavation, unload, and repair must not be null");
+        this(navigation, excavation, unload, repair, DisabledFarmRuntimeAccess.INSTANCE);
+    }
+
+    public RuntimeTaskRunnerFactory(NavigationRuntimeAccess navigation, FarmRuntimeAccess farm) {
+        this(
+            navigation,
+            DisabledExcavationRuntimeAccess.INSTANCE,
+            DisabledUnloadRuntimeAccess.INSTANCE,
+            DisabledRepairRuntimeAccess.INSTANCE,
+            farm);
+    }
+
+    public RuntimeTaskRunnerFactory(NavigationRuntimeAccess navigation, ExcavationRuntimeAccess excavation,
+        UnloadRuntimeAccess unload, RepairRuntimeAccess repair, FarmRuntimeAccess farm) {
+        if (navigation == null || excavation == null || unload == null || repair == null || farm == null) {
+            throw new IllegalArgumentException("navigation, excavation, unload, repair, and farm must not be null");
         }
         this.navigation = navigation;
         this.excavation = excavation;
         this.unload = unload;
         this.repair = repair;
+        this.farm = farm;
     }
 
     @Override
@@ -62,6 +84,9 @@ public final class RuntimeTaskRunnerFactory implements TaskRunnerFactory {
         }
         if (RepairTask.TYPE.equals(spec.getType())) {
             return new RepairTaskRunner(spec, checkpoint, repair);
+        }
+        if (FarmTask.TYPE.equals(spec.getType())) {
+            return new FarmTaskRunner(spec, checkpoint, farm);
         }
         throw new IllegalArgumentException("unsupported runtime task type: " + spec.getType());
     }
@@ -102,6 +127,21 @@ public final class RuntimeTaskRunnerFactory implements TaskRunnerFactory {
 
         @Override
         public RepairBackend getRepairBackend() {
+            return null;
+        }
+
+        @Override
+        public boolean isDryRun() {
+            return false;
+        }
+    }
+
+    private enum DisabledFarmRuntimeAccess implements FarmRuntimeAccess {
+
+        INSTANCE;
+
+        @Override
+        public FarmBackend getFarmBackend() {
             return null;
         }
 

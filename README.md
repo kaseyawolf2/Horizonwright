@@ -120,8 +120,14 @@ reserve. Its strict checkpoint freezes every crop position, adapter family,
 block-state fingerprint, required seed identity, maturity/protection evidence,
 verified-mutation count, and next observation index. Restored checkpoints must
 match the task's plot and revision exactly; changed or cross-task evidence is
-rejected instead of replayed. The live crop observer and action backend are the
-next slice, so farm tasks are not yet exposed for submission.
+rejected instead of replayed. The resumable runner freezes one bounded scan,
+advances non-mutating decisions without a gameplay lease, grants only the
+movement/look/dig/place or movement/look/use capabilities required by a planned
+mutation, and advances only after a changed, verified immature crop is observed.
+Pause cancels an unconfirmed action at the same crop. A version-isolated backend
+contract now carries all scan, target, seed-reserve, action, and confirmation
+authority; the live Minecraft vanilla-crop adapter is the next slice, so farm
+tasks are not yet exposed for submission.
 Clean-volume excavation is now attached to a live, session-owned backend. Every
 observation and action carries the explicit dimension as well as the existing
 geometry, frontier, revision, epoch, and block fingerprint. The observer treats

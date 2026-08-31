@@ -41,6 +41,11 @@ public class FarmTaskCheckpointCodecTest {
             "2",
             encoded.getValues()
                 .get("observationCount"));
+
+        TaskCheckpoint advancedRevision = FarmTaskCheckpointCodec
+            .encode(spec, original, Arrays.asList(WHEAT, CARROT), 9L);
+        assertEquals(original, FarmTaskCheckpointCodec.decode(spec, advancedRevision));
+        assertEquals(9L, advancedRevision.getRevision());
     }
 
     @Test

@@ -162,6 +162,20 @@ duplicate. A missing corner or corners captured in different dimensions must
 leave the profile unchanged with a clear diagnostic. This checkpoint is
 automated-test covered but has not yet been physically recorded.
 
+## Pending finite farm-pass checkpoint
+
+This check remains unavailable until the live vanilla-crop adapter and task
+submission UI are installed. When enabled, create a small named plot containing
+one immature crop and one mature vanilla crop, with verified seed inventory
+above the configured reserve. The finite pass must skip the immature crop
+without acquiring an action lease, harvest and replant the mature crop, and
+advance it only after the replacement is visibly immature. Pause during the
+mutation and reconnect after one confirmed target; Horizonwright must reobserve
+the same unadvanced target after pause and retain the exact next index after
+reconnect. Manually alter a frozen target before its turn and confirm the pass
+stops without touching it. These runner behaviors are automated-test covered;
+the live adapter is not yet present or physically verified.
+
 ## Recorded physical result
 
 On 2026-08-30, the operator completed the long-route, inventory-during-walk,
