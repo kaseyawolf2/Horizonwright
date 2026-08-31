@@ -3,8 +3,10 @@ package io.github.kaseyawolf2.horizonwright.forge.client.network;
 import net.minecraft.network.play.client.C08PacketPlayerBlockPlacement;
 import net.minecraft.network.play.client.C09PacketHeldItemChange;
 import net.minecraft.network.play.client.C0BPacketEntityAction;
+import net.minecraft.network.play.client.C0EPacketClickWindow;
 import net.minecraft.network.play.client.C16PacketClientStatus;
 import net.minecraft.network.play.server.S06PacketUpdateHealth;
+import net.minecraft.network.play.server.S32PacketConfirmTransaction;
 
 import io.github.kaseyawolf2.horizonwright.HorizonwrightMod;
 import io.github.kaseyawolf2.horizonwright.core.action.ActionAuthorizationDecision;
@@ -28,6 +30,7 @@ final class OutboundPacketFirewall extends ChannelDuplexHandler {
     private final ActionSessionGuard actionSessionGuard;
     private final LifecycleListener lifecycleListener;
     private final DeathSafetyPacketBridge deathSafetyBridge;
+    private final ContainerTransactionPacketBridge containerTransactionBridge;
     private long blockedCount;
 
     OutboundPacketFirewall(ActionSessionGuard actionSessionGuard) {
@@ -40,9 +43,15 @@ final class OutboundPacketFirewall extends ChannelDuplexHandler {
 
     OutboundPacketFirewall(ActionSessionGuard actionSessionGuard, LifecycleListener lifecycleListener,
         DeathSafetyPacketBridge deathSafetyBridge) {
+        this(actionSessionGuard, lifecycleListener, deathSafetyBridge, null);
+    }
+
+    OutboundPacketFirewall(ActionSessionGuard actionSessionGuard, LifecycleListener lifecycleListener,
+        DeathSafetyPacketBridge deathSafetyBridge, ContainerTransactionPacketBridge containerTransactionBridge) {
         this.actionSessionGuard = actionSessionGuard;
         this.lifecycleListener = lifecycleListener;
         this.deathSafetyBridge = deathSafetyBridge;
+        this.containerTransactionBridge = containerTransactionBridge;
     }
 
     @Override
@@ -56,6 +65,13 @@ final class OutboundPacketFirewall extends ChannelDuplexHandler {
                     failClosedInbound(context, message, failure);
                     return;
                 }
+            }
+        }
+        if (containerTransactionBridge != null && message instanceof S32PacketConfirmTransaction) {
+            try {
+                containerTransactionBridge.beforeConfirmationRead((S32PacketConfirmTransaction) message);
+            } catch (RuntimeException failure) {
+                failContainerObservation(context, failure);
             }
         }
         context.fireChannelRead(message);
@@ -99,6 +115,18 @@ final class OutboundPacketFirewall extends ChannelDuplexHandler {
                 promise.trySuccess();
                 return;
             }
+            if (containerTransactionBridge != null && message instanceof C0EPacketClickWindow) {
+                try {
+                    ContainerTransactionPacketBridge.ClickWriteDecision observation = containerTransactionBridge
+                        .beforeClickWrite((C0EPacketClickWindow) message);
+                    if (observation == null) {
+                        throw new IllegalStateException("container transaction bridge returned no decision");
+                    }
+                } catch (RuntimeException failure) {
+                    failClosedContainerWrite(context, message, promise, failure);
+                    return;
+                }
+            }
             context.write(message, promise);
         }
     }
@@ -110,7 +138,8 @@ final class OutboundPacketFirewall extends ChannelDuplexHandler {
         if (!transportClosed) {
             actionSessionGuard.markFirewallUnavailable();
         }
-        if (!transportClosed && (actionSessionGuard.isGuarding() || deathSafetyBridge != null)) {
+        if (!transportClosed
+            && (actionSessionGuard.isGuarding() || deathSafetyBridge != null || containerTransactionBridge != null)) {
             HorizonwrightMod.LOG.error(
                 "Required outbound packet boundary was removed; disabling Horizonwright automation without "
                     + "closing the client connection");
@@ -227,6 +256,23 @@ final class OutboundPacketFirewall extends ChannelDuplexHandler {
             "Death-safety inbound packet hook failed; denying the integrated packet and disabling automation",
             failure);
         ReferenceCountUtil.release(message);
+        failClosed(context, failure);
+    }
+
+    private void failContainerObservation(ChannelHandlerContext context, RuntimeException failure) {
+        HorizonwrightMod.LOG.error(
+            "Container confirmation observation failed; forwarding the vanilla packet but disabling automation",
+            failure);
+        failClosed(context, failure);
+    }
+
+    private void failClosedContainerWrite(ChannelHandlerContext context, Object message, ChannelPromise promise,
+        RuntimeException failure) {
+        HorizonwrightMod.LOG.error(
+            "Prepared container click correlation failed; denying only that integrated click and disabling automation",
+            failure);
+        ReferenceCountUtil.release(message);
+        promise.tryFailure(failure);
         failClosed(context, failure);
     }
 

@@ -24,22 +24,30 @@ public final class ClientPacketFirewallInstaller implements OutboundPacketFirewa
 
     private final ActionSessionGuard actionSessionGuard;
     private final DeathSafetyPacketBridgeFactory deathSafetyBridgeFactory;
+    private final ContainerTransactionPacketBridgeFactory containerTransactionBridgeFactory;
     private Registration current;
     private long nextRegistrationId = 1L;
     private volatile State state = State.ABSENT;
     private volatile String diagnostic = "No client play connection";
 
     public ClientPacketFirewallInstaller(ActionSessionGuard actionSessionGuard) {
-        this(actionSessionGuard, null);
+        this(actionSessionGuard, null, null);
     }
 
     public ClientPacketFirewallInstaller(ActionSessionGuard actionSessionGuard,
         DeathSafetyPacketBridgeFactory deathSafetyBridgeFactory) {
+        this(actionSessionGuard, deathSafetyBridgeFactory, null);
+    }
+
+    public ClientPacketFirewallInstaller(ActionSessionGuard actionSessionGuard,
+        DeathSafetyPacketBridgeFactory deathSafetyBridgeFactory,
+        ContainerTransactionPacketBridgeFactory containerTransactionBridgeFactory) {
         if (actionSessionGuard == null) {
             throw new IllegalArgumentException("actionSessionGuard must not be null");
         }
         this.actionSessionGuard = actionSessionGuard;
         this.deathSafetyBridgeFactory = deathSafetyBridgeFactory;
+        this.containerTransactionBridgeFactory = containerTransactionBridgeFactory;
     }
 
     public void ensureInstalled() {
@@ -53,11 +61,11 @@ public final class ClientPacketFirewallInstaller implements OutboundPacketFirewa
                 diagnostic = "No client play connection";
             }
             if (registration == null || !registration.channel.isOpen()) {
-                retireSafetyBridge(registration, true);
+                retirePacketBridges(registration, true);
                 actionSessionGuard.markTransportClosed();
             } else {
                 actionSessionGuard.markFirewallUnavailable();
-                retireSafetyBridge(registration, false);
+                retirePacketBridges(registration, false);
             }
             return;
         }
@@ -84,7 +92,8 @@ public final class ClientPacketFirewallInstaller implements OutboundPacketFirewa
         synchronized (this) {
             if (current == null || current.manager != manager || current.channel != channel) {
                 if (current != null && current.channel.isOpen()
-                    && (actionSessionGuard.isGuarding() || current.safetyBridge != null)) {
+                    && (actionSessionGuard.isGuarding() || current.safetyBridge != null
+                        || current.containerTransactionBridge != null)) {
                     staleRequiredRegistration = current;
                 }
                 current = new Registration(nextRegistrationId++, manager, channel);
@@ -99,7 +108,8 @@ public final class ClientPacketFirewallInstaller implements OutboundPacketFirewa
                     state = State.ABSENT;
                     diagnostic = "Outbound action firewall handler disappeared";
                     actionSessionGuard.markFirewallUnavailable();
-                    retireMissingSafetyBoundary = deathSafetyBridgeFactory != null;
+                    retireMissingSafetyBoundary = deathSafetyBridgeFactory != null
+                        || containerTransactionBridgeFactory != null;
                 }
             }
             if (state != State.INSTALLED && !registration.installScheduled && !registration.boundaryFailed) {
@@ -109,10 +119,10 @@ public final class ClientPacketFirewallInstaller implements OutboundPacketFirewa
         if (staleRequiredRegistration != null) {
             HorizonwrightMod.LOG
                 .warn("Retiring Horizonwright's stale packet boundary without closing its client connection");
-            retireSafetyBridge(staleRequiredRegistration, false);
+            retirePacketBridges(staleRequiredRegistration, false);
         }
         if (retireMissingSafetyBoundary) {
-            retireSafetyBridge(registration, false);
+            retirePacketBridges(registration, false);
         }
         scheduleDrainBarrier(registration);
     }
@@ -192,11 +202,18 @@ public final class ClientPacketFirewallInstaller implements OutboundPacketFirewa
             actionSessionGuard.markFirewallUnavailable();
             return;
         }
+        DeathSafetyPacketBridge safetyBridge = null;
+        ContainerTransactionPacketBridge containerTransactionBridge = null;
         try {
-            DeathSafetyPacketBridge safetyBridge = deathSafetyBridgeFactory == null ? null
+            safetyBridge = deathSafetyBridgeFactory == null ? null
                 : deathSafetyBridgeFactory.open(registration.manager, channel);
             if (deathSafetyBridgeFactory != null && safetyBridge == null) {
                 throw new IllegalStateException("death-safety packet bridge factory returned null");
+            }
+            containerTransactionBridge = containerTransactionBridgeFactory == null ? null
+                : containerTransactionBridgeFactory.open(registration.manager, channel);
+            if (containerTransactionBridgeFactory != null && containerTransactionBridge == null) {
+                throw new IllegalStateException("container transaction packet bridge factory returned null");
             }
             boolean staleRegistration;
             synchronized (this) {
@@ -204,20 +221,26 @@ public final class ClientPacketFirewallInstaller implements OutboundPacketFirewa
                 if (!staleRegistration) {
                     registration.safetyBridge = safetyBridge;
                     registration.safetyBridgeRetired = false;
+                    registration.containerTransactionBridge = containerTransactionBridge;
+                    registration.containerTransactionBridgeRetired = false;
                     registration.firewall = new OutboundPacketFirewall(
                         actionSessionGuard,
                         ClientPacketFirewallInstaller.this,
-                        safetyBridge);
+                        safetyBridge,
+                        containerTransactionBridge);
                 }
             }
             if (staleRegistration) {
                 retireSafetyBridge(safetyBridge, false);
+                retireContainerTransactionBridge(containerTransactionBridge, false);
                 return;
             }
             channel.pipeline()
                 .addBefore("packet_handler", HANDLER_NAME, registration.firewall);
             markInstalled(registration);
         } catch (RuntimeException failure) {
+            retireSafetyBridge(safetyBridge, false);
+            retireContainerTransactionBridge(containerTransactionBridge, false);
             markFailed(registration, "Could not install outbound action firewall", failure);
         }
     }
@@ -244,7 +267,7 @@ public final class ClientPacketFirewallInstaller implements OutboundPacketFirewa
             diagnostic = message;
         }
         actionSessionGuard.markFirewallUnavailable();
-        retireSafetyBridge(registration, false);
+        retirePacketBridges(registration, false);
         if (failure == null) {
             HorizonwrightMod.LOG.error(message);
         } else {
@@ -260,7 +283,7 @@ public final class ClientPacketFirewallInstaller implements OutboundPacketFirewa
             state = State.CLOSED;
             diagnostic = "Client connection closed";
         }
-        retireSafetyBridge(registration, true);
+        retirePacketBridges(registration, true);
         actionSessionGuard.markTransportClosed();
     }
 
@@ -321,17 +344,17 @@ public final class ClientPacketFirewallInstaller implements OutboundPacketFirewa
             if (transportClosed) {
                 state = State.CLOSED;
                 diagnostic = "Client connection closed";
-            } else if (deathSafetyBridgeFactory != null) {
+            } else if (deathSafetyBridgeFactory != null || containerTransactionBridgeFactory != null) {
                 current = new Registration(nextRegistrationId++, current.manager, current.channel);
                 state = State.FAILED;
-                diagnostic = "Death-safety packet boundary was removed";
+                diagnostic = "Integrated packet boundary was removed";
             } else {
                 current = new Registration(nextRegistrationId++, current.manager, current.channel);
                 state = State.ABSENT;
                 diagnostic = "Outbound action firewall handler removed";
             }
         }
-        retireSafetyBridge(unavailable, transportClosed);
+        retirePacketBridges(unavailable, transportClosed);
         if (transportClosed) {
             actionSessionGuard.markTransportClosed();
         } else {
@@ -349,10 +372,15 @@ public final class ClientPacketFirewallInstaller implements OutboundPacketFirewa
             failed = current;
             failed.boundaryFailed = true;
             state = State.FAILED;
-            diagnostic = "Death-safety packet boundary failed: " + failure.getMessage();
+            diagnostic = "Integrated packet boundary failed: " + failure.getMessage();
         }
-        retireSafetyBridge(failed, false);
+        retirePacketBridges(failed, false);
         actionSessionGuard.markFirewallUnavailable();
+    }
+
+    private void retirePacketBridges(Registration registration, boolean transportClosed) {
+        retireSafetyBridge(registration, transportClosed);
+        retireContainerTransactionBridge(registration, transportClosed);
     }
 
     private void retireSafetyBridge(Registration registration, boolean transportClosed) {
@@ -382,6 +410,33 @@ public final class ClientPacketFirewallInstaller implements OutboundPacketFirewa
         }
     }
 
+    private void retireContainerTransactionBridge(Registration registration, boolean transportClosed) {
+        if (registration == null) {
+            return;
+        }
+        ContainerTransactionPacketBridge bridge;
+        synchronized (this) {
+            if (registration.containerTransactionBridgeRetired || registration.containerTransactionBridge == null) {
+                return;
+            }
+            registration.containerTransactionBridgeRetired = true;
+            bridge = registration.containerTransactionBridge;
+        }
+        retireContainerTransactionBridge(bridge, transportClosed);
+    }
+
+    private void retireContainerTransactionBridge(ContainerTransactionPacketBridge bridge, boolean transportClosed) {
+        if (bridge == null) {
+            return;
+        }
+        try {
+            bridge.onBoundaryUnavailable(transportClosed);
+        } catch (RuntimeException failure) {
+            actionSessionGuard.markFirewallUnavailable();
+            HorizonwrightMod.LOG.error("Container transaction packet bridge retirement failed", failure);
+        }
+    }
+
     private final class Registration {
 
         private final long id;
@@ -389,7 +444,9 @@ public final class ClientPacketFirewallInstaller implements OutboundPacketFirewa
         private final Channel channel;
         private OutboundPacketFirewall firewall;
         private DeathSafetyPacketBridge safetyBridge;
+        private ContainerTransactionPacketBridge containerTransactionBridge;
         private boolean safetyBridgeRetired;
+        private boolean containerTransactionBridgeRetired;
         private boolean boundaryFailed;
         private boolean installScheduled;
         private int installAttempts;

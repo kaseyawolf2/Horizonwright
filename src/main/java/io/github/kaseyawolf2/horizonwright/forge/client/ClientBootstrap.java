@@ -27,7 +27,9 @@ import io.github.kaseyawolf2.horizonwright.core.persistence.ProfileBindingIndexS
 import io.github.kaseyawolf2.horizonwright.core.persistence.ProfileBindingKey;
 import io.github.kaseyawolf2.horizonwright.core.persistence.WorldProfileIdentity;
 import io.github.kaseyawolf2.horizonwright.core.safety.death.DeathSafetyPolicy;
+import io.github.kaseyawolf2.horizonwright.forge.client.container.LiveContainerTransactionExecutor;
 import io.github.kaseyawolf2.horizonwright.forge.client.network.ClientPacketFirewallInstaller;
+import io.github.kaseyawolf2.horizonwright.forge.client.network.ContainerTransactionPacketCoordinator;
 import io.github.kaseyawolf2.horizonwright.forge.client.persistence.SingleplayerWorldBindingEvidence;
 import io.github.kaseyawolf2.horizonwright.forge.client.persistence.SingleplayerWorldMarkerRegistry;
 import io.github.kaseyawolf2.horizonwright.forge.client.persistence.SingleplayerWorldMarkerSnapshot;
@@ -63,6 +65,8 @@ public final class ClientBootstrap {
     private WorldProfileIdentity activeIdentity;
     private HorizonwrightRuntime attachedRuntime;
     private ClientPacketFirewallInstaller packetFirewall;
+    private ContainerTransactionPacketCoordinator containerTransactions;
+    private LiveContainerTransactionExecutor containerTransactionExecutor;
     private boolean initialized;
 
     private ClientBootstrap() {}
@@ -233,9 +237,15 @@ public final class ClientBootstrap {
             attachedRuntime.getActionBroker()
                 .addRevocationListener(inputArbiter);
             ClientNavigationBootstrap.initialize(attachedRuntime);
+            containerTransactions = new ContainerTransactionPacketCoordinator();
+            containerTransactionExecutor = new LiveContainerTransactionExecutor(
+                minecraft,
+                attachedRuntime.getActionSessionGuard(),
+                containerTransactions);
             packetFirewall = new ClientPacketFirewallInstaller(
                 attachedRuntime.getActionSessionGuard(),
-                deathSafetyBoundaries.requirePacketBridgeFactory(attachedRuntime));
+                deathSafetyBoundaries.requirePacketBridgeFactory(attachedRuntime),
+                containerTransactions);
         }
     }
 
@@ -246,6 +256,7 @@ public final class ClientBootstrap {
         packetFirewall.ensureInstalled();
         if (packetFirewall.isInstalled()) {
             runtimeSessions.clientTick(activeIdentity, connectionToken);
+            containerTransactionExecutor.tick();
         }
     }
 
@@ -268,6 +279,8 @@ public final class ClientBootstrap {
         activeIdentity = null;
         attachedRuntime = null;
         packetFirewall = null;
+        containerTransactions = null;
+        containerTransactionExecutor = null;
     }
 
     private void preemptForPhysicalInput(int keyCode) {

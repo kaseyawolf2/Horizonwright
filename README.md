@@ -40,6 +40,12 @@ or repair before acquiring an action lease. The adapter-neutral Tinkers repair
 gate triggers at the configured durability threshold or when the next work unit
 would exhaust the tool, and accepts output only when material was consumed,
 stable tool identity is unchanged, and `InfiTool.Damage` decreased.
+The live container boundary now fingerprints the exact window, slot layout,
+contents, cursor, and item NBT; correlates each prepared click with its outbound
+transaction number and matching server response; and refuses to expose a later
+click until the exact synchronized after-state is visible. Rejections, epoch
+changes, disconnects, and timeouts abort terminally, and an uncertain click is
+never resent. Inactive or unrelated packet traffic remains unchanged.
 Unattended operation remains disabled.
 
 ## Pinned target

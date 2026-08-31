@@ -10,7 +10,9 @@ import java.util.EnumSet;
 
 import net.minecraft.network.play.client.C03PacketPlayer;
 import net.minecraft.network.play.client.C07PacketPlayerDigging;
+import net.minecraft.network.play.client.C0EPacketClickWindow;
 import net.minecraft.network.play.client.C17PacketCustomPayload;
+import net.minecraft.network.play.server.S32PacketConfirmTransaction;
 
 import org.junit.Test;
 
@@ -147,6 +149,63 @@ public class OutboundPacketFirewallTest {
         assertTrue(channel.writeOutbound(unknown));
         assertSame(unknown, channel.readOutbound());
         assertEquals(0L, guard.getBlockedActionCount());
+        channel.finish();
+    }
+
+    @Test
+    public void inactiveContainerObserverLeavesManualClicksAndConfirmationsUntouched() {
+        ActionSessionGuard guard = new ActionSessionGuard();
+        guard.markFirewallInstalled();
+        ContainerTransactionPacketBridge observer = new ContainerTransactionPacketBridge() {
+
+            @Override
+            public ClickWriteDecision beforeClickWrite(C0EPacketClickWindow packet) {
+                return ClickWriteDecision.NOT_APPLICABLE;
+            }
+
+            @Override
+            public void beforeConfirmationRead(S32PacketConfirmTransaction packet) {}
+
+            @Override
+            public void onBoundaryUnavailable(boolean transportClosed) {}
+        };
+        EmbeddedChannel channel = new EmbeddedChannel(new OutboundPacketFirewall(guard, null, null, observer));
+        C0EPacketClickWindow click = new C0EPacketClickWindow(7, 0, 0, 1, null, (short) 3);
+        S32PacketConfirmTransaction confirmation = new S32PacketConfirmTransaction(7, (short) 3, true);
+
+        assertTrue(channel.writeOutbound(click));
+        assertSame(click, channel.readOutbound());
+        assertTrue(channel.writeInbound(confirmation));
+        assertSame(confirmation, channel.readInbound());
+        channel.finish();
+    }
+
+    @Test
+    public void inboundObserverFailureStillForwardsVanillaConfirmation() {
+        ActionSessionGuard guard = new ActionSessionGuard();
+        guard.markFirewallInstalled();
+        ContainerTransactionPacketBridge observer = new ContainerTransactionPacketBridge() {
+
+            @Override
+            public ClickWriteDecision beforeClickWrite(C0EPacketClickWindow packet) {
+                return ClickWriteDecision.NOT_APPLICABLE;
+            }
+
+            @Override
+            public void beforeConfirmationRead(S32PacketConfirmTransaction packet) {
+                throw new IllegalStateException("observer failed");
+            }
+
+            @Override
+            public void onBoundaryUnavailable(boolean transportClosed) {}
+        };
+        EmbeddedChannel channel = new EmbeddedChannel(new OutboundPacketFirewall(guard, null, null, observer));
+        S32PacketConfirmTransaction confirmation = new S32PacketConfirmTransaction(7, (short) 3, false);
+
+        assertTrue(channel.writeInbound(confirmation));
+        assertSame(confirmation, channel.readInbound());
+        assertFalse(guard.isReadyForSession());
+        assertTrue(channel.isOpen());
         channel.finish();
     }
 

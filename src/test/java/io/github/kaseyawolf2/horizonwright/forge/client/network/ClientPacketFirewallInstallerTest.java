@@ -16,6 +16,7 @@ import io.github.kaseyawolf2.horizonwright.core.action.ActionCapability;
 import io.github.kaseyawolf2.horizonwright.core.action.ActionLease;
 import io.github.kaseyawolf2.horizonwright.core.action.ActionSessionGuard;
 import io.github.kaseyawolf2.horizonwright.core.action.InMemoryActionBroker;
+import io.netty.channel.Channel;
 import io.netty.channel.ChannelInboundHandlerAdapter;
 import io.netty.channel.embedded.EmbeddedChannel;
 
@@ -113,5 +114,61 @@ public class ClientPacketFirewallInstallerTest {
         assertSame(unknown, channel.readOutbound());
         assertEquals(0L, guard.getBlockedActionCount());
         channel.finish();
+    }
+
+    @Test
+    public void containerBridgeIsBoundAndRetiredWithTheExactPipelineRegistration() {
+        ActionSessionGuard guard = new ActionSessionGuard();
+        TrackingContainerBridgeFactory factory = new TrackingContainerBridgeFactory();
+        ClientPacketFirewallInstaller installer = new ClientPacketFirewallInstaller(guard, null, factory);
+        NetworkManager manager = new NetworkManager(true);
+        EmbeddedChannel channel = new EmbeddedChannel(new ChannelInboundHandlerAdapter());
+        channel.pipeline()
+            .addLast("packet_handler", new ChannelInboundHandlerAdapter());
+
+        installer.ensureInstalled(manager, channel);
+        channel.runPendingTasks();
+        assertEquals(1, factory.openCount);
+        assertFalse(factory.bridge.retired);
+
+        channel.pipeline()
+            .remove("horizonwright_action_firewall");
+        assertTrue(factory.bridge.retired);
+        assertFalse(factory.bridge.transportClosed);
+        assertTrue(channel.isOpen());
+        channel.finish();
+    }
+
+    private static final class TrackingContainerBridgeFactory implements ContainerTransactionPacketBridgeFactory {
+
+        private int openCount;
+        private TrackingContainerBridge bridge;
+
+        @Override
+        public ContainerTransactionPacketBridge open(NetworkManager manager, Channel channel) {
+            openCount++;
+            bridge = new TrackingContainerBridge();
+            return bridge;
+        }
+    }
+
+    private static final class TrackingContainerBridge implements ContainerTransactionPacketBridge {
+
+        private boolean retired;
+        private boolean transportClosed;
+
+        @Override
+        public ClickWriteDecision beforeClickWrite(net.minecraft.network.play.client.C0EPacketClickWindow packet) {
+            return ClickWriteDecision.NOT_APPLICABLE;
+        }
+
+        @Override
+        public void beforeConfirmationRead(net.minecraft.network.play.server.S32PacketConfirmTransaction packet) {}
+
+        @Override
+        public void onBoundaryUnavailable(boolean closed) {
+            retired = true;
+            transportClosed = closed;
+        }
     }
 }
