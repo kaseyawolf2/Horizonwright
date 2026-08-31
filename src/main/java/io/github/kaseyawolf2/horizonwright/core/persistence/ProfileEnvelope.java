@@ -7,6 +7,8 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 
+import io.github.kaseyawolf2.horizonwright.core.logistics.NamedLoadout;
+
 public final class ProfileEnvelope {
 
     private final int schemaVersion;
@@ -16,6 +18,7 @@ public final class ProfileEnvelope {
     private final List<ProfileReassociation> reassociations;
     private final List<NamedLocation> namedLocations;
     private final List<NamedRoute> namedRoutes;
+    private final List<NamedLoadout> namedLoadouts;
 
     public ProfileEnvelope(long writtenAtEpochMillis, WorldProfileIdentity identity,
         List<ProfileReassociation> reassociations, List<NamedLocation> namedLocations, List<NamedRoute> namedRoutes) {
@@ -26,12 +29,27 @@ public final class ProfileEnvelope {
             identity,
             reassociations,
             namedLocations,
-            namedRoutes);
+            namedRoutes,
+            Collections.<NamedLoadout>emptyList());
+    }
+
+    public ProfileEnvelope(long writtenAtEpochMillis, WorldProfileIdentity identity,
+        List<ProfileReassociation> reassociations, List<NamedLocation> namedLocations, List<NamedRoute> namedRoutes,
+        List<NamedLoadout> namedLoadouts) {
+        this(
+            PersistenceSchema.CURRENT_VERSION,
+            PersistenceSchema.PROFILE_DOCUMENT_KIND,
+            writtenAtEpochMillis,
+            identity,
+            reassociations,
+            namedLocations,
+            namedRoutes,
+            namedLoadouts);
     }
 
     private ProfileEnvelope(int schemaVersion, String documentKind, long writtenAtEpochMillis,
         WorldProfileIdentity identity, List<ProfileReassociation> reassociations, List<NamedLocation> namedLocations,
-        List<NamedRoute> namedRoutes) {
+        List<NamedRoute> namedRoutes, List<NamedLoadout> namedLoadouts) {
         this.schemaVersion = schemaVersion;
         this.documentKind = documentKind;
         this.writtenAtEpochMillis = writtenAtEpochMillis;
@@ -39,6 +57,7 @@ public final class ProfileEnvelope {
         this.reassociations = immutableCopy(reassociations, "reassociations");
         this.namedLocations = immutableCopy(namedLocations, "namedLocations");
         this.namedRoutes = immutableCopy(namedRoutes, "namedRoutes");
+        this.namedLoadouts = immutableCopy(namedLoadouts, "namedLoadouts");
         validate();
     }
 
@@ -70,6 +89,10 @@ public final class ProfileEnvelope {
         return Collections.unmodifiableList(namedRoutes);
     }
 
+    public List<NamedLoadout> getNamedLoadouts() {
+        return Collections.unmodifiableList(namedLoadouts);
+    }
+
     void validate() {
         if (schemaVersion != PersistenceSchema.CURRENT_VERSION) {
             throw new IllegalArgumentException("profile schemaVersion must be " + PersistenceSchema.CURRENT_VERSION);
@@ -96,6 +119,15 @@ public final class ProfileEnvelope {
         PersistenceValidation.requireUniqueIds(namedRoutes, "profile namedRoutes");
         for (NamedRoute route : namedRoutes) {
             route.validate();
+        }
+        PersistenceValidation.requireList(namedLoadouts, "profile namedLoadouts");
+        Set<String> loadoutIds = new HashSet<>();
+        for (NamedLoadout loadout : namedLoadouts) {
+            loadout.validate();
+            if (!loadoutIds.add(loadout.getId())) {
+                throw new IllegalArgumentException(
+                    "profile namedLoadouts contains duplicate id '" + loadout.getId() + "'");
+            }
         }
     }
 
@@ -149,7 +181,8 @@ public final class ProfileEnvelope {
             && Objects.equals(identity, that.identity)
             && Objects.equals(reassociations, that.reassociations)
             && Objects.equals(namedLocations, that.namedLocations)
-            && Objects.equals(namedRoutes, that.namedRoutes);
+            && Objects.equals(namedRoutes, that.namedRoutes)
+            && Objects.equals(namedLoadouts, that.namedLoadouts);
     }
 
     @Override
@@ -161,6 +194,7 @@ public final class ProfileEnvelope {
             identity,
             reassociations,
             namedLocations,
-            namedRoutes);
+            namedRoutes,
+            namedLoadouts);
     }
 }

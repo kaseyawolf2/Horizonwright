@@ -13,6 +13,7 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParseException;
 import com.google.gson.JsonParser;
 
+import io.github.kaseyawolf2.horizonwright.core.logistics.NamedLoadout;
 import io.github.kaseyawolf2.horizonwright.core.task.TaskControllerState;
 
 final class PersistenceJsonCodec {
@@ -49,7 +50,18 @@ final class PersistenceJsonCodec {
 
                 @Override
                 public ProfileEnvelope normalize(JsonObject root, ProfileEnvelope value) {
-                    return value;
+                    java.util.List<NamedLoadout> loadouts = root.has("namedLoadouts") ? value.getNamedLoadouts()
+                        : java.util.Collections.<NamedLoadout>emptyList();
+                    if (loadouts == null) {
+                        throw new IllegalArgumentException("namedLoadouts must not be null");
+                    }
+                    return new ProfileEnvelope(
+                        value.getWrittenAtEpochMillis(),
+                        value.getIdentity(),
+                        value.getReassociations(),
+                        value.getNamedLocations(),
+                        value.getNamedRoutes(),
+                        loadouts);
                 }
             });
     }

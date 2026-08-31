@@ -26,7 +26,13 @@ continues blocking every integrated interaction packet; unintegrated mod
 traffic remains pass-through. Automatic activation selects a client-verified
 empty hotbar slot, authorizes only that exact slot-change and start-sneaking
 pair, then sends the one exact permit-bound grave use and releases sneaking.
-Restart evidence persistence and the physical recovery test remain incomplete.
+Restart checkpoints now retain bounded pre-death inventory and stable-grave
+evidence, allowing an interrupted recovery to revalidate safely and allowing a
+consumed grave activation to resume verification without replay. The physical
+recovery test remains incomplete. Milestone 3 shared operations have started
+with durable named loadouts and conservative whole-stack unload selection;
+arbitrary modded equipment is protected by configured identity rules rather
+than vanilla item-class guesses.
 Unattended operation remains disabled.
 
 ## Pinned target

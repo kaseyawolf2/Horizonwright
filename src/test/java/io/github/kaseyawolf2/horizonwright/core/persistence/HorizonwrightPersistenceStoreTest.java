@@ -89,6 +89,9 @@ public class HorizonwrightPersistenceStoreTest {
                 .getNodes()
                 .get(1)
                 .getDimensionId());
+        assertTrue(
+            profile.getNamedLoadouts()
+                .isEmpty());
     }
 
     @Test
