@@ -11,23 +11,34 @@ public final class RuntimeTaskRunnerFactory implements TaskRunnerFactory {
     private final NavigationRuntimeAccess navigation;
     private final ExcavationRuntimeAccess excavation;
     private final UnloadRuntimeAccess unload;
+    private final RepairRuntimeAccess repair;
 
     public RuntimeTaskRunnerFactory(NavigationRuntimeAccess navigation) {
-        this(navigation, DisabledExcavationRuntimeAccess.INSTANCE, DisabledUnloadRuntimeAccess.INSTANCE);
+        this(
+            navigation,
+            DisabledExcavationRuntimeAccess.INSTANCE,
+            DisabledUnloadRuntimeAccess.INSTANCE,
+            DisabledRepairRuntimeAccess.INSTANCE);
     }
 
     public RuntimeTaskRunnerFactory(NavigationRuntimeAccess navigation, ExcavationRuntimeAccess excavation) {
-        this(navigation, excavation, DisabledUnloadRuntimeAccess.INSTANCE);
+        this(navigation, excavation, DisabledUnloadRuntimeAccess.INSTANCE, DisabledRepairRuntimeAccess.INSTANCE);
     }
 
     public RuntimeTaskRunnerFactory(NavigationRuntimeAccess navigation, ExcavationRuntimeAccess excavation,
         UnloadRuntimeAccess unload) {
-        if (navigation == null || excavation == null || unload == null) {
-            throw new IllegalArgumentException("navigation, excavation, and unload must not be null");
+        this(navigation, excavation, unload, DisabledRepairRuntimeAccess.INSTANCE);
+    }
+
+    public RuntimeTaskRunnerFactory(NavigationRuntimeAccess navigation, ExcavationRuntimeAccess excavation,
+        UnloadRuntimeAccess unload, RepairRuntimeAccess repair) {
+        if (navigation == null || excavation == null || unload == null || repair == null) {
+            throw new IllegalArgumentException("navigation, excavation, unload, and repair must not be null");
         }
         this.navigation = navigation;
         this.excavation = excavation;
         this.unload = unload;
+        this.repair = repair;
     }
 
     @Override
@@ -43,6 +54,9 @@ public final class RuntimeTaskRunnerFactory implements TaskRunnerFactory {
         }
         if (UnloadTask.TYPE.equals(spec.getType())) {
             return new UnloadTaskRunner(spec, checkpoint, unload);
+        }
+        if (RepairTask.TYPE.equals(spec.getType())) {
+            return new RepairTaskRunner(spec, checkpoint, repair);
         }
         throw new IllegalArgumentException("unsupported runtime task type: " + spec.getType());
     }
@@ -68,6 +82,21 @@ public final class RuntimeTaskRunnerFactory implements TaskRunnerFactory {
 
         @Override
         public UnloadBackend getUnloadBackend() {
+            return null;
+        }
+
+        @Override
+        public boolean isDryRun() {
+            return false;
+        }
+    }
+
+    private enum DisabledRepairRuntimeAccess implements RepairRuntimeAccess {
+
+        INSTANCE;
+
+        @Override
+        public RepairBackend getRepairBackend() {
             return null;
         }
 

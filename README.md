@@ -52,6 +52,15 @@ stable digest of the entire predicted click chain before acquiring container
 authority, and revalidates the container on the following step. Restoring a
 prepared or awaiting-confirmation checkpoint always performs observation-only
 reconciliation first, so a crash cannot blindly replay an uncertain quick move.
+Pinned-version Tinkers repair is likewise a first-class resumable task. The
+runner applies the durability policy, accepts clicks only in semantic station,
+reserved-tool, or explicitly approved material slots, and fingerprints both
+the click chain and its tool/material evidence before execution. Completion
+requires the exact transaction plus synchronized proof that repair material was
+consumed, stable tool identity and maximum durability were retained, the tool
+returned to its reserved inventory slot, and `InfiTool.Damage` decreased.
+Rejected or mismatched confirmations enter an operator reconciliation hold and
+are never automatically replayed after restart.
 Unattended operation remains disabled.
 
 ## Pinned target
