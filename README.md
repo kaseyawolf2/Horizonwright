@@ -46,6 +46,12 @@ transaction number and matching server response; and refuses to expose a later
 click until the exact synchronized after-state is visible. Rejections, epoch
 changes, disconnects, and timeouts abort terminally, and an uncertain click is
 never resent. Inactive or unrelated packet traffic remains unchanged.
+Verified unloading is now also a first-class resumable task. It preserves named
+loadout reservations, applies the configured destination filter, checkpoints a
+stable digest of the entire predicted click chain before acquiring container
+authority, and revalidates the container on the following step. Restoring a
+prepared or awaiting-confirmation checkpoint always performs observation-only
+reconciliation first, so a crash cannot blindly replay an uncertain quick move.
 Unattended operation remains disabled.
 
 ## Pinned target
