@@ -26,7 +26,6 @@ import io.github.kaseyawolf2.horizonwright.core.persistence.HorizonwrightPersist
 import io.github.kaseyawolf2.horizonwright.core.persistence.ProfileBindingIndexStore;
 import io.github.kaseyawolf2.horizonwright.core.persistence.ProfileBindingKey;
 import io.github.kaseyawolf2.horizonwright.core.persistence.WorldProfileIdentity;
-import io.github.kaseyawolf2.horizonwright.core.safety.death.DeathSafetyPolicy;
 import io.github.kaseyawolf2.horizonwright.forge.client.container.LiveContainerTransactionExecutor;
 import io.github.kaseyawolf2.horizonwright.forge.client.container.LiveVanillaChestUnloadBackend;
 import io.github.kaseyawolf2.horizonwright.forge.client.container.ProfileVanillaChestUnloadConfiguration;
@@ -41,7 +40,6 @@ import io.github.kaseyawolf2.horizonwright.forge.client.persistence.Singleplayer
 import io.github.kaseyawolf2.horizonwright.forge.client.repair.LiveTinkersRepairBackend;
 import io.github.kaseyawolf2.horizonwright.forge.client.repair.ProfileTinkersRepairConfiguration;
 import io.github.kaseyawolf2.horizonwright.forge.client.repair.TinkersRepairCompatibilityProbe;
-import io.github.kaseyawolf2.horizonwright.forge.client.safety.LiveClientDeathSafetyBoundaryFactory;
 import io.github.kaseyawolf2.horizonwright.forge.client.sleep.LiveVanillaSleepBackend;
 import io.github.kaseyawolf2.horizonwright.forge.client.sleep.ProfileSleepConfiguration;
 import io.github.kaseyawolf2.horizonwright.runtime.persistence.profile.ProfileAssetEditor;
@@ -52,6 +50,7 @@ import io.github.kaseyawolf2.horizonwright.runtime.persistence.session.ClientPro
 import io.github.kaseyawolf2.horizonwright.runtime.persistence.session.ClientProfileBindingState;
 import io.github.kaseyawolf2.horizonwright.runtime.persistence.session.ClientRuntimeSessionManager;
 import io.github.kaseyawolf2.horizonwright.runtime.persistence.session.CurrentRuntimeProvider;
+import io.github.kaseyawolf2.horizonwright.runtime.persistence.session.DisabledDeathSafetyBoundary;
 import io.github.kaseyawolf2.horizonwright.runtime.persistence.session.HorizonwrightRuntimeSessionFactory;
 import io.github.kaseyawolf2.horizonwright.runtime.persistence.session.RuntimeConnectionToken;
 import io.github.kaseyawolf2.horizonwright.runtime.persistence.session.TaskControllerRuntimeSessionPersistence;
@@ -68,7 +67,6 @@ public final class ClientBootstrap {
     private final ClientScheduleEnvironmentTracker scheduleEnvironment = new ClientScheduleEnvironmentTracker();
     private ClientRuntimeSessionManager runtimeSessions;
     private HorizonwrightPersistenceStore persistenceStore;
-    private LiveClientDeathSafetyBoundaryFactory deathSafetyBoundaries;
     private ClientProfileBindingCoordinator profileBindings;
     private NetworkManager connectionManager;
     private RuntimeConnectionToken connectionToken;
@@ -101,9 +99,6 @@ public final class ClientBootstrap {
             throw new IllegalArgumentException("stateRoot must not be null");
         }
         persistenceStore = new HorizonwrightPersistenceStore(stateRoot);
-        deathSafetyBoundaries = new LiveClientDeathSafetyBoundaryFactory(
-            persistenceStore,
-            DeathSafetyPolicy.planDefaults(6));
         profileBindings = new ClientProfileBindingCoordinator(
             new ProfileBindingIndexStore(stateRoot),
             persistenceStore,
@@ -115,7 +110,7 @@ public final class ClientBootstrap {
             boolean connected = minecraft.theWorld != null && minecraft.thePlayer != null;
             long worldTime = connected ? minecraft.theWorld.getWorldTime() : 0L;
             return scheduleEnvironment.observe(connected, worldTime, Collections.<String>emptySet());
-        }, deathSafetyBoundaries),
+        }, (runtime, connection) -> new DisabledDeathSafetyBoundary()),
             identity -> new TaskControllerRuntimeSessionPersistence(persistenceStore, identity),
             System::currentTimeMillis);
         ClientRegistry.registerKeyBinding(dashboardKey);
@@ -310,7 +305,7 @@ public final class ClientBootstrap {
                 .bindRepairBackend(liveRepairBackend);
             packetFirewall = new ClientPacketFirewallInstaller(
                 attachedRuntime.getActionSessionGuard(),
-                deathSafetyBoundaries.requirePacketBridgeFactory(attachedRuntime),
+                null,
                 containerTransactions);
         }
     }
