@@ -1,9 +1,17 @@
 package io.github.kaseyawolf2.horizonwright.forge.client.farm;
 
+import net.minecraft.block.Block;
+import net.minecraft.init.Blocks;
+
 import io.github.kaseyawolf2.horizonwright.core.base.CropFamily;
 
 /** Exact vanilla 1.7.10 crop maturity and replant-material table. */
 final class VanillaCropClassifier {
+
+    Descriptor classify(Block block, String registeredBlockId, int metadata) {
+        String canonicalId = canonicalVanillaId(block);
+        return classify(canonicalId == null ? registeredBlockId : canonicalId, metadata);
+    }
 
     Descriptor classify(String blockId, int metadata) {
         if (blockId == null || metadata < 0 || metadata > 15) return null;
@@ -19,6 +27,14 @@ final class VanillaCropClassifier {
         if ("minecraft:nether_wart".equals(blockId)) {
             return new Descriptor(blockId, metadata, 3, "minecraft:nether_wart", 0);
         }
+        return null;
+    }
+
+    private static String canonicalVanillaId(Block block) {
+        if (block == Blocks.wheat) return "minecraft:wheat";
+        if (block == Blocks.carrots) return "minecraft:carrots";
+        if (block == Blocks.potatoes) return "minecraft:potatoes";
+        if (block == Blocks.nether_wart) return "minecraft:nether_wart";
         return null;
     }
 

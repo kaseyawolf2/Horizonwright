@@ -5,6 +5,8 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
+import net.minecraft.init.Blocks;
+
 import org.junit.Test;
 
 import io.github.kaseyawolf2.horizonwright.core.container.ItemFingerprint;
@@ -28,6 +30,13 @@ public class VanillaCropClassifierTest {
         assertNull(classifier.classify("harvestcraft:pamcrop", 7));
         assertNull(classifier.classify("minecraft:wheat", -1));
         assertNull(classifier.classify("minecraft:wheat", 16));
+    }
+
+    @Test
+    public void exactVanillaBlockIdentitySurvivesLegacyRegistryAliases() {
+        VanillaCropClassifier.Descriptor wheat = classifier.classify(Blocks.wheat, "legacy:wheat_alias", 7);
+        assertEquals("minecraft:wheat|meta=7", wheat.getObservationFingerprint());
+        assertTrue(wheat.isMature());
     }
 
     @Test

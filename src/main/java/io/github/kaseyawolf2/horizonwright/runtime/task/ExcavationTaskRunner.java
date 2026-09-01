@@ -42,8 +42,8 @@ final class ExcavationTaskRunner implements TaskRunner {
 
     private static final int TARGETS_PER_PLAN = 1;
     private static final long POLL_DELAY_MILLIS = 0L;
-    private static final Set<ActionCapability> REQUIRED_CAPABILITIES = Collections
-        .unmodifiableSet(EnumSet.of(ActionCapability.MOVEMENT, ActionCapability.LOOK, ActionCapability.DIG));
+    private static final Set<ActionCapability> REQUIRED_CAPABILITIES = Collections.unmodifiableSet(
+        EnumSet.of(ActionCapability.MOVEMENT, ActionCapability.LOOK, ActionCapability.DIG, ActionCapability.HELD_USE));
 
     private final TaskSpec spec;
     private final CylinderExcavationSpec cylinder;
@@ -256,7 +256,7 @@ final class ExcavationTaskRunner implements TaskRunner {
                 context.getActionEpoch(),
                 taskCheckpoint,
                 POLL_DELAY_MILLIS,
-                "waiting for MOVEMENT, LOOK, and DIG capabilities");
+                "waiting for MOVEMENT, LOOK, DIG, and tool-selection capabilities");
         }
         ActionLease lease = acquired.get();
         ExcavationIntent intent = plan.getIntents()

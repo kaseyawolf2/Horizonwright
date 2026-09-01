@@ -135,9 +135,9 @@ public final class MinecraftVanillaFarmObserver {
     private CropObservation observeIfCrop(BasePosition position) {
         Block block = minecraft.theWorld.getBlock(position.getX(), position.getY(), position.getZ());
         Object registryName = Block.blockRegistry.getNameForObject(block);
-        if (registryName == null) return null;
         int metadata = minecraft.theWorld.getBlockMetadata(position.getX(), position.getY(), position.getZ());
-        VanillaCropClassifier.Descriptor descriptor = classifier.classify(registryName.toString(), metadata);
+        VanillaCropClassifier.Descriptor descriptor = classifier
+            .classify(block, registryName == null ? null : registryName.toString(), metadata);
         if (descriptor == null) return null;
         TileEntity tile = minecraft.theWorld.getTileEntity(position.getX(), position.getY(), position.getZ());
         return new CropObservation(

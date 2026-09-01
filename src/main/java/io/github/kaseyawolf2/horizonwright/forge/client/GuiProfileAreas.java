@@ -31,6 +31,8 @@ public final class GuiProfileAreas extends GuiScreen {
     private static final int SAVE_BUTTON = 4;
     private static final int QUEUE_FARM_BUTTON = 5;
     private static final int SCHEDULE_FARM_BUTTON = 6;
+    private static final int SAVED_AREAS_BUTTON = 7;
+    private static final int CLOSE_BUTTON = 8;
 
     private final GuiScreen parent;
     private final CurrentRuntimeProvider runtimeProvider;
@@ -91,6 +93,9 @@ public final class GuiProfileAreas extends GuiScreen {
                 panelWidth - 36,
                 22,
                 "Schedule recurring farm passes"));
+        buttonList.add(new GuiButton(CLOSE_BUTTON, left + 18, top + 278, 70, 20, "Close"));
+        buttonList
+            .add(new GuiButton(SAVED_AREAS_BUTTON, left + (panelWidth - 100) / 2, top + 278, 100, 20, "Saved areas"));
         buttonList.add(new GuiButton(BACK_BUTTON, left + panelWidth - 82, top + 278, 70, 20, "Back"));
         refreshCount();
         if (capture.hasFirst() || capture.hasSecond()) {
@@ -107,6 +112,14 @@ public final class GuiProfileAreas extends GuiScreen {
     protected void actionPerformed(GuiButton button) {
         if (button.id == BACK_BUTTON) {
             mc.displayGuiScreen(parent);
+            return;
+        }
+        if (button.id == CLOSE_BUTTON) {
+            mc.displayGuiScreen(null);
+            return;
+        }
+        if (button.id == SAVED_AREAS_BUTTON) {
+            mc.displayGuiScreen(new GuiSavedAreas(this, editorProvider));
             return;
         }
         try {

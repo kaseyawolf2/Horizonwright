@@ -3,8 +3,10 @@ package io.github.kaseyawolf2.horizonwright.forge.client.excavation;
 import java.util.EnumSet;
 import java.util.concurrent.TimeUnit;
 
+import net.minecraft.block.Block;
 import net.minecraft.client.Minecraft;
 import net.minecraft.entity.player.EntityPlayer;
+import net.minecraft.item.ItemStack;
 import net.minecraft.util.MovingObjectPosition;
 import net.minecraft.util.Vec3;
 
@@ -25,6 +27,7 @@ import io.github.kaseyawolf2.horizonwright.core.navigation.NavigationRequest;
 import io.github.kaseyawolf2.horizonwright.core.navigation.NavigationState;
 import io.github.kaseyawolf2.horizonwright.core.repair.RepairPolicy;
 import io.github.kaseyawolf2.horizonwright.core.repair.RepairToolSnapshot;
+import io.github.kaseyawolf2.horizonwright.forge.client.network.ActionPacketDispatch;
 import io.github.kaseyawolf2.horizonwright.forge.client.repair.TinkersInventoryToolReader;
 import io.github.kaseyawolf2.horizonwright.runtime.task.ConfirmedExcavationTargetResult;
 import io.github.kaseyawolf2.horizonwright.runtime.task.ExcavationActionHandle;
@@ -46,7 +49,7 @@ public final class LiveExcavationBackend implements ExcavationBackend {
     }
 
     private static final EnumSet<ActionCapability> REQUIRED = EnumSet
-        .of(ActionCapability.MOVEMENT, ActionCapability.LOOK, ActionCapability.DIG);
+        .of(ActionCapability.MOVEMENT, ActionCapability.LOOK, ActionCapability.DIG, ActionCapability.HELD_USE);
     private static final int APPROACH_TOLERANCE = 3;
     private static final long ACTION_TIMEOUT_NANOS = TimeUnit.SECONDS.toNanos(20L);
 
@@ -209,6 +212,8 @@ public final class LiveExcavationBackend implements ExcavationBackend {
         private String detail = "Preparing exact-target approach";
         private ConfirmedExcavationTargetResult confirmed;
         private boolean ownsDigSession;
+        private int priorHotbarSlot = -1;
+        private boolean toolSlotChanged;
         private volatile boolean cancellationRequested;
 
         private LiveHandle(ExcavationActionRequest request, ActionLease lease, NavigationBackend navigation,
@@ -326,6 +331,7 @@ public final class LiveExcavationBackend implements ExcavationBackend {
             }
             guard.begin(lease);
             ownsDigSession = true;
+            selectBestHotbarTool();
             phase = Phase.DIGGING;
             detail = "Digging one fingerprint-bound block";
             aimAtTarget();
@@ -342,8 +348,7 @@ public final class LiveExcavationBackend implements ExcavationBackend {
             }
             ExcavationObservation current = currentObservation();
             if (isAir(current)) {
-                stopDigSession();
-                confirm(ExcavationTargetOutcome.COMPLETED, "Exact target is confirmed air");
+                finishConfirmedDig();
                 return;
             }
             if (!sameFingerprint(current)) {
@@ -384,9 +389,64 @@ public final class LiveExcavationBackend implements ExcavationBackend {
         private void stopDigSession() {
             if (!ownsDigSession) return;
             minecraft.playerController.resetBlockRemoving();
+            restoreHotbarSlot();
             guard.quarantine(lease);
             guard.end(lease);
             ownsDigSession = false;
+        }
+
+        private void finishConfirmedDig() {
+            minecraft.playerController.resetBlockRemoving();
+            restoreHotbarSlot();
+            phase = Phase.FINISHING;
+            detail = "Exact target is air; dispatching the final tool state";
+            try {
+                ActionPacketDispatch.afterPendingWrites(minecraft, () -> {
+                    synchronized (LiveHandle.this) {
+                        if (ownsDigSession) {
+                            guard.quarantine(lease);
+                            guard.end(lease);
+                            ownsDigSession = false;
+                        }
+                        confirm(ExcavationTargetOutcome.COMPLETED, "Exact target is confirmed air");
+                    }
+                });
+            } catch (RuntimeException failure) {
+                stopDigSession();
+                fail("Could not finish the excavation packet boundary: " + failure.getMessage());
+            }
+        }
+
+        private void selectBestHotbarTool() {
+            BlockPosition position = request.getIntent()
+                .getPosition();
+            Block target = minecraft.theWorld.getBlock(position.getX(), position.getY(), position.getZ());
+            int selected = minecraft.thePlayer.inventory.currentItem;
+            float bestStrength = strength(minecraft.thePlayer.inventory.mainInventory[selected], target);
+            for (int slot = 0; slot < 9; slot++) {
+                float strength = strength(minecraft.thePlayer.inventory.mainInventory[slot], target);
+                if (strength > bestStrength) {
+                    bestStrength = strength;
+                    selected = slot;
+                }
+            }
+            priorHotbarSlot = minecraft.thePlayer.inventory.currentItem;
+            if (selected != priorHotbarSlot) {
+                minecraft.thePlayer.inventory.currentItem = selected;
+                minecraft.playerController.updateController();
+                toolSlotChanged = true;
+            }
+        }
+
+        private float strength(ItemStack stack, Block target) {
+            return stack == null ? 1.0F : stack.func_150997_a(target);
+        }
+
+        private void restoreHotbarSlot() {
+            if (!toolSlotChanged || priorHotbarSlot < 0) return;
+            minecraft.thePlayer.inventory.currentItem = priorHotbarSlot;
+            minecraft.playerController.updateController();
+            toolSlotChanged = false;
         }
 
         private void stopProducers() {
@@ -515,7 +575,8 @@ public final class LiveExcavationBackend implements ExcavationBackend {
     private enum Phase {
         APPROACHING,
         WAITING_FOR_DIG_SESSION,
-        DIGGING
+        DIGGING,
+        FINISHING
     }
 
     private static long saturatingAdd(long left, long right) {

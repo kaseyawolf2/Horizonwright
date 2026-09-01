@@ -24,6 +24,7 @@ import io.github.kaseyawolf2.horizonwright.core.navigation.NavigationHandle;
 import io.github.kaseyawolf2.horizonwright.core.navigation.NavigationProgress;
 import io.github.kaseyawolf2.horizonwright.core.navigation.NavigationRequest;
 import io.github.kaseyawolf2.horizonwright.core.navigation.NavigationState;
+import io.github.kaseyawolf2.horizonwright.forge.client.network.ActionPacketDispatch;
 import io.github.kaseyawolf2.horizonwright.runtime.task.FarmBackend;
 
 /** Exact vanilla crop approach, break, hotbar replant, and immutable postcondition backend. */
@@ -182,6 +183,7 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
         private String detail = "Preparing exact crop approach";
         private CropObservation confirmedAfter;
         private boolean ownsActionSession;
+        private boolean replantDispatched;
         private boolean slotChanged;
         private volatile boolean cancellationRequested;
 
@@ -248,6 +250,7 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
             else if (phase == Phase.WAITING_FOR_ACTION_SESSION) beginActionWhenReady();
             else if (phase == Phase.BREAKING) breakOneTick();
             else if (phase == Phase.PLANTING) plantOnce();
+            else if (phase == Phase.DISPATCHING_REPLANT) awaitReplantDispatch();
             else if (phase == Phase.CONFIRMING) confirmReplacement();
             return snapshot();
         }
@@ -389,9 +392,29 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
                 1,
                 Vec3.createVectorHelper(target.getX() + 0.5D, target.getY(), target.getZ() + 0.5D));
             restoreSlot();
-            stopActionSession();
             if (!used) {
+                stopActionSession();
                 fail("Server interaction did not accept the exact replant attempt");
+                return;
+            }
+            phase = Phase.DISPATCHING_REPLANT;
+            detail = "Dispatching the exact replant interaction";
+            try {
+                ActionPacketDispatch.afterPendingWrites(minecraft, () -> {
+                    synchronized (LiveHandle.this) {
+                        stopActionSession();
+                        replantDispatched = true;
+                    }
+                });
+            } catch (RuntimeException failure) {
+                stopActionSession();
+                fail("Could not dispatch the exact replant interaction: " + failure.getMessage());
+            }
+        }
+
+        private void awaitReplantDispatch() {
+            if (!replantDispatched) {
+                detail = "Waiting for the replant packet boundary";
                 return;
             }
             phase = Phase.CONFIRMING;
@@ -513,6 +536,7 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
         WAITING_FOR_ACTION_SESSION,
         BREAKING,
         PLANTING,
+        DISPATCHING_REPLANT,
         CONFIRMING
     }
 

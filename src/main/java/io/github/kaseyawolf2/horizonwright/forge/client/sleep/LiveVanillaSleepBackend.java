@@ -30,6 +30,7 @@ import io.github.kaseyawolf2.horizonwright.core.navigation.NavigationProgress;
 import io.github.kaseyawolf2.horizonwright.core.navigation.NavigationRequest;
 import io.github.kaseyawolf2.horizonwright.core.navigation.NavigationState;
 import io.github.kaseyawolf2.horizonwright.core.persistence.NamedLocation;
+import io.github.kaseyawolf2.horizonwright.forge.client.network.ActionPacketDispatch;
 import io.github.kaseyawolf2.horizonwright.runtime.task.SleepBackend;
 
 /** Conservative registered-vanilla-bed interaction with fresh danger and block evidence. */
@@ -233,6 +234,7 @@ public final class LiveVanillaSleepBackend implements SleepBackend {
         private ActionState state = ActionState.SUBMITTED;
         private String detail = "Preparing registered bed approach";
         private boolean ownsActionSession;
+        private boolean interactionDispatched;
         private volatile boolean cancellationRequested;
 
         private LiveHandle(ActionRequest request, ActionLease lease, NavigationBackend navigation,
@@ -293,6 +295,7 @@ public final class LiveVanillaSleepBackend implements SleepBackend {
             }
             if (phase == Phase.APPROACHING) pollApproach();
             else if (phase == Phase.WAITING_FOR_ACTION_SESSION) interactWhenReady();
+            else if (phase == Phase.DISPATCHING_INTERACTION) awaitInteractionDispatch();
             else if (phase == Phase.CONFIRMING) confirmSleep();
             return snapshot();
         }
@@ -363,6 +366,26 @@ public final class LiveVanillaSleepBackend implements SleepBackend {
             stopActionSession();
             if (!accepted) {
                 fail("Minecraft rejected the registered bed interaction");
+                return;
+            }
+            phase = Phase.DISPATCHING_INTERACTION;
+            detail = "Dispatching the registered-bed interaction";
+            try {
+                ActionPacketDispatch.afterPendingWrites(minecraft, () -> {
+                    synchronized (LiveHandle.this) {
+                        stopActionSession();
+                        interactionDispatched = true;
+                    }
+                });
+            } catch (RuntimeException failure) {
+                stopActionSession();
+                fail("Could not dispatch the registered-bed interaction: " + failure.getMessage());
+            }
+        }
+
+        private void awaitInteractionDispatch() {
+            if (!interactionDispatched) {
+                detail = "Waiting for the registered-bed packet boundary";
                 return;
             }
             phase = Phase.CONFIRMING;
@@ -442,6 +465,7 @@ public final class LiveVanillaSleepBackend implements SleepBackend {
     private enum Phase {
         APPROACHING,
         WAITING_FOR_ACTION_SESSION,
+        DISPATCHING_INTERACTION,
         CONFIRMING
     }
 
