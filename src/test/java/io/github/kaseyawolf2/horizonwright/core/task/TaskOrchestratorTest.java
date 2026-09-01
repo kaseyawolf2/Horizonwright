@@ -147,6 +147,39 @@ public class TaskOrchestratorTest {
     }
 
     @Test
+    public void removesQueuedTasksButRefusesActiveWork() {
+        FakeClock clock = new FakeClock();
+        TaskOrchestrator orchestrator = newOrchestrator(
+            clock,
+            (spec, checkpoint) -> context -> StepResult
+                .progress(context.getActionEpoch(), context.getCheckpoint(), "working"));
+        orchestrator.submit(spec("active", TaskLane.MANUAL));
+        orchestrator.submit(spec("queued", TaskLane.FALLBACK));
+        orchestrator.tick();
+
+        assertEquals(
+            "queued",
+            orchestrator.remove("queued")
+                .getSpec()
+                .getId());
+        assertFalse(
+            orchestrator.inspect("queued")
+                .isPresent());
+        try {
+            orchestrator.remove("active");
+            fail("expected active task deletion refusal");
+        } catch (IllegalStateException expected) {
+            assertTrue(
+                expected.getMessage()
+                    .contains("must finish or be cancelled"));
+        }
+
+        assertTrue(
+            orchestrator.inspect("active")
+                .isPresent());
+    }
+
+    @Test
     public void externalActionRevocationBlocksTheTaskAndRejectsItsLateResult() {
         FakeClock clock = new FakeClock();
         InMemoryActionBroker actionBroker = new InMemoryActionBroker();

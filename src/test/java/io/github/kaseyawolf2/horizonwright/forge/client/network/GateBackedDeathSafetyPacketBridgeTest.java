@@ -1,5 +1,6 @@
 package io.github.kaseyawolf2.horizonwright.forge.client.network;
 
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
 
@@ -99,7 +100,7 @@ public class GateBackedDeathSafetyPacketBridgeTest {
         C16PacketClientStatus respawn = new C16PacketClientStatus(C16PacketClientStatus.EnumState.PERFORM_RESPAWN);
         assertTrue(channel.writeOutbound(respawn));
         assertSame(respawn, channel.readOutbound());
-        assertTrue(
+        assertFalse(
             controller.snapshot()
                 .isRespawnRequestConsumed());
         channel.finish();

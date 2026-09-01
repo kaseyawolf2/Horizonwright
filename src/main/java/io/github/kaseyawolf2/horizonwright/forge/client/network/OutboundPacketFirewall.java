@@ -4,7 +4,6 @@ import net.minecraft.network.play.client.C08PacketPlayerBlockPlacement;
 import net.minecraft.network.play.client.C09PacketHeldItemChange;
 import net.minecraft.network.play.client.C0BPacketEntityAction;
 import net.minecraft.network.play.client.C0EPacketClickWindow;
-import net.minecraft.network.play.client.C16PacketClientStatus;
 import net.minecraft.network.play.server.S06PacketUpdateHealth;
 import net.minecraft.network.play.server.S32PacketConfirmTransaction;
 
@@ -79,10 +78,9 @@ final class OutboundPacketFirewall extends ChannelDuplexHandler {
 
     @Override
     public void write(ChannelHandlerContext context, Object message, ChannelPromise promise) throws Exception {
-        if (deathSafetyBridge != null && isPerformRespawn(message)) {
-            authorizeRespawnWrite(context, message, promise);
-            return;
-        }
+        // Respawn is a direct vanilla player control, not a Horizonwright automation action. Let it pass
+        // unchanged. The death controller still observes the resulting live-player state and keeps all task
+        // authority revoked until post-respawn validation completes.
         if (deathSafetyBridge != null && message instanceof C08PacketPlayerBlockPlacement) {
             if (authorizeGraveActivationWrite(context, (C08PacketPlayerBlockPlacement) message, promise)) {
                 return;
@@ -156,27 +154,6 @@ final class OutboundPacketFirewall extends ChannelDuplexHandler {
             lifecycleListener.onFirewallUnavailable(context, true);
         }
         context.fireChannelInactive();
-    }
-
-    private void authorizeRespawnWrite(ChannelHandlerContext context, Object message, ChannelPromise promise) {
-        OneShotWriteContinuation continuation = new OneShotWriteContinuation();
-        final boolean authorized;
-        try {
-            authorized = deathSafetyBridge.tryAuthorizeRespawnPacket(continuation);
-            continuation.close();
-            if (authorized != continuation.wasInvoked()) {
-                throw new IllegalStateException("respawn bridge decision did not match its write continuation");
-            }
-        } catch (RuntimeException failure) {
-            continuation.close();
-            failClosedOutbound(context, message, promise, failure);
-            return;
-        }
-        if (authorized) {
-            context.write(message, promise);
-        } else {
-            rejectSpecializedWrite(message, promise, "player respawn");
-        }
     }
 
     /** @return true when the bridge handled the packet, whether authorized or rejected. */
@@ -291,11 +268,6 @@ final class OutboundPacketFirewall extends ChannelDuplexHandler {
         if (lifecycleListener != null) {
             lifecycleListener.onFirewallFailure(context, failure);
         }
-    }
-
-    private static boolean isPerformRespawn(Object message) {
-        return message instanceof C16PacketClientStatus
-            && ((C16PacketClientStatus) message).func_149435_c() == C16PacketClientStatus.EnumState.PERFORM_RESPAWN;
     }
 
     private static final class OneShotWriteContinuation implements Runnable {

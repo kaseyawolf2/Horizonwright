@@ -374,6 +374,11 @@ public final class HorizonwrightRuntime implements AutoCloseable {
         return controller.cancel(taskId);
     }
 
+    public TaskSnapshot removeTask(String taskId) {
+        ensureOpen();
+        return controller.remove(taskId);
+    }
+
     public boolean isDryRun() {
         return dryRun;
     }

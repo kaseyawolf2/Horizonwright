@@ -17,6 +17,9 @@ public interface IHorizonwrightController {
 
     TaskSnapshot cancel(String taskId);
 
+    /** Permanently removes a task that is not currently executing or draining an action. */
+    TaskSnapshot remove(String taskId);
+
     TaskSnapshot reorder(String taskId, int targetPosition);
 
     Optional<TaskSnapshot> inspect(String taskId);

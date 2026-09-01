@@ -63,27 +63,16 @@ public class DeathSafetyPacketBoundaryTest {
     }
 
     @Test
-    public void performRespawnMustBeConsumedBySpecializedGate() {
-        RecordingBridge rejectedBridge = new RecordingBridge(new ArrayList<>());
-        EmbeddedChannel rejected = new EmbeddedChannel(
-            new OutboundPacketFirewall(new ActionSessionGuard(), null, rejectedBridge));
-        C16PacketClientStatus rejectedPacket = respawnPacket();
+    public void physicalRespawnPassesWithoutAutomationAuthorization() {
+        RecordingBridge bridge = new RecordingBridge(new ArrayList<>());
+        EmbeddedChannel channel = new EmbeddedChannel(
+            new OutboundPacketFirewall(new ActionSessionGuard(), null, bridge));
+        C16PacketClientStatus packet = respawnPacket();
 
-        rejected.writeOutbound(rejectedPacket);
-        assertNull(rejected.readOutbound());
-        assertEquals(1, rejectedBridge.respawnAttempts);
-
-        RecordingBridge authorizedBridge = new RecordingBridge(new ArrayList<>());
-        authorizedBridge.authorizeRespawn = true;
-        EmbeddedChannel authorized = new EmbeddedChannel(
-            new OutboundPacketFirewall(new ActionSessionGuard(), null, authorizedBridge));
-        C16PacketClientStatus authorizedPacket = respawnPacket();
-
-        assertTrue(authorized.writeOutbound(authorizedPacket));
-        assertSame(authorizedPacket, authorized.readOutbound());
-        assertEquals(1, authorizedBridge.respawnAttempts);
-        rejected.finish();
-        authorized.finish();
+        assertTrue(channel.writeOutbound(packet));
+        assertSame(packet, channel.readOutbound());
+        assertEquals(0, bridge.respawnAttempts);
+        channel.finish();
     }
 
     @Test
@@ -106,7 +95,7 @@ public class DeathSafetyPacketBoundaryTest {
     }
 
     @Test
-    public void inconsistentSpecializedDecisionFailsTheExactWriteWithoutClosingTransport() {
+    public void physicalRespawnDoesNotConsultAFailingAutomationRespawnBridge() {
         RecordingBridge bridge = new RecordingBridge(new ArrayList<>()) {
 
             @Override
@@ -116,17 +105,13 @@ public class DeathSafetyPacketBoundaryTest {
         };
         ActionSessionGuard guard = activeGuard(EnumSet.of(ActionCapability.MOVEMENT));
         EmbeddedChannel channel = new EmbeddedChannel(new OutboundPacketFirewall(guard, null, bridge));
+        C16PacketClientStatus packet = respawnPacket();
 
-        try {
-            channel.writeOutbound(respawnPacket());
-        } catch (RuntimeException expected) {
-            // EmbeddedChannel surfaces the deliberately failed exact-packet promise.
-        }
-
+        assertTrue(channel.writeOutbound(packet));
+        assertSame(packet, channel.readOutbound());
         assertTrue(channel.isOpen());
-        assertFalse(guard.isReadyForSession());
-        assertEquals(ActionSessionGuard.Mode.QUARANTINED, guard.getMode());
-        assertNull(channel.readOutbound());
+        assertEquals(ActionSessionGuard.Mode.ACTIVE, guard.getMode());
+        assertEquals(0, bridge.respawnAttempts);
 
         Object unknown = new Object();
         assertTrue(channel.writeOutbound(unknown));
@@ -225,7 +210,7 @@ public class DeathSafetyPacketBoundaryTest {
     }
 
     @Test
-    public void installedBridgeFailureStaysDisabledWhileUnknownTrafficKeepsFlowing() {
+    public void installedFirewallDoesNotInvokeRespawnAutomationBridge() {
         RecordingBridge bridge = new RecordingBridge(new ArrayList<>()) {
 
             @Override
@@ -249,20 +234,17 @@ public class DeathSafetyPacketBoundaryTest {
         ActionLease lease = broker.tryAcquire("test", EnumSet.of(ActionCapability.MOVEMENT))
             .get();
         guard.begin(lease);
-        try {
-            channel.writeOutbound(respawnPacket());
-        } catch (RuntimeException expected) {
-            // The exact packet is denied with a failed promise; the transport remains healthy.
-        }
+        C16PacketClientStatus respawn = respawnPacket();
+        assertTrue(channel.writeOutbound(respawn));
 
-        assertEquals(ClientPacketFirewallInstaller.State.FAILED, installer.getState());
-        assertEquals(ActionSessionGuard.Mode.QUARANTINED, guard.getMode());
+        assertEquals(ClientPacketFirewallInstaller.State.INSTALLED, installer.getState());
+        assertEquals(ActionSessionGuard.Mode.ACTIVE, guard.getMode());
         assertTrue(channel.isOpen());
-        assertNull(channel.readOutbound());
+        assertSame(respawn, channel.readOutbound());
 
         installer.ensureInstalled(manager, channel);
         channel.runPendingTasks();
-        assertEquals(ClientPacketFirewallInstaller.State.FAILED, installer.getState());
+        assertEquals(ClientPacketFirewallInstaller.State.INSTALLED, installer.getState());
         assertFalse(installer.isReady());
 
         Object unknown = new Object();

@@ -242,6 +242,24 @@ public final class TaskOrchestrator implements IHorizonwrightController, ActionR
     }
 
     @Override
+    public TaskSnapshot remove(String taskId) {
+        synchronized (this) {
+            long now = readNow();
+            TaskRecord record = requireTask(taskId);
+            if (isActive(record) || record.state == TaskState.RUNNING || record.state == TaskState.SUSPENDING) {
+                throw new IllegalStateException(
+                    "active or draining tasks must finish or be cancelled before deletion: " + record.spec.getId());
+            }
+            TaskSnapshot removed = taskSnapshotAt(record.spec.getId(), now);
+            removeFromLane(record);
+            record.controlVersion++;
+            record.buildToken = 0L;
+            tasks.remove(record.spec.getId());
+            return removed;
+        }
+    }
+
+    @Override
     public TaskSnapshot reorder(String taskId, int targetPosition) {
         synchronized (this) {
             long now = readNow();

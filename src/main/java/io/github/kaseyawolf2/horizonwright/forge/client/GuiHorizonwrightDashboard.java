@@ -28,6 +28,7 @@ public final class GuiHorizonwrightDashboard extends GuiScreen {
     private static final int DRY_RUN_BUTTON = 4;
     private static final int BARITONE_TAB_BUTTON = 5;
     private static final int PROFILE_ASSETS_TAB_BUTTON = 6;
+    private static final int TASKS_BUTTON = 7;
     private static final int RESUME_CHOICE_BUTTON_BASE = 100;
     private static final int RESUME_PREVIOUS_BUTTON = 200;
     private static final int RESUME_NEXT_BUTTON = 201;
@@ -86,6 +87,7 @@ public final class GuiHorizonwrightDashboard extends GuiScreen {
         buttonList.add(new GuiButton(CLOSE_BUTTON, left + panelWidth - 82, top + 232, 70, 20, "Close"));
         buttonList.add(new GuiButton(BARITONE_TAB_BUTTON, left + panelWidth - 94, top + 8, 82, 20, "Baritone"));
         buttonList.add(new GuiButton(PROFILE_ASSETS_TAB_BUTTON, left + 12, top + 8, 92, 20, "Profile assets"));
+        buttonList.add(new GuiButton(TASKS_BUTTON, left + 110, top + 8, 64, 20, "Tasks"));
 
         resumeChoiceButtons.clear();
         for (int index = 0; index < RESUME_CHOICES_PER_PAGE; index++) {
@@ -121,6 +123,10 @@ public final class GuiHorizonwrightDashboard extends GuiScreen {
         }
         if (button.id == PROFILE_ASSETS_TAB_BUTTON) {
             mc.displayGuiScreen(new GuiProfileAssets(this, runtimeProvider, profileEditorProvider));
+            return;
+        }
+        if (button.id == TASKS_BUTTON) {
+            mc.displayGuiScreen(new GuiTaskManager(this, runtimeProvider));
             return;
         }
         CurrentRuntimeUiResolver.Resolution resolution = CurrentRuntimeUiResolver.resolve(runtimeProvider);
@@ -336,6 +342,17 @@ public final class GuiHorizonwrightDashboard extends GuiScreen {
         }
 
         super.drawScreen(mouseX, mouseY, partialTicks);
+        if (!resumeSelectorOpen && blockedTask != null
+            && mouseX >= left + 108
+            && mouseX <= left + panelWidth - 12
+            && mouseY >= top + 82
+            && mouseY <= top + 100) {
+            drawHoveringText(
+                fontRendererObj.listFormattedStringToWidth(GuiTaskManager.taskDetails(blockedTask), panelWidth - 64),
+                mouseX,
+                mouseY,
+                fontRendererObj);
+        }
     }
 
     private void drawUnavailableScreen(int mouseX, int mouseY, float partialTicks, String diagnostic) {
