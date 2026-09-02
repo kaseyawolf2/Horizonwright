@@ -35,9 +35,9 @@ build.
 - Use: exact, hash-verified `devOnlyNonPublishable` compile/local-development
   input and separately installed runtime for the private navigation adapter.
 - Binary SHA-256:
-  `03d2295de0c5e6bfd39fdcc88a279b8f6461c736c60bd2a59327efc278f38cec`
+  `843694ec4fd2a8e6bdc993bef33aa08e7ec082021a07a225c923297e6bba1d3b`
 - Corresponding sources JAR SHA-256:
-  `5f573cc35f19360e3ec8d2ce7bd732b87a66d6d3ace6781b9d9dfdd400a7b4a8`
+  `c8479199ab12cfc633536e5023d21c2839348d162614d7c88ec484f4fbd23f7d`
 - Complete GPLv3 text SHA-256:
   `3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986`
 - Corresponding source and license record: `vendor/baritone/`
