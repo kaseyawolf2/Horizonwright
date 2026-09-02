@@ -119,7 +119,7 @@ public final class GuiProfileAreas extends GuiScreen {
             return;
         }
         if (button.id == SAVED_AREAS_BUTTON) {
-            mc.displayGuiScreen(new GuiSavedAreas(this, editorProvider));
+            mc.displayGuiScreen(new GuiSavedAreas(this, editorProvider, runtimeProvider));
             return;
         }
         try {
@@ -212,7 +212,7 @@ public final class GuiProfileAreas extends GuiScreen {
         return new BasePosition(
             mc.theWorld.provider.dimensionId,
             MathHelper.floor_double(mc.thePlayer.posX),
-            MathHelper.floor_double(mc.thePlayer.posY),
+            MathHelper.floor_double(mc.thePlayer.posY) - 1,
             MathHelper.floor_double(mc.thePlayer.posZ));
     }
 

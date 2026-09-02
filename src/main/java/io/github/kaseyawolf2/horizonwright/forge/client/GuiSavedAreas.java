@@ -10,6 +10,7 @@ import net.minecraft.client.gui.GuiScreen;
 import io.github.kaseyawolf2.horizonwright.core.base.NamedArea;
 import io.github.kaseyawolf2.horizonwright.runtime.persistence.profile.ProfileAssetEditor;
 import io.github.kaseyawolf2.horizonwright.runtime.persistence.profile.ProfileAssetEditorProvider;
+import io.github.kaseyawolf2.horizonwright.runtime.persistence.session.CurrentRuntimeProvider;
 
 /** Readable paginated view of all work areas saved in the active world profile. */
 public final class GuiSavedAreas extends GuiScreen {
@@ -24,6 +25,7 @@ public final class GuiSavedAreas extends GuiScreen {
 
     private final GuiScreen parent;
     private final ProfileAssetEditorProvider editorProvider;
+    private final CurrentRuntimeProvider runtimeProvider;
     private final List<GuiButton> areaButtons = new ArrayList<>();
     private GuiButton previousButton;
     private GuiButton nextButton;
@@ -37,12 +39,14 @@ public final class GuiSavedAreas extends GuiScreen {
     private String pendingDeleteAreaId;
     private String detail = "Select a saved area to inspect its complete bounds.";
 
-    public GuiSavedAreas(GuiScreen parent, ProfileAssetEditorProvider editorProvider) {
-        if (parent == null || editorProvider == null) {
-            throw new IllegalArgumentException("parent and editorProvider are required");
+    public GuiSavedAreas(GuiScreen parent, ProfileAssetEditorProvider editorProvider,
+        CurrentRuntimeProvider runtimeProvider) {
+        if (parent == null || editorProvider == null || runtimeProvider == null) {
+            throw new IllegalArgumentException("parent, editorProvider, and runtimeProvider are required");
         }
         this.parent = parent;
         this.editorProvider = editorProvider;
+        this.runtimeProvider = runtimeProvider;
     }
 
     @Override
@@ -158,10 +162,16 @@ public final class GuiSavedAreas extends GuiScreen {
                 .orElseThrow(() -> new IllegalStateException("active profile assets are unavailable"));
             String removed = selectedAreaId;
             editor.deleteArea(removed);
+            CurrentRuntimeUiResolver.Resolution runtime = CurrentRuntimeUiResolver.resolve(runtimeProvider);
+            int cancelled = runtime.isAvailable() ? runtime.getRuntime()
+                .cancelFarmAutomationForPlot(removed) : 0;
             selectedAreaId = null;
             pendingDeleteAreaId = null;
             reload();
-            detail = "Deleted saved work area '" + removed + "'. Existing task history is unchanged.";
+            detail = "Deleted saved work area '" + removed
+                + "' and cancelled "
+                + cancelled
+                + " unfinished or scheduled farm job(s). Existing terminal history is unchanged.";
         } catch (RuntimeException failure) {
             pendingDeleteAreaId = null;
             detail = "Area was not deleted: " + (failure.getMessage() == null ? failure.getClass()

@@ -52,6 +52,19 @@ public final class FarmTask {
         }
     }
 
+    public static boolean isForPlot(TaskSpec spec, String plotId) {
+        return spec != null && TYPE.equals(spec.getType()) && samePlot(spec.getParameters(), plotId);
+    }
+
+    public static boolean isForPlot(ScheduledTaskSpec spec, String plotId) {
+        return spec != null && TYPE.equals(spec.getType()) && samePlot(spec.getParameters(), plotId);
+    }
+
+    private static boolean samePlot(Map<String, String> parameters, String plotId) {
+        return plotId != null && plotId.trim()
+            .equals(parameters.get(PLOT_ID));
+    }
+
     private static void requireType(TaskSpec spec) {
         if (spec == null || !TYPE.equals(spec.getType())) {
             throw new IllegalArgumentException("a farm-pass task specification is required");

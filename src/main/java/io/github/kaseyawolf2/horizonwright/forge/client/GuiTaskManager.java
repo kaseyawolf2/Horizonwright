@@ -19,6 +19,7 @@ public final class GuiTaskManager extends GuiScreen {
     private static final int DELETE_BUTTON = 2;
     private static final int PREVIOUS_BUTTON = 3;
     private static final int NEXT_BUTTON = 4;
+    private static final int CLEAR_COMPLETED_BUTTON = 5;
     private static final int TASK_BUTTON_BASE = 100;
     private static final int TASKS_PER_PAGE = 5;
 
@@ -29,6 +30,7 @@ public final class GuiTaskManager extends GuiScreen {
     private GuiButton deleteButton;
     private GuiButton previousButton;
     private GuiButton nextButton;
+    private GuiButton clearCompletedButton;
     private int left;
     private int top;
     private int panelWidth;
@@ -36,6 +38,7 @@ public final class GuiTaskManager extends GuiScreen {
     private int page;
     private String selectedTaskId;
     private String confirmationTaskId;
+    private boolean confirmClearCompleted;
     private String message = "Select a task to inspect it.";
 
     public GuiTaskManager(GuiScreen parent, CurrentRuntimeProvider runtimeProvider) {
@@ -77,6 +80,14 @@ public final class GuiTaskManager extends GuiScreen {
             "Delete task");
         buttonList.add(previousButton);
         buttonList.add(nextButton);
+        clearCompletedButton = new GuiButton(
+            CLEAR_COMPLETED_BUTTON,
+            left + 16,
+            top + panelHeight - 28,
+            116,
+            20,
+            "Clear completed");
+        buttonList.add(clearCompletedButton);
         buttonList.add(deleteButton);
         buttonList.add(new GuiButton(BACK_BUTTON, left + panelWidth - 72, top + panelHeight - 28, 56, 20, "Back"));
     }
@@ -95,6 +106,10 @@ public final class GuiTaskManager extends GuiScreen {
         if (button.id == NEXT_BUTTON) {
             page++;
             clearConfirmation();
+            return;
+        }
+        if (button.id == CLEAR_COMPLETED_BUTTON) {
+            clearCompletedTasks();
             return;
         }
         if (button.id >= TASK_BUTTON_BASE && button.id < TASK_BUTTON_BASE + TASKS_PER_PAGE) {
@@ -161,7 +176,58 @@ public final class GuiTaskManager extends GuiScreen {
         deleteButton.displayString = selected != null && selected.getSpec()
             .getId()
             .equals(confirmationTaskId) ? "Confirm delete" : "Delete task";
+        int completedCount = completedCount(tasks);
+        clearCompletedButton.enabled = completedCount > 0;
+        clearCompletedButton.displayString = confirmClearCompleted ? "Confirm clear (" + completedCount + ")"
+            : "Clear completed";
         super.drawScreen(mouseX, mouseY, partialTicks);
+    }
+
+    private void clearCompletedTasks() {
+        CurrentRuntimeUiResolver.Resolution resolution = CurrentRuntimeUiResolver.resolve(runtimeProvider);
+        if (!resolution.isAvailable()) {
+            message = "Session unavailable: " + resolution.getDiagnostic();
+            return;
+        }
+        List<TaskSnapshot> tasks = resolution.getRuntime()
+            .controllerSnapshot()
+            .getTasks();
+        int count = completedCount(tasks);
+        if (count == 0) {
+            confirmClearCompleted = false;
+            message = "There are no completed tasks to clear.";
+            return;
+        }
+        if (!confirmClearCompleted) {
+            confirmClearCompleted = true;
+            confirmationTaskId = null;
+            message = "Press Confirm clear to remove " + count + " completed task(s).";
+            return;
+        }
+        int removed = 0;
+        try {
+            for (TaskSnapshot task : new ArrayList<>(tasks)) {
+                if (task.getState() == TaskState.COMPLETED) {
+                    resolution.getRuntime()
+                        .removeTask(
+                            task.getSpec()
+                                .getId());
+                    removed++;
+                }
+            }
+            selectedTaskId = null;
+            confirmClearCompleted = false;
+            message = "Cleared " + removed + " completed task(s).";
+        } catch (RuntimeException failure) {
+            confirmClearCompleted = false;
+            message = "Completed tasks were only partially cleared: " + safeMessage(failure);
+        }
+    }
+
+    private static int completedCount(List<TaskSnapshot> tasks) {
+        int count = 0;
+        for (TaskSnapshot task : tasks) if (task.getState() == TaskState.COMPLETED) count++;
+        return count;
     }
 
     private void configureTaskButtons(List<TaskSnapshot> tasks) {
@@ -240,6 +306,7 @@ public final class GuiTaskManager extends GuiScreen {
 
     private void clearConfirmation() {
         confirmationTaskId = null;
+        confirmClearCompleted = false;
     }
 
     private static String truncate(String value, int maximumLength) {

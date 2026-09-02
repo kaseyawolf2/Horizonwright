@@ -12,6 +12,7 @@ import baritone.api.IBaritone;
 import baritone.api.Settings;
 import baritone.api.pathing.goals.Goal;
 import baritone.api.pathing.goals.GoalBlock;
+import baritone.api.pathing.goals.GoalGetToBlock;
 import baritone.api.pathing.goals.GoalNear;
 import baritone.api.process.PathingCommand;
 import baritone.api.process.PathingCommandType;
@@ -26,6 +27,7 @@ import io.github.kaseyawolf2.horizonwright.core.action.ActionRevocationListener;
 import io.github.kaseyawolf2.horizonwright.core.action.ActionSessionGuard;
 import io.github.kaseyawolf2.horizonwright.core.navigation.BackendAvailability;
 import io.github.kaseyawolf2.horizonwright.core.navigation.NavigationBackend;
+import io.github.kaseyawolf2.horizonwright.core.navigation.NavigationGoalKind;
 import io.github.kaseyawolf2.horizonwright.core.navigation.NavigationHandle;
 import io.github.kaseyawolf2.horizonwright.core.navigation.NavigationProgress;
 import io.github.kaseyawolf2.horizonwright.core.navigation.NavigationRequest;
@@ -92,8 +94,10 @@ public final class BaritoneNavigationBackend implements NavigationBackend, Actio
         requireClientThread();
         requireRequestWorld(request);
 
-        Goal goal = request.getTolerance() == 0 ? new GoalBlock(request.getX(), request.getY(), request.getZ())
-            : new GoalNear(new BlockPos(request.getX(), request.getY(), request.getZ()), request.getTolerance());
+        BlockPos target = new BlockPos(request.getX(), request.getY(), request.getZ());
+        Goal goal = request.getGoalKind() == NavigationGoalKind.ADJACENT ? new GoalGetToBlock(target)
+            : request.getTolerance() == 0 ? new GoalBlock(request.getX(), request.getY(), request.getZ())
+                : new GoalNear(target, request.getTolerance());
         CalculationContext movementOnlyContext = createMovementOnlyContext();
         Handle handle = new Handle(this, request, movementLease, goal, movementOnlyContext);
         actionSessionGuard.begin(movementLease);

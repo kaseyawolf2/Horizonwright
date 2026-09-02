@@ -51,9 +51,9 @@ public final class MinecraftVanillaFarmObserver {
         List<CropObservation> result = new ArrayList<>();
         BasePosition minimum = plot.getMinimum();
         BasePosition maximum = plot.getMaximum();
-        // Corners are captured at the player's feet. Crops the player stands beside or on can occupy
-        // the block immediately below that level, so include exactly one lower layer for farm plots.
-        for (int y = minimum.getY() - 1; y <= maximum.getY(); y++) {
+        // Corners capture the supporting block under the player's feet. Crops grow in the block
+        // immediately above that support, so include exactly one upper layer for farm plots.
+        for (int y = minimum.getY(); y <= maximum.getY() + 1; y++) {
             for (int z = minimum.getZ(); z <= maximum.getZ(); z++) {
                 for (int x = minimum.getX(); x <= maximum.getX(); x++) {
                     CropObservation observation = observeIfCrop(new BasePosition(minimum.getDimensionId(), x, y, z));

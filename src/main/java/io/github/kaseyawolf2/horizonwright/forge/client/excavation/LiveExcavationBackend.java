@@ -50,7 +50,6 @@ public final class LiveExcavationBackend implements ExcavationBackend {
 
     private static final EnumSet<ActionCapability> REQUIRED = EnumSet
         .of(ActionCapability.MOVEMENT, ActionCapability.LOOK, ActionCapability.DIG, ActionCapability.HELD_USE);
-    private static final int APPROACH_TOLERANCE = 3;
     private static final long ACTION_TIMEOUT_NANOS = TimeUnit.SECONDS.toNanos(20L);
 
     private final Minecraft minecraft;
@@ -233,14 +232,13 @@ public final class LiveExcavationBackend implements ExcavationBackend {
             }
             BlockPosition position = request.getIntent()
                 .getPosition();
-            NavigationRequest approach = new NavigationRequest(
+            NavigationRequest approach = NavigationRequest.adjacentTo(
                 request.getRequestId() + "-approach",
                 request.getActionEpoch(),
                 request.getDimensionId(),
                 position.getX(),
                 position.getY(),
                 position.getZ(),
-                APPROACH_TOLERANCE,
                 System.nanoTime(),
                 ACTION_TIMEOUT_NANOS);
             navigationHandle = navigation.submit(approach, lease);
@@ -422,16 +420,13 @@ public final class LiveExcavationBackend implements ExcavationBackend {
                 .getPosition();
             Block target = minecraft.theWorld.getBlock(position.getX(), position.getY(), position.getZ());
             int preferred = request.getPreferredToolSlot();
-            int selected = preferred >= 0 && minecraft.thePlayer.inventory.mainInventory[preferred] != null ? preferred
-                : minecraft.thePlayer.inventory.currentItem;
-            if (preferred < 0 || minecraft.thePlayer.inventory.mainInventory[preferred] == null) {
-                float bestStrength = strength(minecraft.thePlayer.inventory.mainInventory[selected], target);
-                for (int slot = 0; slot < 9; slot++) {
-                    float strength = strength(minecraft.thePlayer.inventory.mainInventory[slot], target);
-                    if (strength > bestStrength) {
-                        bestStrength = strength;
-                        selected = slot;
-                    }
+            int selected = minecraft.thePlayer.inventory.currentItem;
+            float bestStrength = Float.NEGATIVE_INFINITY;
+            for (int slot = 0; slot < 9; slot++) {
+                float candidateStrength = strength(minecraft.thePlayer.inventory.mainInventory[slot], target);
+                if (candidateStrength > bestStrength || candidateStrength == bestStrength && slot == preferred) {
+                    bestStrength = candidateStrength;
+                    selected = slot;
                 }
             }
             priorHotbarSlot = minecraft.thePlayer.inventory.currentItem;

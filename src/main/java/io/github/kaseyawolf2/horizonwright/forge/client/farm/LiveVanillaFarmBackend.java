@@ -41,7 +41,6 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
         ActionCapability.DIG,
         ActionCapability.PLACE,
         ActionCapability.HELD_USE);
-    private static final int APPROACH_TOLERANCE = 3;
     private static final long ACTION_TIMEOUT_NANOS = TimeUnit.SECONDS.toNanos(30L);
 
     private final Minecraft minecraft;
@@ -208,14 +207,13 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
             BasePosition target = request.getDecision()
                 .getTarget();
             navigationHandle = navigation.submit(
-                new NavigationRequest(
+                NavigationRequest.adjacentTo(
                     request.getRequestId() + "-approach",
                     request.getActionEpoch(),
                     target.getDimensionId(),
                     target.getX(),
                     target.getY(),
                     target.getZ(),
-                    APPROACH_TOLERANCE,
                     System.nanoTime(),
                     ACTION_TIMEOUT_NANOS),
                 lease);

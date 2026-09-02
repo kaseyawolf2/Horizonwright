@@ -24,6 +24,7 @@ import io.github.kaseyawolf2.horizonwright.core.navigation.NavigationState;
 import io.github.kaseyawolf2.horizonwright.core.task.MonotonicClock;
 import io.github.kaseyawolf2.horizonwright.core.task.ScheduleEnvironment;
 import io.github.kaseyawolf2.horizonwright.core.task.ScheduleSnapshot;
+import io.github.kaseyawolf2.horizonwright.core.task.ScheduleState;
 import io.github.kaseyawolf2.horizonwright.core.task.ScheduleTrigger;
 import io.github.kaseyawolf2.horizonwright.core.task.TaskLane;
 import io.github.kaseyawolf2.horizonwright.core.task.TaskState;
@@ -288,6 +289,33 @@ public class HorizonwrightRuntimeTest {
             1_800_000L,
             scheduled.getRule()
                 .getInitialDelayMillis());
+        runtime.close();
+    }
+
+    @Test
+    public void deletingAPlotCanCancelItsScheduleAndUnfinishedFarmWork() {
+        HorizonwrightRuntime runtime = new HorizonwrightRuntime(
+            new InMemoryActionBroker(),
+            new ActionSessionGuard(),
+            new FixedClock());
+        runtime.scheduleFarm("north-farm", "north-field", 3, 1_800_000L);
+        runtime.submitFarm(FarmTask.finitePass("one-pass", "north-field", 3));
+
+        assertEquals(2, runtime.cancelFarmAutomationForPlot("north-field"));
+
+        assertEquals(
+            ScheduleState.CANCELLED,
+            runtime.controllerSnapshot()
+                .getScheduler()
+                .findSchedule("north-farm")
+                .get()
+                .getState());
+        assertEquals(
+            TaskState.CANCELLED,
+            runtime.controllerSnapshot()
+                .findTask("one-pass")
+                .get()
+                .getState());
         runtime.close();
     }
 

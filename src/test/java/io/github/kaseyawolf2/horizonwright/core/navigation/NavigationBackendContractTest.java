@@ -16,6 +16,17 @@ import io.github.kaseyawolf2.horizonwright.testfixtures.FakeNavigationBackend;
 public class NavigationBackendContractTest {
 
     @Test
+    public void adjacentRequestPreservesBlockInteractionGoalSemantics() {
+        NavigationRequest request = NavigationRequest.adjacentTo("use-block", 1L, 0, 12, 64, -5, 100L, 1_000L);
+
+        assertEquals(NavigationGoalKind.ADJACENT, request.getGoalKind());
+        assertEquals(0, request.getTolerance());
+        assertEquals(12, request.getX());
+        assertEquals(64, request.getY());
+        assertEquals(-5, request.getZ());
+    }
+
+    @Test
     public void requestCanProgressAndCompleteThroughTheTypedBackend() {
         InMemoryActionBroker broker = new InMemoryActionBroker();
         ActionLease lease = broker

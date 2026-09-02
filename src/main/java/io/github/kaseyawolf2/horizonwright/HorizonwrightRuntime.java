@@ -16,6 +16,7 @@ import io.github.kaseyawolf2.horizonwright.core.task.MonotonicClock;
 import io.github.kaseyawolf2.horizonwright.core.task.ScheduleEnvironment;
 import io.github.kaseyawolf2.horizonwright.core.task.ScheduleRule;
 import io.github.kaseyawolf2.horizonwright.core.task.ScheduleSnapshot;
+import io.github.kaseyawolf2.horizonwright.core.task.ScheduleState;
 import io.github.kaseyawolf2.horizonwright.core.task.TaskControllerState;
 import io.github.kaseyawolf2.horizonwright.core.task.TaskOrchestrator;
 import io.github.kaseyawolf2.horizonwright.core.task.TaskSnapshot;
@@ -277,6 +278,38 @@ public final class HorizonwrightRuntime implements AutoCloseable {
                 intervalMillis,
                 java.util.Collections.<String>emptySet(),
                 0));
+    }
+
+    /** Cancels future runs and any unfinished occurrences that reference a deleted farm plot. */
+    public int cancelFarmAutomationForPlot(String plotId) {
+        ensureOpen();
+        if (plotId == null || plotId.trim()
+            .isEmpty()) throw new IllegalArgumentException("plotId must not be blank");
+        String normalized = plotId.trim();
+        ControllerSnapshot snapshot = controller.snapshot();
+        int cancelled = 0;
+        for (ScheduleSnapshot schedule : snapshot.getScheduler()
+            .getSchedules()) {
+            if (schedule.getState() != ScheduleState.CANCELLED && FarmTask.isForPlot(
+                schedule.getRule()
+                    .getTask(),
+                normalized)) {
+                controller.cancelSchedule(
+                    schedule.getRule()
+                        .getId());
+                cancelled++;
+            }
+        }
+        for (TaskSnapshot task : snapshot.getTasks()) {
+            if (!task.getState()
+                .isTerminal() && FarmTask.isForPlot(task.getSpec(), normalized)) {
+                controller.cancel(
+                    task.getSpec()
+                        .getId());
+                cancelled++;
+            }
+        }
+        return cancelled;
     }
 
     public TaskSnapshot submitSleep(TaskSpec spec) {

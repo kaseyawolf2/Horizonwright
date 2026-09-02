@@ -17,6 +17,7 @@ public final class NavigationRequest {
     private final int y;
     private final int z;
     private final int tolerance;
+    private final NavigationGoalKind goalKind;
     private final long createdAtNanos;
     private final long deadlineNanos;
 
@@ -26,6 +27,36 @@ public final class NavigationRequest {
 
     public NavigationRequest(String requestId, long actionEpoch, int dimensionId, int x, int y, int z, int tolerance,
         long createdAtNanos, long timeoutNanos) {
+        this(
+            requestId,
+            actionEpoch,
+            dimensionId,
+            x,
+            y,
+            z,
+            tolerance,
+            createdAtNanos,
+            timeoutNanos,
+            NavigationGoalKind.RANGE);
+    }
+
+    public static NavigationRequest adjacentTo(String requestId, long actionEpoch, int dimensionId, int x, int y, int z,
+        long createdAtNanos, long timeoutNanos) {
+        return new NavigationRequest(
+            requestId,
+            actionEpoch,
+            dimensionId,
+            x,
+            y,
+            z,
+            0,
+            createdAtNanos,
+            timeoutNanos,
+            NavigationGoalKind.ADJACENT);
+    }
+
+    private NavigationRequest(String requestId, long actionEpoch, int dimensionId, int x, int y, int z, int tolerance,
+        long createdAtNanos, long timeoutNanos, NavigationGoalKind goalKind) {
         if (requestId == null || requestId.trim()
             .isEmpty()) {
             throw new IllegalArgumentException("requestId must not be blank");
@@ -45,6 +76,7 @@ public final class NavigationRequest {
         if (timeoutNanos <= 0L || timeoutNanos > MAX_RUNTIME_NANOS) {
             throw new IllegalArgumentException("navigation timeout is outside the supported range");
         }
+        if (goalKind == null) throw new IllegalArgumentException("goalKind must not be null");
         this.requestId = requestId.trim();
         this.actionEpoch = actionEpoch;
         this.dimensionId = dimensionId;
@@ -52,6 +84,7 @@ public final class NavigationRequest {
         this.y = y;
         this.z = z;
         this.tolerance = tolerance;
+        this.goalKind = goalKind;
         this.createdAtNanos = createdAtNanos;
         this.deadlineNanos = saturatingAdd(createdAtNanos, timeoutNanos);
     }
@@ -82,6 +115,10 @@ public final class NavigationRequest {
 
     public int getTolerance() {
         return tolerance;
+    }
+
+    public NavigationGoalKind getGoalKind() {
+        return goalKind;
     }
 
     public long getCreatedAtNanos() {
