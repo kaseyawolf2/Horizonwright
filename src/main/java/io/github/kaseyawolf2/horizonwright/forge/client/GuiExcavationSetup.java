@@ -5,7 +5,7 @@ import java.util.Optional;
 import net.minecraft.client.gui.GuiButton;
 import net.minecraft.client.gui.GuiScreen;
 import net.minecraft.client.gui.GuiTextField;
-import net.minecraft.util.ChunkCoordinates;
+import net.minecraft.util.MathHelper;
 
 import org.lwjgl.input.Keyboard;
 
@@ -101,7 +101,8 @@ public final class GuiExcavationSetup extends GuiScreen {
             if (mc.thePlayer == null || mc.theWorld == null || mc.theWorld.provider == null) {
                 throw new IllegalStateException("join the bound world first");
             }
-            ChunkCoordinates center = mc.thePlayer.getPlayerCoordinates();
+            int centerX = MathHelper.floor_double(mc.thePlayer.posX);
+            int centerZ = MathHelper.floor_double(mc.thePlayer.posZ);
             String id = ProfileAssetInput.stableId(taskId.getText(), "task name");
             int parsedRadius = ProfileAssetInput.nonNegativeInteger(radius.getText(), "radius");
             int parsedBottom = integer(bottomY.getText(), "bottom Y");
@@ -111,8 +112,8 @@ public final class GuiExcavationSetup extends GuiScreen {
                 spec = ExcavationTaskSubmission.withoutServices(
                     id,
                     mc.theWorld.provider.dimensionId,
-                    center.posX,
-                    center.posZ,
+                    centerX,
+                    centerZ,
                     parsedRadius,
                     parsedBottom,
                     parsedTop);
@@ -123,8 +124,8 @@ public final class GuiExcavationSetup extends GuiScreen {
                     editor.load(),
                     id,
                     mc.theWorld.provider.dimensionId,
-                    center.posX,
-                    center.posZ,
+                    centerX,
+                    centerZ,
                     parsedRadius,
                     parsedBottom,
                     parsedTop,
@@ -136,7 +137,7 @@ public final class GuiExcavationSetup extends GuiScreen {
             }
             TaskSnapshot submitted = runtime.submitExcavation(spec);
             status = "Queued '" + submitted.getSpec()
-                .getId() + "' at X/Z " + center.posX + "/" + center.posZ + ".";
+                .getId() + "' at X/Z " + centerX + "/" + centerZ + ".";
         } catch (RuntimeException failure) {
             status = "Nothing queued: " + safeMessage(failure);
         }
@@ -247,14 +248,17 @@ public final class GuiExcavationSetup extends GuiScreen {
     }
 
     private int currentY() {
-        return mc != null && mc.thePlayer != null ? mc.thePlayer.getPlayerCoordinates().posY : 64;
+        return mc != null && mc.thePlayer != null ? MathHelper.floor_double(mc.thePlayer.posY) : 64;
     }
 
     private String centerSummary() {
         if (mc == null || mc.thePlayer == null || mc.theWorld == null || mc.theWorld.provider == null)
             return "unavailable";
-        ChunkCoordinates position = mc.thePlayer.getPlayerCoordinates();
-        return "dimension " + mc.theWorld.provider.dimensionId + ", X " + position.posX + ", Z " + position.posZ;
+        return "dimension " + mc.theWorld.provider.dimensionId
+            + ", X "
+            + MathHelper.floor_double(mc.thePlayer.posX)
+            + ", Z "
+            + MathHelper.floor_double(mc.thePlayer.posZ);
     }
 
     private static int integer(String value, String field) {

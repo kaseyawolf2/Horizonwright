@@ -18,6 +18,7 @@ public final class GuiSavedAreas extends GuiScreen {
     private static final int CLOSE_BUTTON = 2;
     private static final int PREVIOUS_BUTTON = 3;
     private static final int NEXT_BUTTON = 4;
+    private static final int DELETE_BUTTON = 5;
     private static final int AREA_BUTTON_BASE = 100;
     private static final int AREAS_PER_PAGE = 6;
 
@@ -26,11 +27,14 @@ public final class GuiSavedAreas extends GuiScreen {
     private final List<GuiButton> areaButtons = new ArrayList<>();
     private GuiButton previousButton;
     private GuiButton nextButton;
+    private GuiButton deleteButton;
     private List<NamedArea> areas = Collections.emptyList();
     private int left;
     private int top;
     private int panelWidth;
     private int page;
+    private String selectedAreaId;
+    private String pendingDeleteAreaId;
     private String detail = "Select a saved area to inspect its complete bounds.";
 
     public GuiSavedAreas(GuiScreen parent, ProfileAssetEditorProvider editorProvider) {
@@ -64,6 +68,8 @@ public final class GuiSavedAreas extends GuiScreen {
         nextButton = new GuiButton(NEXT_BUTTON, left + 100, top + 202, 76, 20, "Next");
         buttonList.add(previousButton);
         buttonList.add(nextButton);
+        deleteButton = new GuiButton(DELETE_BUTTON, left + 182, top + 202, 120, 20, "Delete selected");
+        buttonList.add(deleteButton);
         buttonList.add(new GuiButton(CLOSE_BUTTON, left + 18, top + 270, 70, 20, "Close"));
         buttonList.add(new GuiButton(BACK_BUTTON, left + panelWidth - 88, top + 270, 70, 20, "Back"));
     }
@@ -78,9 +84,16 @@ public final class GuiSavedAreas extends GuiScreen {
             page = Math.max(0, page - 1);
         } else if (button.id == NEXT_BUTTON) {
             page++;
+        } else if (button.id == DELETE_BUTTON) {
+            deleteSelectedArea();
         } else if (button.id >= AREA_BUTTON_BASE && button.id < AREA_BUTTON_BASE + AREAS_PER_PAGE) {
             int index = page * AREAS_PER_PAGE + button.id - AREA_BUTTON_BASE;
-            if (index < areas.size()) detail = completeDescription(areas.get(index));
+            if (index < areas.size()) {
+                NamedArea selected = areas.get(index);
+                selectedAreaId = selected.getId();
+                pendingDeleteAreaId = null;
+                detail = completeDescription(selected);
+            }
         }
     }
 
@@ -127,6 +140,33 @@ public final class GuiSavedAreas extends GuiScreen {
         }
         previousButton.enabled = page > 0;
         nextButton.enabled = page + 1 < pages;
+        deleteButton.enabled = selectedAreaId != null;
+        deleteButton.displayString = selectedAreaId != null && selectedAreaId.equals(pendingDeleteAreaId)
+            ? "Confirm delete"
+            : "Delete selected";
+    }
+
+    private void deleteSelectedArea() {
+        if (selectedAreaId == null) return;
+        if (!selectedAreaId.equals(pendingDeleteAreaId)) {
+            pendingDeleteAreaId = selectedAreaId;
+            detail = "Delete '" + selectedAreaId + "'? Click Confirm delete to permanently remove this saved area.";
+            return;
+        }
+        try {
+            ProfileAssetEditor editor = editorProvider.getCurrentProfileAssetEditor()
+                .orElseThrow(() -> new IllegalStateException("active profile assets are unavailable"));
+            String removed = selectedAreaId;
+            editor.deleteArea(removed);
+            selectedAreaId = null;
+            pendingDeleteAreaId = null;
+            reload();
+            detail = "Deleted saved work area '" + removed + "'. Existing task history is unchanged.";
+        } catch (RuntimeException failure) {
+            pendingDeleteAreaId = null;
+            detail = "Area was not deleted: " + (failure.getMessage() == null ? failure.getClass()
+                .getSimpleName() : failure.getMessage());
+        }
     }
 
     private static String shortBounds(NamedArea area) {

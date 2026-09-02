@@ -36,6 +36,8 @@ import io.github.kaseyawolf2.horizonwright.runtime.task.SleepBackend;
 /** Conservative registered-vanilla-bed interaction with fresh danger and block evidence. */
 public final class LiveVanillaSleepBackend implements SleepBackend {
 
+    private static final int REQUIRED_SLEEPING_TICKS = 5;
+
     public interface NavigationSource {
 
         NavigationBackend getNavigationBackend();
@@ -235,6 +237,7 @@ public final class LiveVanillaSleepBackend implements SleepBackend {
         private String detail = "Preparing registered bed approach";
         private boolean ownsActionSession;
         private boolean interactionDispatched;
+        private int consecutiveSleepingTicks;
         private volatile boolean cancellationRequested;
 
         private LiveHandle(ActionRequest request, ActionLease lease, NavigationBackend navigation,
@@ -363,8 +366,8 @@ public final class LiveVanillaSleepBackend implements SleepBackend {
                 bed.getZ(),
                 hit.sideHit,
                 hit.hitVec);
-            stopActionSession();
             if (!accepted) {
+                stopActionSession();
                 fail("Minecraft rejected the registered bed interaction");
                 return;
             }
@@ -404,12 +407,24 @@ public final class LiveVanillaSleepBackend implements SleepBackend {
         }
 
         private void confirmSleep() {
-            if (minecraft.thePlayer.isPlayerSleeping() || !SleepWindow.vanilla()
-                .contains(minecraft.theWorld.getWorldTime())) {
+            if (minecraft.thePlayer.isPlayerSleeping()) {
+                consecutiveSleepingTicks++;
+            } else {
+                consecutiveSleepingTicks = 0;
+            }
+            boolean daytime = !SleepWindow.vanilla()
+                .contains(minecraft.theWorld.getWorldTime());
+            if (consecutiveSleepingTicks >= REQUIRED_SLEEPING_TICKS || daytime) {
                 state = ActionState.CONFIRMED;
-                detail = minecraft.thePlayer.isPlayerSleeping() ? "Player sleeping state confirmed"
+                detail = consecutiveSleepingTicks >= REQUIRED_SLEEPING_TICKS ? "Stable player sleeping state confirmed"
                     : "Daytime confirmed after sleep";
                 clearActive(this);
+            } else {
+                detail = consecutiveSleepingTicks == 0 ? "Waiting for server-confirmed sleeping or daytime"
+                    : "Confirming stable sleeping state (" + consecutiveSleepingTicks
+                        + "/"
+                        + REQUIRED_SLEEPING_TICKS
+                        + ")";
             }
         }
 

@@ -421,13 +421,17 @@ public final class LiveExcavationBackend implements ExcavationBackend {
             BlockPosition position = request.getIntent()
                 .getPosition();
             Block target = minecraft.theWorld.getBlock(position.getX(), position.getY(), position.getZ());
-            int selected = minecraft.thePlayer.inventory.currentItem;
-            float bestStrength = strength(minecraft.thePlayer.inventory.mainInventory[selected], target);
-            for (int slot = 0; slot < 9; slot++) {
-                float strength = strength(minecraft.thePlayer.inventory.mainInventory[slot], target);
-                if (strength > bestStrength) {
-                    bestStrength = strength;
-                    selected = slot;
+            int preferred = request.getPreferredToolSlot();
+            int selected = preferred >= 0 && minecraft.thePlayer.inventory.mainInventory[preferred] != null ? preferred
+                : minecraft.thePlayer.inventory.currentItem;
+            if (preferred < 0 || minecraft.thePlayer.inventory.mainInventory[preferred] == null) {
+                float bestStrength = strength(minecraft.thePlayer.inventory.mainInventory[selected], target);
+                for (int slot = 0; slot < 9; slot++) {
+                    float strength = strength(minecraft.thePlayer.inventory.mainInventory[slot], target);
+                    if (strength > bestStrength) {
+                        bestStrength = strength;
+                        selected = slot;
+                    }
                 }
             }
             priorHotbarSlot = minecraft.thePlayer.inventory.currentItem;

@@ -122,6 +122,39 @@ public class ProfileAssetEditorTest {
     }
 
     @Test
+    public void namedAreaCanBeDeletedWithoutChangingUnrelatedAreas() throws Exception {
+        HorizonwrightPersistenceStore store = store();
+        WorldProfileIdentity identity = identity("world-one");
+        store.saveProfile(
+            store.pathsForProfile(identity.getProfileId()),
+            new ProfileEnvelope(
+                20L,
+                identity,
+                Collections.emptyList(),
+                Collections.emptyList(),
+                Collections.emptyList()));
+        ProfileAssetEditor editor = new ProfileAssetEditor(store, identity, () -> 30L);
+        NamedArea first = new NamedArea("first", "First", new BasePosition(0, 1, 64, 1), new BasePosition(0, 2, 64, 2));
+        NamedArea second = new NamedArea(
+            "second",
+            "Second",
+            new BasePosition(0, 3, 64, 3),
+            new BasePosition(0, 4, 64, 4));
+        editor.apply(
+            new ProfileAssetUpdate(
+                Collections.emptyList(),
+                Collections.emptyList(),
+                Collections.emptyList(),
+                Collections.emptyList(),
+                Arrays.asList(first, second)));
+
+        ProfileEnvelope saved = editor.deleteArea("first");
+
+        assertEquals(Collections.singletonList(second), saved.getNamedAreas());
+        assertEquals(saved, editor.load());
+    }
+
+    @Test
     public void invalidCrossReferenceLeavesThePreviousProfileUntouched() throws Exception {
         HorizonwrightPersistenceStore store = store();
         WorldProfileIdentity identity = identity("world-one");

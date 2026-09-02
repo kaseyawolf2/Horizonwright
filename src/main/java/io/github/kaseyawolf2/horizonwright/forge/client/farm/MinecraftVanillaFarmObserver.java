@@ -51,7 +51,9 @@ public final class MinecraftVanillaFarmObserver {
         List<CropObservation> result = new ArrayList<>();
         BasePosition minimum = plot.getMinimum();
         BasePosition maximum = plot.getMaximum();
-        for (int y = minimum.getY(); y <= maximum.getY(); y++) {
+        // Corners are captured at the player's feet. Crops the player stands beside or on can occupy
+        // the block immediately below that level, so include exactly one lower layer for farm plots.
+        for (int y = minimum.getY() - 1; y <= maximum.getY(); y++) {
             for (int z = minimum.getZ(); z <= maximum.getZ(); z++) {
                 for (int x = minimum.getX(); x <= maximum.getX(); x++) {
                     CropObservation observation = observeIfCrop(new BasePosition(minimum.getDimensionId(), x, y, z));
@@ -171,7 +173,7 @@ public final class MinecraftVanillaFarmObserver {
         BasePosition minimum = plot.getMinimum();
         BasePosition maximum = plot.getMaximum();
         long x = (long) maximum.getX() - minimum.getX() + 1L;
-        long y = (long) maximum.getY() - minimum.getY() + 1L;
+        long y = (long) maximum.getY() - minimum.getY() + 2L;
         long z = (long) maximum.getZ() - minimum.getZ() + 1L;
         long volume;
         try {

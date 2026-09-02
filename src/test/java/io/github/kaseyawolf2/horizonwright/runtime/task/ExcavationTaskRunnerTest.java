@@ -415,6 +415,8 @@ public class ExcavationTaskRunnerTest {
             25,
             request.getServiceRequirements()
                 .getPredictedWorkDamage());
+        assertNotNull(harness.backend.lastRequest);
+        assertEquals(4, harness.backend.lastRequest.getPreferredToolSlot());
     }
 
     private static TaskSnapshot task(ControllerSnapshot snapshot, String taskId) {

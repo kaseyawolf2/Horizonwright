@@ -5,7 +5,7 @@ import java.util.Optional;
 import net.minecraft.client.gui.GuiButton;
 import net.minecraft.client.gui.GuiScreen;
 import net.minecraft.client.gui.GuiTextField;
-import net.minecraft.util.ChunkCoordinates;
+import net.minecraft.util.MathHelper;
 
 import org.lwjgl.input.Keyboard;
 
@@ -209,8 +209,11 @@ public final class GuiProfileAreas extends GuiScreen {
         if (mc == null || mc.thePlayer == null || mc.theWorld == null || mc.theWorld.provider == null) {
             throw new IllegalStateException("join the bound world before capturing a corner");
         }
-        ChunkCoordinates position = mc.thePlayer.getPlayerCoordinates();
-        return new BasePosition(mc.theWorld.provider.dimensionId, position.posX, position.posY, position.posZ);
+        return new BasePosition(
+            mc.theWorld.provider.dimensionId,
+            MathHelper.floor_double(mc.thePlayer.posX),
+            MathHelper.floor_double(mc.thePlayer.posY),
+            MathHelper.floor_double(mc.thePlayer.posZ));
     }
 
     private void refreshCount() {

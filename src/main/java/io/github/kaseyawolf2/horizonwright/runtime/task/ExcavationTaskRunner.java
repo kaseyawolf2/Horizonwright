@@ -270,7 +270,8 @@ final class ExcavationTaskRunner implements TaskRunner {
             plan.getActionEpoch(),
             plan.getGeometryKey(),
             plan.getStartFrontier(),
-            intent);
+            intent,
+            policy != null && policy.hasRepair() ? policy.getReservedToolSlot() : -1);
         ExcavationActionHandle handle = null;
         try {
             if (!lease.isValid() || lease.getEpoch() != context.getActionEpoch()

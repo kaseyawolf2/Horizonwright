@@ -67,6 +67,38 @@ public final class ProfileAssetEditor {
         return replacement;
     }
 
+    /** Atomically removes one named area while preserving every unrelated profile asset. */
+    public synchronized ProfileEnvelope deleteArea(String areaId) {
+        if (areaId == null || areaId.trim()
+            .isEmpty()) {
+            throw new IllegalArgumentException("areaId must not be blank");
+        }
+        ProfileEnvelope previous = requireExactProfile();
+        List<NamedArea> remaining = new ArrayList<>(previous.getNamedAreas());
+        boolean removed = remaining.removeIf(
+            area -> area.getId()
+                .equals(areaId.trim()));
+        if (!removed) throw new ProfileAssetEditingException("work area no longer exists: " + areaId.trim());
+        long now = clock.nowEpochMillis();
+        if (now < 0L) throw new ProfileAssetEditingException("profile editor clock returned a negative timestamp");
+        ProfileEnvelope replacement = new ProfileEnvelope(
+            Math.max(previous.getWrittenAtEpochMillis(), now),
+            previous.getIdentity(),
+            previous.getReassociations(),
+            previous.getNamedLocations(),
+            previous.getNamedRoutes(),
+            previous.getNamedLoadouts(),
+            previous.getNamedStorageEndpoints(),
+            previous.getNamedRepairStations(),
+            remaining);
+        try {
+            store.saveProfile(paths, replacement);
+        } catch (PersistenceException failure) {
+            throw new ProfileAssetEditingException("could not atomically delete the named work area", failure);
+        }
+        return replacement;
+    }
+
     private ProfileEnvelope requireExactProfile() {
         PersistenceLoadResult<ProfileEnvelope> loaded = store.loadProfile(paths);
         if (!loaded.isLoaded()) {

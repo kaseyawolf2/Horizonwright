@@ -16,9 +16,10 @@ public final class ExcavationActionRequest {
     private final String geometryKey;
     private final ExcavationFrontier startFrontier;
     private final ExcavationIntent intent;
+    private final int preferredToolSlot;
 
     ExcavationActionRequest(String requestId, String taskId, int dimensionId, long taskRevision, long actionEpoch,
-        String geometryKey, ExcavationFrontier startFrontier, ExcavationIntent intent) {
+        String geometryKey, ExcavationFrontier startFrontier, ExcavationIntent intent, int preferredToolSlot) {
         this.requestId = requireText(requestId, "requestId");
         this.taskId = requireText(taskId, "taskId");
         this.dimensionId = dimensionId;
@@ -33,6 +34,10 @@ public final class ExcavationActionRequest {
         this.geometryKey = requireText(geometryKey, "geometryKey");
         this.startFrontier = Objects.requireNonNull(startFrontier, "startFrontier");
         this.intent = Objects.requireNonNull(intent, "intent");
+        if (preferredToolSlot < -1 || preferredToolSlot > 8) {
+            throw new IllegalArgumentException("preferredToolSlot must be -1 or a hotbar slot from 0 to 8");
+        }
+        this.preferredToolSlot = preferredToolSlot;
     }
 
     public String getRequestId() {
@@ -65,6 +70,10 @@ public final class ExcavationActionRequest {
 
     public ExcavationIntent getIntent() {
         return intent;
+    }
+
+    public int getPreferredToolSlot() {
+        return preferredToolSlot;
     }
 
     private static String requireText(String value, String field) {

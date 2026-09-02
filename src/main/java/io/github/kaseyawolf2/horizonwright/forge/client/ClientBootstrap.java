@@ -26,8 +26,6 @@ import cpw.mods.fml.common.network.FMLNetworkEvent;
 import io.github.kaseyawolf2.horizonwright.HorizonwrightMod;
 import io.github.kaseyawolf2.horizonwright.HorizonwrightRuntime;
 import io.github.kaseyawolf2.horizonwright.core.action.ActionSessionGuard;
-import io.github.kaseyawolf2.horizonwright.core.navigation.NavigationProgress;
-import io.github.kaseyawolf2.horizonwright.core.navigation.NavigationState;
 import io.github.kaseyawolf2.horizonwright.core.persistence.HorizonwrightPersistenceStore;
 import io.github.kaseyawolf2.horizonwright.core.persistence.ProfileBindingIndexStore;
 import io.github.kaseyawolf2.horizonwright.core.persistence.ProfileBindingKey;
@@ -50,7 +48,6 @@ import io.github.kaseyawolf2.horizonwright.forge.client.repair.ProfileTinkersRep
 import io.github.kaseyawolf2.horizonwright.forge.client.repair.TinkersRepairCompatibilityProbe;
 import io.github.kaseyawolf2.horizonwright.forge.client.sleep.LiveVanillaSleepBackend;
 import io.github.kaseyawolf2.horizonwright.forge.client.sleep.ProfileSleepConfiguration;
-import io.github.kaseyawolf2.horizonwright.navigation.baritone.BaritoneSprintPolicy;
 import io.github.kaseyawolf2.horizonwright.runtime.persistence.profile.ProfileAssetEditor;
 import io.github.kaseyawolf2.horizonwright.runtime.persistence.profile.ProfileAssetEditorProvider;
 import io.github.kaseyawolf2.horizonwright.runtime.persistence.session.ClientProfileBindingCoordinator;
@@ -74,7 +71,6 @@ public final class ClientBootstrap {
         "key.categories.horizonwright");
     private final ClientInputArbiter inputArbiter = new ClientInputArbiter();
     private final ClientScheduleEnvironmentTracker scheduleEnvironment = new ClientScheduleEnvironmentTracker();
-    private final SprintTurnStabilizer sprintTurnStabilizer = new SprintTurnStabilizer();
     private ClientRuntimeSessionManager runtimeSessions;
     private HorizonwrightPersistenceStore persistenceStore;
     private ClientProfileBindingCoordinator profileBindings;
@@ -329,28 +325,7 @@ public final class ClientBootstrap {
         if (packetFirewall.isInstalled()) {
             runtimeSessions.clientTick(activeIdentity, connectionToken);
             containerTransactionExecutor.tick();
-            stabilizeNavigationSprint();
             announceNewBlockedTasks();
-        }
-    }
-
-    private void stabilizeNavigationSprint() {
-        Minecraft minecraft = Minecraft.getMinecraft();
-        if (attachedRuntime == null || minecraft.thePlayer == null) return;
-        NavigationProgress progress = attachedRuntime.snapshot()
-            .getNavigationProgress();
-        boolean moving = progress != null && progress.getState() == NavigationState.MOVING;
-        boolean eligible = minecraft.thePlayer.onGround && !minecraft.thePlayer.isSneaking()
-            && !minecraft.thePlayer.isInWater()
-            && !minecraft.thePlayer.isCollidedHorizontally
-            && (minecraft.thePlayer.capabilities.allowFlying || minecraft.thePlayer.getFoodStats()
-                .getFoodLevel() > 6);
-        if (sprintTurnStabilizer.shouldRestore(
-            moving,
-            BaritoneSprintPolicy.isSprintAllowed(),
-            eligible,
-            minecraft.thePlayer.isSprinting())) {
-            minecraft.thePlayer.setSprinting(true);
         }
     }
 
