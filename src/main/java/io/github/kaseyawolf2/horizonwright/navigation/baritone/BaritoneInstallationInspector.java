@@ -23,7 +23,7 @@ public final class BaritoneInstallationInspector {
     public static final String EXPECTED_ARTIFACT = "baritone-v1.2.19-mc1.7.10-1-7-10-forge+fcbbd4882c.jar";
     public static final String EXPECTED_PROVIDER = "baritone.BaritoneProvider";
     public static final String EXPECTED_COMMIT = "fcbbd4882cc7d846a8e613dea4b50203e1fb4ebc";
-    public static final String REFERENCE_SHA256 = "CC24115B0B61C14678E3634E9257E1E155E1EB6CA570ACCB7D10622F9D4FFF0E";
+    public static final String REFERENCE_SHA256 = "03D2295DE0C5E6BFD39FDCC88A279B8F6461C736C60BD2A59327EFC278F38CEC";
     public static final String API_RESOURCE = "baritone/api/BaritoneAPI.class";
     public static final String PROVIDER_RESOURCE = "META-INF/services/baritone.api.IBaritoneProvider";
 
