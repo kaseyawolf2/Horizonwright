@@ -1,5 +1,7 @@
 package io.github.kaseyawolf2.horizonwright.forge.client;
 
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
 import java.nio.file.Path;
 import java.util.Collections;
 import java.util.HashSet;
@@ -9,6 +11,7 @@ import java.util.UUID;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.settings.KeyBinding;
+import net.minecraft.command.ICommand;
 import net.minecraft.network.NetworkManager;
 import net.minecraft.util.ChatComponentText;
 import net.minecraft.util.EnumChatFormatting;
@@ -128,9 +131,37 @@ public final class ClientBootstrap {
             .register(this);
         SingleplayerWorldMarkerRegistry.getInstance()
             .initialize();
-        ClientCommandHandler.instance
-            .registerCommand(new HorizonwrightClientCommand(runtimeSessions, profileBindings, profileEditorProvider()));
+        registerClientCommand(
+            new HorizonwrightClientCommand(runtimeSessions, profileBindings, profileEditorProvider()));
         initialized = true;
+    }
+
+    /**
+     * Bridges the incompatible Forge/RFB command-registration return descriptors present in GTNH.
+     * The runtime method returns void while the development mapping declares ICommand.
+     */
+    private static void registerClientCommand(ICommand command) {
+        for (Method method : ClientCommandHandler.class.getMethods()) {
+            if (!isCommandRegistrationMethod(method)) continue;
+            try {
+                method.invoke(ClientCommandHandler.instance, command);
+                return;
+            } catch (IllegalAccessException failure) {
+                throw new IllegalStateException("Forge client command registration is inaccessible", failure);
+            } catch (InvocationTargetException failure) {
+                Throwable cause = failure.getCause();
+                if (cause instanceof RuntimeException) throw (RuntimeException) cause;
+                throw new IllegalStateException("Forge client command registration failed", cause);
+            }
+        }
+        throw new IllegalStateException("Compatible Forge client command registration method was not found");
+    }
+
+    private static boolean isCommandRegistrationMethod(Method method) {
+        String name = method.getName();
+        if (!"registerCommand".equals(name) && !"func_71560_a".equals(name) && !"a".equals(name)) return false;
+        Class<?>[] parameters = method.getParameterTypes();
+        return parameters.length == 1 && ICommand.class.isAssignableFrom(parameters[0]);
     }
 
     @SubscribeEvent
