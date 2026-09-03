@@ -147,6 +147,44 @@ final class TinkersRepairTransactionPredictor {
                 0,
                 afterTake,
                 afterReturn));
+        if (layout.getChestSlotStart() >= 0) {
+            ContainerSnapshot current = afterReturn;
+            long revision = 2L;
+            for (Integer materialSlot : new ArrayList<Integer>(approvedMaterialSlots)) {
+                ItemFingerprint leftover = current.getSlots()
+                    .get(materialSlot);
+                if (leftover == null) continue;
+                int chestTarget = firstEmptyChestSlot(current, layout.getChestSlotStart());
+                if (chestTarget < 0) {
+                    throw new IllegalStateException(
+                        "attached Tinker Table inventory has no empty slot for leftover repair material");
+                }
+                approvedMaterialSlots.add(chestTarget);
+                List<ItemFingerprint> afterPickupSlots = new ArrayList<>(current.getSlots());
+                afterPickupSlots.set(materialSlot, null);
+                ContainerSnapshot afterPickup = snapshot(current, ++revision, afterPickupSlots, leftover);
+                clicks.add(
+                    new VerifiedContainerClick(
+                        transactionId + "-pick-up-leftover-" + materialSlot,
+                        materialSlot,
+                        0,
+                        0,
+                        current,
+                        afterPickup));
+                List<ItemFingerprint> afterStoreSlots = new ArrayList<>(afterPickupSlots);
+                afterStoreSlots.set(chestTarget, leftover);
+                ContainerSnapshot afterStore = snapshot(afterPickup, ++revision, afterStoreSlots, null);
+                clicks.add(
+                    new VerifiedContainerClick(
+                        transactionId + "-store-leftover-" + chestTarget,
+                        chestTarget,
+                        0,
+                        0,
+                        afterPickup,
+                        afterStore));
+                current = afterStore;
+            }
+        }
         return new Prediction(
             evidence,
             approvedMaterialSlots,
@@ -177,6 +215,15 @@ final class TinkersRepairTransactionPredictor {
         int remaining = item.getCount() - amount;
         return remaining == 0 ? null
             : new ItemFingerprint(item.getItemId(), item.getMetadata(), item.getDataHash(), remaining);
+    }
+
+    private static int firstEmptyChestSlot(ContainerSnapshot snapshot, int chestSlotStart) {
+        for (int slot = chestSlotStart; slot < snapshot.getSlots()
+            .size(); slot++) {
+            if (snapshot.getSlots()
+                .get(slot) == null) return slot;
+        }
+        return -1;
     }
 
     private static ContainerSnapshot snapshot(ContainerSnapshot identity, long revision, List<ItemFingerprint> slots,

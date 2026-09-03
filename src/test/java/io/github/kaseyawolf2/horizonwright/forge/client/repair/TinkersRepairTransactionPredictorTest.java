@@ -167,6 +167,69 @@ public class TinkersRepairTransactionPredictorTest {
                 .predictRecognized(container, player, 0, loadout(false), "repair", 41L, evidence));
     }
 
+    @Test
+    public void returnsUnusedTinkerTableMaterialToAttachedInventory() {
+        InventoryPlayer player = new InventoryPlayer(null);
+        InventoryBasic station = new InventoryBasic("station", false, 10);
+        InventoryBasic chest = new InventoryBasic("chest", false, 9);
+        ItemStack input = tool(700, false);
+        ItemStack preview = tool(400, true);
+        ItemStack material = new ItemStack(MATERIAL, 5, 3);
+        station.setInventorySlotContents(0, preview);
+        station.setInventorySlotContents(5, input);
+        station.setInventorySlotContents(1, material);
+        CraftingContainer container = new CraftingContainer(station, player, chest);
+        container.windowId = 11;
+        RepairToolSnapshot inputEvidence = TinkersRepairContainerAdapter.readTool(input, 0, "TConstruct:pickaxe");
+        java.util.List<ItemStack> materials = Arrays.asList(material, null, null, null, null, null, null, null);
+        RepairToolSnapshot outputEvidence = TinkersRepairContainerAdapter
+            .readTool(TinkersRepairContainerAdapter.finalizedOutput(preview, materials), 0, "TConstruct:pickaxe");
+        TinkersRepairContainerEvidence evidence = new TinkersRepairContainerEvidence(
+            TinkersStationKind.TINKER_TABLE,
+            11,
+            10,
+            38,
+            inputEvidence,
+            outputEvidence,
+            2,
+            Arrays.asList(SNAPSHOTS.fingerprint(material), null, null, null, null, null, null, null));
+
+        TinkersRepairTransactionPredictor.Prediction prediction = new TinkersRepairTransactionPredictor(
+            new TinkersRepairContainerAdapter(),
+            SNAPSHOTS).predictRecognized(container, player, 0, loadout(true), "repair-table", 41L, evidence);
+        ContainerTransaction transaction = prediction.getTransaction();
+
+        assertEquals(
+            4,
+            transaction.getClicks()
+                .size());
+        assertEquals(
+            1,
+            transaction.getClicks()
+                .get(2)
+                .getSlot());
+        assertEquals(
+            46,
+            transaction.getClicks()
+                .get(3)
+                .getSlot());
+        assertNull(
+            transaction.getClicks()
+                .get(3)
+                .getExpectedAfter()
+                .getSlots()
+                .get(1));
+        assertEquals(
+            3,
+            transaction.getClicks()
+                .get(3)
+                .getExpectedAfter()
+                .getSlots()
+                .get(46)
+                .getCount());
+        assertEquals(Arrays.asList(1, 46), prediction.getApprovedMaterialSlots());
+    }
+
     private static NamedLoadout loadout(boolean includeMaterial) {
         LoadoutReservation tool = new LoadoutReservation("pick", LoadoutRole.TOOL, "TConstruct:pickaxe", 0, null, 1);
         if (!includeMaterial) return new NamedLoadout("mining", "Mining", Collections.singletonList(tool));
@@ -201,6 +264,25 @@ public class TinkersRepairTransactionPredictorTest {
                 }
             }
             for (int slot = 0; slot < 9; slot++) addSlotToContainer(new Slot(player, slot, 0, 0));
+        }
+
+        @Override
+        public boolean canInteractWith(EntityPlayer player) {
+            return true;
+        }
+    }
+
+    private static final class CraftingContainer extends Container {
+
+        private CraftingContainer(InventoryBasic station, InventoryPlayer player, InventoryBasic chest) {
+            for (int slot = 0; slot < 10; slot++) addSlotToContainer(new Slot(station, slot, 0, 0));
+            for (int row = 0; row < 3; row++) {
+                for (int column = 0; column < 9; column++) {
+                    addSlotToContainer(new Slot(player, column + row * 9 + 9, 0, 0));
+                }
+            }
+            for (int slot = 0; slot < 9; slot++) addSlotToContainer(new Slot(player, slot, 0, 0));
+            for (int slot = 0; slot < 9; slot++) addSlotToContainer(new Slot(chest, slot, 0, 0));
         }
 
         @Override

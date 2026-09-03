@@ -1,6 +1,6 @@
 package io.github.kaseyawolf2.horizonwright.core.repair;
 
-/** Repair trigger policy; the plan default is at or below fifteen percent remaining durability. */
+/** Repair trigger policy; the Tinkers plan default waits until the tool enters its repairable broken state. */
 public final class RepairPolicy {
 
     private final double remainingDurabilityThreshold;
@@ -14,7 +14,7 @@ public final class RepairPolicy {
     }
 
     public static RepairPolicy planDefaults() {
-        return new RepairPolicy(0.15D);
+        return new RepairPolicy(0.0D);
     }
 
     public double getRemainingDurabilityThreshold() {
@@ -27,8 +27,7 @@ public final class RepairPolicy {
         }
         RepairTrigger trigger = tool.getRemainingFraction() <= remainingDurabilityThreshold
             ? RepairTrigger.BELOW_DURABILITY_THRESHOLD
-            : predictedWorkDamage >= tool.getRemainingDurability() ? RepairTrigger.INSUFFICIENT_FOR_NEXT_WORK_UNIT
-                : RepairTrigger.NOT_REQUIRED;
+            : RepairTrigger.NOT_REQUIRED;
         return new RepairAssessment(trigger, tool.getRemainingDurability(), predictedWorkDamage);
     }
 }

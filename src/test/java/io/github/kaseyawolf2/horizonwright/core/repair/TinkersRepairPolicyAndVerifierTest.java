@@ -9,20 +9,20 @@ import org.junit.Test;
 public class TinkersRepairPolicyAndVerifierTest {
 
     @Test
-    public void defaultPolicyTriggersAtFifteenPercentOrBeforePredictedWorkWouldBreakTool() {
+    public void defaultTinkersPolicyWaitsForRepairableBrokenState() {
         RepairPolicy policy = RepairPolicy.planDefaults();
 
         assertEquals(
-            RepairTrigger.BELOW_DURABILITY_THRESHOLD,
+            RepairTrigger.NOT_REQUIRED,
             policy.assess(tool("pick-a", 850, 1000, 2), 1)
                 .getTrigger());
         assertEquals(
-            RepairTrigger.INSUFFICIENT_FOR_NEXT_WORK_UNIT,
-            policy.assess(tool("pick-a", 700, 1000, 2), 300)
+            RepairTrigger.NOT_REQUIRED,
+            policy.assess(tool("pick-a", 999, 1000, 2), 300)
                 .getTrigger());
         assertEquals(
-            RepairTrigger.NOT_REQUIRED,
-            policy.assess(tool("pick-a", 700, 1000, 2), 299)
+            RepairTrigger.BELOW_DURABILITY_THRESHOLD,
+            policy.assess(tool("pick-a", 1000, 1000, 2), 1)
                 .getTrigger());
     }
 

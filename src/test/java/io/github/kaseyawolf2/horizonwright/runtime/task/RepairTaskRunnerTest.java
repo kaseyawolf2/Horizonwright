@@ -82,7 +82,7 @@ public class RepairTaskRunnerTest {
     }
 
     @Test
-    public void verifiedPartialRepairRemainsReadyForAnotherPass() {
+    public void anyVerifiedDamageReductionLeavesTinkersToolUsableAgain() {
         harness = new Harness();
         TaskSpec spec = taskSpec("repair-partial");
         harness.controller.submit(spec);
@@ -92,7 +92,7 @@ public class RepairTaskRunnerTest {
         harness.backend.confirm(ConfirmationMode.PARTIAL);
         TaskSnapshot verified = task(harness.controller.tick(), spec.getId());
 
-        assertEquals(TaskState.RUNNING, verified.getState());
+        assertEquals(TaskState.COMPLETED, verified.getState());
         assertEquals(
             "READY",
             verified.getCheckpoint()

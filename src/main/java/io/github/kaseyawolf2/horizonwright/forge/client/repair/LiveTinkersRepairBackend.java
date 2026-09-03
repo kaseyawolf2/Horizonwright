@@ -1148,7 +1148,8 @@ public final class LiveTinkersRepairBackend implements RepairBackend {
             int consumed = consumedMaterials(
                 clicks.get(0)
                     .getExpectedBefore(),
-                expected,
+                clicks.get(0)
+                    .getExpectedAfter(),
                 layout);
             RepairActionConfirmation confirmation = new RepairActionConfirmation(
                 request.getTransactionFingerprint(),

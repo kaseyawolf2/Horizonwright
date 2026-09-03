@@ -29,22 +29,29 @@ public class ExcavationServiceTriggerEvaluatorTest {
     }
 
     @Test
-    public void thresholdAndNextWorkDamageBothTriggerRepair() {
+    public void onlyBrokenTinkersToolTriggersRepair() {
         ExcavationServiceRequirements requirements = ExcavationServiceRequirements.of(false, true, 4, 10);
         assertEquals(
-            ExcavationSuspensionReason.REPAIR_REQUIRED,
+            ExcavationSuspensionReason.NONE,
             evaluator.evaluate(
                 ExcavationBlockClassification.BREAKABLE,
                 requirements,
                 20,
                 new RepairToolSnapshot("tool", 850, 1000, 4)));
         assertEquals(
-            ExcavationSuspensionReason.REPAIR_REQUIRED,
+            ExcavationSuspensionReason.NONE,
             evaluator.evaluate(
                 ExcavationBlockClassification.BREAKABLE,
                 requirements,
                 20,
                 new RepairToolSnapshot("tool", 991, 1000, 4)));
+        assertEquals(
+            ExcavationSuspensionReason.REPAIR_REQUIRED,
+            evaluator.evaluate(
+                ExcavationBlockClassification.BREAKABLE,
+                requirements,
+                20,
+                new RepairToolSnapshot("tool", 1000, 1000, 4)));
     }
 
     @Test
@@ -86,7 +93,7 @@ public class ExcavationServiceTriggerEvaluatorTest {
     public void selectsMostDamagedRepairableToolAcrossInventory() {
         ExcavationServiceRequirements requirements = ExcavationServiceRequirements.of(false, true, 0, 10);
         RepairToolSnapshot pickaxe = new RepairToolSnapshot("pickaxe", 860, 1000, 0);
-        RepairToolSnapshot shovel = new RepairToolSnapshot("shovel", 490, 500, 7);
+        RepairToolSnapshot shovel = new RepairToolSnapshot("shovel", 500, 500, 7);
 
         assertEquals(
             7,
