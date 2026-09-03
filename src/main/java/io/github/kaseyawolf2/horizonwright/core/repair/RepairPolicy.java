@@ -3,7 +3,7 @@ package io.github.kaseyawolf2.horizonwright.core.repair;
 /** Repair trigger policy; the Tinkers plan default waits until the tool enters its repairable broken state. */
 public final class RepairPolicy {
 
-    private static final int DEFAULT_MAXIMUM_UNREPAIRED_PERCENT = 2;
+    private static final int DEFAULT_MAXIMUM_UNREPAIRED_PERCENT = 5;
     private final double remainingDurabilityThreshold;
 
     public RepairPolicy(double remainingDurabilityThreshold) {
@@ -22,7 +22,7 @@ public final class RepairPolicy {
         return remainingDurabilityThreshold;
     }
 
-    /** A repair trip may finish without wasting another material on the final two percent. */
+    /** A repair trip may finish without wasting another material on the final five percent. */
     public boolean isRepairGoalSatisfied(RepairToolSnapshot tool) {
         if (tool == null) throw new IllegalArgumentException("tool is required");
         return (long) tool.getDamage() * 100L <= (long) tool.getMaximumDamage() * DEFAULT_MAXIMUM_UNREPAIRED_PERCENT;

@@ -29,6 +29,7 @@ import io.github.kaseyawolf2.horizonwright.core.navigation.NavigationProgress;
 import io.github.kaseyawolf2.horizonwright.core.navigation.NavigationRequest;
 import io.github.kaseyawolf2.horizonwright.core.navigation.NavigationState;
 import io.github.kaseyawolf2.horizonwright.core.persistence.NamedLocation;
+import io.github.kaseyawolf2.horizonwright.core.repair.RepairPolicy;
 import io.github.kaseyawolf2.horizonwright.core.repair.RepairToolSnapshot;
 import io.github.kaseyawolf2.horizonwright.forge.client.MinecraftRuntimeAccess;
 import io.github.kaseyawolf2.horizonwright.forge.client.container.ConfirmedContainerTransactionExecutor;
@@ -44,6 +45,8 @@ import io.github.kaseyawolf2.horizonwright.runtime.task.RepairObservationResult;
 
 /** Exact-version live backend for a prepared TConstruct Tool Station or Tool Forge. */
 public final class LiveTinkersRepairBackend implements RepairBackend {
+
+    private static final RepairPolicy REPAIR_POLICY = RepairPolicy.planDefaults();
 
     public interface ConfigurationSource {
 
@@ -1156,6 +1159,7 @@ public final class LiveTinkersRepairBackend implements RepairBackend {
                 outputTool,
                 consumed,
                 true);
+            boolean repairGoalSatisfied = REPAIR_POLICY.isRepairGoalSatisfied(outputTool);
             DevelopmentTrace.event(
                 "repair-live",
                 "confirmed",
@@ -1166,15 +1170,27 @@ public final class LiveTinkersRepairBackend implements RepairBackend {
                 "outputMaximumDamage",
                 outputTool.getMaximumDamage(),
                 "materialConsumed",
-                consumed);
-            minecraft.thePlayer.closeScreen();
-            DevelopmentTrace.event(
-                "repair-live",
-                "station-closed",
-                "request",
-                request.getRequestId(),
-                "window",
-                expected.getWindowId());
+                consumed,
+                "repairGoalSatisfied",
+                repairGoalSatisfied);
+            if (repairGoalSatisfied) {
+                minecraft.thePlayer.closeScreen();
+                DevelopmentTrace.event(
+                    "repair-live",
+                    "station-closed",
+                    "request",
+                    request.getRequestId(),
+                    "window",
+                    expected.getWindowId());
+            } else {
+                DevelopmentTrace.event(
+                    "repair-live",
+                    "station-retained-for-next-pass",
+                    "request",
+                    request.getRequestId(),
+                    "window",
+                    expected.getWindowId());
+            }
             return confirmation;
         }
 

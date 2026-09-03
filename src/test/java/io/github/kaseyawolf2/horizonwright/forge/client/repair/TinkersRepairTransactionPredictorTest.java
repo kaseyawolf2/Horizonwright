@@ -168,12 +168,65 @@ public class TinkersRepairTransactionPredictorTest {
     }
 
     @Test
-    public void returnsUnusedTinkerTableMaterialToAttachedInventory() {
+    public void retainsUnusedTinkerTableMaterialForIntermediatePass() {
         InventoryPlayer player = new InventoryPlayer(null);
         InventoryBasic station = new InventoryBasic("station", false, 10);
         InventoryBasic chest = new InventoryBasic("chest", false, 9);
         ItemStack input = tool(700, false);
         ItemStack preview = tool(400, true);
+        ItemStack material = new ItemStack(MATERIAL, 5, 3);
+        station.setInventorySlotContents(0, preview);
+        station.setInventorySlotContents(5, input);
+        station.setInventorySlotContents(1, material);
+        CraftingContainer container = new CraftingContainer(station, player, chest);
+        container.windowId = 11;
+        RepairToolSnapshot inputEvidence = TinkersRepairContainerAdapter.readTool(input, 0, "TConstruct:pickaxe");
+        java.util.List<ItemStack> materials = Arrays.asList(material, null, null, null, null, null, null, null);
+        RepairToolSnapshot outputEvidence = TinkersRepairContainerAdapter
+            .readTool(TinkersRepairContainerAdapter.finalizedOutput(preview, materials), 0, "TConstruct:pickaxe");
+        TinkersRepairContainerEvidence evidence = new TinkersRepairContainerEvidence(
+            TinkersStationKind.TINKER_TABLE,
+            11,
+            10,
+            38,
+            inputEvidence,
+            outputEvidence,
+            2,
+            Arrays.asList(SNAPSHOTS.fingerprint(material), null, null, null, null, null, null, null));
+
+        TinkersRepairTransactionPredictor.Prediction prediction = new TinkersRepairTransactionPredictor(
+            new TinkersRepairContainerAdapter(),
+            SNAPSHOTS).predictRecognized(container, player, 0, loadout(true), "repair-table", 41L, evidence);
+        ContainerTransaction transaction = prediction.getTransaction();
+
+        assertEquals(
+            2,
+            transaction.getClicks()
+                .size());
+        assertEquals(
+            3,
+            transaction.getClicks()
+                .get(1)
+                .getExpectedAfter()
+                .getSlots()
+                .get(1)
+                .getCount());
+        assertNull(
+            transaction.getClicks()
+                .get(1)
+                .getExpectedAfter()
+                .getSlots()
+                .get(46));
+        assertEquals(Collections.singletonList(1), prediction.getApprovedMaterialSlots());
+    }
+
+    @Test
+    public void returnsUnusedTinkerTableMaterialToAttachedInventory() {
+        InventoryPlayer player = new InventoryPlayer(null);
+        InventoryBasic station = new InventoryBasic("station", false, 10);
+        InventoryBasic chest = new InventoryBasic("chest", false, 9);
+        ItemStack input = tool(700, false);
+        ItemStack preview = tool(50, true);
         ItemStack material = new ItemStack(MATERIAL, 5, 3);
         station.setInventorySlotContents(0, preview);
         station.setInventorySlotContents(5, input);

@@ -16,11 +16,13 @@ import io.github.kaseyawolf2.horizonwright.core.container.VerifiedContainerClick
 import io.github.kaseyawolf2.horizonwright.core.logistics.LoadoutReservation;
 import io.github.kaseyawolf2.horizonwright.core.logistics.LoadoutRole;
 import io.github.kaseyawolf2.horizonwright.core.logistics.NamedLoadout;
+import io.github.kaseyawolf2.horizonwright.core.repair.RepairPolicy;
 import io.github.kaseyawolf2.horizonwright.forge.client.container.MinecraftContainerSnapshotter;
 
 /** Predicts the exact two-click take-output/return-tool operation for the pinned Tinkers layouts. */
 final class TinkersRepairTransactionPredictor {
 
+    private static final RepairPolicy REPAIR_POLICY = RepairPolicy.planDefaults();
     private final TinkersRepairContainerAdapter adapter;
     private final MinecraftContainerSnapshotter snapshots;
 
@@ -147,7 +149,7 @@ final class TinkersRepairTransactionPredictor {
                 0,
                 afterTake,
                 afterReturn));
-        if (layout.getChestSlotStart() >= 0) {
+        if (layout.getChestSlotStart() >= 0 && REPAIR_POLICY.isRepairGoalSatisfied(evidence.getPredictedOutput())) {
             ContainerSnapshot current = afterReturn;
             long revision = 2L;
             for (Integer materialSlot : new ArrayList<Integer>(approvedMaterialSlots)) {

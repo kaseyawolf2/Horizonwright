@@ -653,7 +653,7 @@ public class RepairTaskRunnerTest {
     }
 
     private static RepairToolSnapshot repairedTool() {
-        return new RepairToolSnapshot("pick-stable", 20, 1000, RESERVED_INVENTORY_SLOT);
+        return new RepairToolSnapshot("pick-stable", 50, 1000, RESERVED_INVENTORY_SLOT);
     }
 
     private static RepairToolSnapshot partiallyRepairedTool() {

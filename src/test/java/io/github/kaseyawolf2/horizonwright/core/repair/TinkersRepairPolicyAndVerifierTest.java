@@ -27,11 +27,11 @@ public class TinkersRepairPolicyAndVerifierTest {
     }
 
     @Test
-    public void repairGoalStopsAtTwoPercentMissingWithoutWastingAnotherMaterial() {
+    public void repairGoalStopsAtFivePercentMissingWithoutWastingAnotherMaterial() {
         RepairPolicy policy = RepairPolicy.planDefaults();
 
-        assertFalse(policy.isRepairGoalSatisfied(tool("pick-a", 21, 1000, 2)));
-        assertTrue(policy.isRepairGoalSatisfied(tool("pick-a", 20, 1000, 2)));
+        assertFalse(policy.isRepairGoalSatisfied(tool("pick-a", 51, 1000, 2)));
+        assertTrue(policy.isRepairGoalSatisfied(tool("pick-a", 50, 1000, 2)));
         assertTrue(policy.isRepairGoalSatisfied(tool("pick-a", 0, 1000, 2)));
     }
 

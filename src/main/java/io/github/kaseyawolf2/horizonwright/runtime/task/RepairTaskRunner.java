@@ -542,7 +542,7 @@ final class RepairTaskRunner implements TaskRunner {
                 context.getActionEpoch(),
                 taskCheckpoint,
                 "Verified repair reduced InfiTool.Damage by " + verification.getRepairedDamage()
-                    + "; returned tool is full or within the two-percent no-waste margin");
+                    + "; returned tool is full or within the five-percent no-waste margin");
         }
         return StepResult.progress(
             context.getActionEpoch(),
