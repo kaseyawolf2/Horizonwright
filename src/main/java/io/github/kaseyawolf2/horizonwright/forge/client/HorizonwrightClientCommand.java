@@ -183,24 +183,6 @@ public final class HorizonwrightClientCommand extends CommandBase {
         }
     }
 
-    /*
-     * RFG's reobfuscator does not infer these three ICommand mappings for a class outside
-     * Minecraft's inheritance map after the patched-client artifact is regenerated. Keep
-     * explicit SRG bridges so both the development names above and GTNH's runtime interface are
-     * implemented. The other ICommand overrides are reobfuscated normally.
-     */
-    public String func_71517_b() {
-        return getCommandName();
-    }
-
-    public String func_71518_a(ICommandSender sender) {
-        return getCommandUsage(sender);
-    }
-
-    public void func_71515_b(ICommandSender sender, String[] arguments) {
-        processCommand(sender, arguments);
-    }
-
     @Override
     public boolean canCommandSenderUseCommand(ICommandSender sender) {
         return true;

@@ -157,6 +157,83 @@ abstract class VerifyProductionArtifactIsolation : DefaultTask() {
                         tooNew.take(10).joinToString()
                 )
             }
+            val duplicateMethods = entries.filter { !it.isDirectory && it.name.endsWith(".class") }.flatMap { entry ->
+                jar.getInputStream(entry).use { input ->
+                    duplicateMethodSignatures(DataInputStream(input)).map { signature ->
+                        "${entry.name}: $signature"
+                    }
+                }
+            }
+            if (duplicateMethods.isNotEmpty()) {
+                throw GradleException(
+                    "Production Horizonwright JAR contains duplicate methods: " +
+                        duplicateMethods.take(10).joinToString()
+                )
+            }
+        }
+    }
+
+    private fun duplicateMethodSignatures(input: DataInputStream): List<String> {
+        if (input.readInt() != 0xCAFEBABE.toInt()) throw GradleException("Invalid class-file header")
+        input.readUnsignedShort()
+        input.readUnsignedShort()
+        val constants = arrayOfNulls<String>(input.readUnsignedShort())
+        var index = 1
+        while (index < constants.size) {
+            when (input.readUnsignedByte()) {
+                1 -> constants[index] = input.readUTF()
+                3, 4 -> input.readInt()
+                5, 6 -> {
+                    input.readLong()
+                    index++
+                }
+                7, 8, 16 -> input.readUnsignedShort()
+                9, 10, 11, 12, 18 -> {
+                    input.readUnsignedShort()
+                    input.readUnsignedShort()
+                }
+                15 -> {
+                    input.readUnsignedByte()
+                    input.readUnsignedShort()
+                }
+                else -> throw GradleException("Unsupported constant-pool entry in production class")
+            }
+            index++
+        }
+        input.readUnsignedShort()
+        input.readUnsignedShort()
+        input.readUnsignedShort()
+        repeat(input.readUnsignedShort()) { input.readUnsignedShort() }
+        repeat(input.readUnsignedShort()) { skipMember(input) }
+        val seen = mutableSetOf<String>()
+        val duplicates = mutableListOf<String>()
+        repeat(input.readUnsignedShort()) {
+            input.readUnsignedShort()
+            val name = constants[input.readUnsignedShort()] ?: "<unknown>"
+            val descriptor = constants[input.readUnsignedShort()] ?: "<unknown>"
+            val signature = name + descriptor
+            if (!seen.add(signature)) duplicates.add(signature)
+            skipAttributes(input)
+        }
+        return duplicates
+    }
+
+    private fun skipMember(input: DataInputStream) {
+        input.readUnsignedShort()
+        input.readUnsignedShort()
+        input.readUnsignedShort()
+        skipAttributes(input)
+    }
+
+    private fun skipAttributes(input: DataInputStream) {
+        repeat(input.readUnsignedShort()) {
+            input.readUnsignedShort()
+            var remaining = input.readInt()
+            while (remaining > 0) {
+                val skipped = input.skipBytes(remaining)
+                if (skipped <= 0) throw GradleException("Truncated production class attribute")
+                remaining -= skipped
+            }
         }
     }
 }
