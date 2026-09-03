@@ -698,6 +698,14 @@ public final class LiveTinkersRepairBackend implements RepairBackend {
                 outputTool.getMaximumDamage(),
                 "materialConsumed",
                 consumed);
+            minecraft.thePlayer.closeScreen();
+            DevelopmentTrace.event(
+                "repair-live",
+                "station-closed",
+                "request",
+                request.getRequestId(),
+                "window",
+                expected.getWindowId());
             return confirmation;
         }
 
