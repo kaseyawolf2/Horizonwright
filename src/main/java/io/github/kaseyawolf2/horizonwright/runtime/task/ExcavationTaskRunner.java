@@ -246,7 +246,7 @@ final class ExcavationTaskRunner implements TaskRunner {
                 false);
         }
         if (observed.getSuspensionReason() != ExcavationSuspensionReason.NONE) {
-            return suspendForSharedOperation(context, plan, observed.getSuspensionReason());
+            return suspendForSharedOperation(context, plan, observed);
         }
 
         Optional<ActionLease> acquired = context.getActions()
@@ -320,7 +320,8 @@ final class ExcavationTaskRunner implements TaskRunner {
     }
 
     private StepResult suspendForSharedOperation(TaskStepContext context, ExcavationPlan plan,
-        ExcavationSuspensionReason reason) {
+        ExcavationObservationResult observed) {
+        ExcavationSuspensionReason reason = observed.getSuspensionReason();
         if (reason != ExcavationSuspensionReason.UNLOADING_REQUIRED
             && reason != ExcavationSuspensionReason.REPAIR_REQUIRED) {
             return StepResult.failed(
@@ -345,17 +346,33 @@ final class ExcavationTaskRunner implements TaskRunner {
         taskCheckpoint = ExcavationTaskCheckpointCodec.encode(cylinder, excavationCheckpoint);
         String requirement = reason == ExcavationSuspensionReason.UNLOADING_REQUIRED ? "verified unloading"
             : "verified Tinkers repair";
+        int repairSlot = reason == ExcavationSuspensionReason.REPAIR_REQUIRED
+            ? observed.getRepairToolSlot() >= 0 ? observed.getRepairToolSlot() : configuredRepairSlotOrDefault()
+            : -1;
         String action = reason == ExcavationSuspensionReason.UNLOADING_REQUIRED
             ? "Complete the configured unload transaction, then resume this task."
-            : "Repair the reserved tool at the configured station, then resume this task.";
+            : "Repair the damaged Tinkers tool from inventory slot " + repairSlot
+                + " at the configured station, then resume this task.";
         return StepResult.blocked(
             context.getActionEpoch(),
             taskCheckpoint,
             BlockedReason.missingRequirement(
                 "Excavation suspended at its exact frontier for " + requirement + ".",
-                spec.getId(),
+                reason == ExcavationSuspensionReason.REPAIR_REQUIRED ? repairLocation(repairSlot) : spec.getId(),
                 requirement,
                 action));
+    }
+
+    static String repairLocation(int inventorySlot) {
+        if (inventorySlot < 0 || inventorySlot > 35) {
+            throw new IllegalArgumentException("repair inventory slot must be from 0 to 35");
+        }
+        return "repair-tool-slot:" + inventorySlot;
+    }
+
+    private int configuredRepairSlotOrDefault() {
+        ExcavationServicePolicy configured = ExcavationTask.servicePolicy(spec);
+        return configured != null && configured.hasRepair() ? configured.getReservedToolSlot() : 0;
     }
 
     private StepResult observeAction(TaskStepContext context, ExcavationBackend backend) {

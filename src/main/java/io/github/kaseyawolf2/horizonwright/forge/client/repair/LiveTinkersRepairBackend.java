@@ -13,8 +13,6 @@ import io.github.kaseyawolf2.horizonwright.core.action.ActionLease;
 import io.github.kaseyawolf2.horizonwright.core.container.ContainerSnapshot;
 import io.github.kaseyawolf2.horizonwright.core.container.ContainerTransaction;
 import io.github.kaseyawolf2.horizonwright.core.container.ItemFingerprint;
-import io.github.kaseyawolf2.horizonwright.core.logistics.LoadoutReservation;
-import io.github.kaseyawolf2.horizonwright.core.logistics.LoadoutRole;
 import io.github.kaseyawolf2.horizonwright.core.logistics.NamedLoadout;
 import io.github.kaseyawolf2.horizonwright.core.repair.RepairToolSnapshot;
 import io.github.kaseyawolf2.horizonwright.forge.client.container.ConfirmedContainerTransactionExecutor;
@@ -153,8 +151,6 @@ public final class LiveTinkersRepairBackend implements RepairBackend {
         if (tool == null) {
             throw new IllegalStateException("station input and reserved tool slot are both empty");
         }
-        ItemFingerprint fingerprint = snapshots.fingerprint(tool);
-        requireToolReservation(loadout, fingerprint);
         RepairToolSnapshot toolEvidence = adapter.readTool(tool, request.getReservedInventorySlot());
         RepairObservationResult result = new RepairObservationResult(
             request.getTaskId(),
@@ -173,13 +169,6 @@ public final class LiveTinkersRepairBackend implements RepairBackend {
             null);
         traceObservation("returned-tool-observed", result);
         return result;
-    }
-
-    private static void requireToolReservation(NamedLoadout loadout, ItemFingerprint tool) {
-        for (LoadoutReservation reservation : loadout.getReservations()) {
-            if (reservation.getRole() == LoadoutRole.TOOL && reservation.matches(tool)) return;
-        }
-        throw new IllegalStateException("reserved returned tool is not approved by loadout '" + loadout.getId() + "'");
     }
 
     @Override

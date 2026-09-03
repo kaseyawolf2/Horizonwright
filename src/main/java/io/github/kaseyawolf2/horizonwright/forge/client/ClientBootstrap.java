@@ -71,6 +71,8 @@ public final class ClientBootstrap {
         "key.categories.horizonwright");
     private final ClientInputArbiter inputArbiter = new ClientInputArbiter();
     private final ClientScheduleEnvironmentTracker scheduleEnvironment = new ClientScheduleEnvironmentTracker();
+    private final ProgressiveBlockDamageShield blockDamageShield = new ProgressiveBlockDamageShield(
+        Minecraft.getMinecraft());
     private ClientRuntimeSessionManager runtimeSessions;
     private HorizonwrightPersistenceStore persistenceStore;
     private ClientProfileBindingCoordinator profileBindings;
@@ -163,7 +165,7 @@ public final class ClientBootstrap {
 
     @SubscribeEvent
     public void onKeyInput(InputEvent.KeyInputEvent event) {
-        if (Keyboard.getEventKeyState()) {
+        if (Minecraft.getMinecraft().currentScreen == null && Keyboard.getEventKeyState()) {
             preemptForPhysicalInput(Keyboard.getEventKey());
         }
         if (dashboardKey.isPressed()) {
@@ -173,14 +175,20 @@ public final class ClientBootstrap {
 
     @SubscribeEvent
     public void onMouseInput(InputEvent.MouseInputEvent event) {
-        if (Mouse.getEventButtonState() && Mouse.getEventButton() >= 0) {
+        if (Minecraft.getMinecraft().currentScreen == null && Mouse.getEventButtonState()
+            && Mouse.getEventButton() >= 0) {
             preemptForPhysicalInput(Mouse.getEventButton() - 100);
         }
     }
 
     @SubscribeEvent
     public synchronized void onClientTick(TickEvent.ClientTickEvent event) {
-        if (event.phase != TickEvent.Phase.END || runtimeSessions == null) {
+        if (event.phase == TickEvent.Phase.START) {
+            blockDamageShield.beforeVanillaInput();
+            return;
+        }
+        blockDamageShield.afterVanillaInput();
+        if (runtimeSessions == null) {
             return;
         }
         try {
@@ -190,6 +198,10 @@ public final class ClientBootstrap {
         } catch (RuntimeException failure) {
             HorizonwrightMod.LOG.error("Horizonwright client session tick failed safely", failure);
         }
+    }
+
+    public static ProgressiveBlockDamageShield blockDamageShield() {
+        return INSTANCE.blockDamageShield;
     }
 
     public static void openDashboard() {

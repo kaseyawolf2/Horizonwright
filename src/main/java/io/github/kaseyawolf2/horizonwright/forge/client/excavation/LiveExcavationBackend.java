@@ -1,6 +1,9 @@
 package io.github.kaseyawolf2.horizonwright.forge.client.excavation;
 
+import java.util.ArrayList;
 import java.util.EnumSet;
+import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
@@ -33,6 +36,7 @@ import io.github.kaseyawolf2.horizonwright.core.navigation.NavigationState;
 import io.github.kaseyawolf2.horizonwright.core.repair.RepairPolicy;
 import io.github.kaseyawolf2.horizonwright.core.repair.RepairToolSnapshot;
 import io.github.kaseyawolf2.horizonwright.forge.client.AutomationInputHold;
+import io.github.kaseyawolf2.horizonwright.forge.client.ClientBootstrap;
 import io.github.kaseyawolf2.horizonwright.forge.client.network.ActionPacketDispatch;
 import io.github.kaseyawolf2.horizonwright.forge.client.repair.TinkersInventoryToolReader;
 import io.github.kaseyawolf2.horizonwright.runtime.task.ConfirmedExcavationTargetResult;
@@ -105,19 +109,23 @@ public final class LiveExcavationBackend implements ExcavationBackend {
     public ExcavationObservationResult observe(ExcavationObservationRequest request) {
         ExcavationObservation observation = observer.observe(request);
         ExcavationServiceRequirements requirements = request.getServiceRequirements();
-        RepairToolSnapshot tool = requirements.isRepairConfigured()
-            && observation.getClassification() == ExcavationBlockClassification.BREAKABLE
-                ? toolReader.read(
-                    minecraft.thePlayer.inventory.getStackInSlot(requirements.getReservedToolSlot()),
-                    requirements.getReservedToolSlot())
-                : null;
+        List<RepairToolSnapshot> tools = requirements.isRepairConfigured()
+            && observation.getClassification() == ExcavationBlockClassification.BREAKABLE ? repairableTools()
+                : java.util.Collections.<RepairToolSnapshot>emptyList();
+        Optional<RepairToolSnapshot> repairTool = serviceTriggers.repairRequiredTool(requirements, tools);
+        io.github.kaseyawolf2.horizonwright.core.excavation.ExcavationSuspensionReason suspension = serviceTriggers
+            .evaluateAll(observation.getClassification(), requirements, emptyMainInventorySlots(), tools);
         ExcavationObservationResult result = new ExcavationObservationResult(
             request.getTaskRevision(),
             request.getActionEpoch(),
             request.getGeometryKey(),
             request.getStartFrontier(),
             observation,
-            serviceTriggers.evaluate(observation.getClassification(), requirements, emptyMainInventorySlots(), tool));
+            suspension,
+            suspension == io.github.kaseyawolf2.horizonwright.core.excavation.ExcavationSuspensionReason.REPAIR_REQUIRED
+                ? repairTool.get()
+                    .getReservedInventorySlot()
+                : -1);
         DevelopmentTrace.event(
             "excavation-live",
             "observed",
@@ -139,9 +147,22 @@ public final class LiveExcavationBackend implements ExcavationBackend {
             result.getSuspensionReason(),
             "emptySlots",
             emptyMainInventorySlots(),
-            "toolPresent",
-            tool != null);
+            "tinkersTools",
+            tools.size(),
+            "repairToolSlot",
+            repairTool.isPresent() ? repairTool.get()
+                .getReservedInventorySlot() : "none");
         return result;
+    }
+
+    private List<RepairToolSnapshot> repairableTools() {
+        List<RepairToolSnapshot> tools = new ArrayList<>();
+        for (int slot = 0; slot < minecraft.thePlayer.inventory.mainInventory.length; slot++) {
+            Optional<RepairToolSnapshot> tool = toolReader
+                .tryRead(minecraft.thePlayer.inventory.mainInventory[slot], slot);
+            if (tool.isPresent()) tools.add(tool.get());
+        }
+        return tools;
     }
 
     private int emptyMainInventorySlots() {
@@ -421,6 +442,8 @@ public final class LiveExcavationBackend implements ExcavationBackend {
             }
             guard.begin(lease);
             ownsDigSession = true;
+            ClientBootstrap.blockDamageShield()
+                .acquire(request.getRequestId());
             selectBestHotbarTool();
             phase = Phase.DIGGING;
             detail = "Digging one fingerprint-bound block";
@@ -495,6 +518,8 @@ public final class LiveExcavationBackend implements ExcavationBackend {
 
         private void stopDigSession() {
             if (!ownsDigSession) return;
+            ClientBootstrap.blockDamageShield()
+                .release(request.getRequestId());
             minecraft.playerController.resetBlockRemoving();
             attackInput.release();
             restoreHotbarSlot();
@@ -504,6 +529,8 @@ public final class LiveExcavationBackend implements ExcavationBackend {
         }
 
         private void finishConfirmedDig() {
+            ClientBootstrap.blockDamageShield()
+                .release(request.getRequestId());
             minecraft.playerController.resetBlockRemoving();
             attackInput.release();
             restoreHotbarSlot();

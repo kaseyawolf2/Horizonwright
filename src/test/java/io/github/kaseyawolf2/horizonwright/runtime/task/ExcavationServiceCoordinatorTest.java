@@ -136,6 +136,34 @@ public class ExcavationServiceCoordinatorTest {
     }
 
     @Test
+    public void repairChildUsesTheDamagedToolSlotRecordedByTheParent() {
+        controller = controller(ChildOutcome.COMPLETED);
+        TaskSpec parent = ExcavationTask.cleanVolumeCylinder(
+            "dynamic-repair-slot",
+            0,
+            8,
+            8,
+            1,
+            12,
+            12,
+            ExcavationServicePolicy.repairOnly("tool-forge", 0, 100));
+        controller.submit(parent);
+        ControllerSnapshot blocked = tickUntil(parent.getId(), TaskState.BLOCKED);
+
+        assertEquals(1, new ExcavationServiceCoordinator(controller).coordinate(blocked));
+        String childId = ExcavationServiceCoordinator.childId(
+            parent.getId(),
+            task(blocked, parent.getId()).getCheckpoint()
+                .getRevision(),
+            ExcavationSuspensionReason.REPAIR_REQUIRED);
+        assertEquals(
+            "7",
+            task(controller.snapshot(), childId).getSpec()
+                .getParameters()
+                .get(RepairTask.RESERVED_INVENTORY_SLOT));
+    }
+
+    @Test
     public void incompleteOrInvalidServicePoliciesAreRejected() {
         assertThrows(
             IllegalArgumentException.class,
@@ -253,10 +281,11 @@ public class ExcavationServiceCoordinatorTest {
                         start.getFrontier(),
                         start.getProgress(),
                         reason);
+                    String location = "dynamic-repair-slot".equals(spec.getId()) ? "repair-tool-slot:7" : "frontier";
                     return StepResult.blocked(
                         context.getActionEpoch(),
                         ExcavationTaskCheckpointCodec.encode(cylinder, suspended),
-                        BlockedReason.missingRequirement("service required", "frontier", reason.name(), "wait"));
+                        BlockedReason.missingRequirement("service required", location, reason.name(), "wait"));
                 }
                 ExcavationCheckpoint resumed = ExcavationCheckpoint.restore(
                     cylinder,

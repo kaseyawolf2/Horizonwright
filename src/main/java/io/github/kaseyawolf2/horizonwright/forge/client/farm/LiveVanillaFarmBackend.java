@@ -27,6 +27,7 @@ import io.github.kaseyawolf2.horizonwright.core.navigation.NavigationProgress;
 import io.github.kaseyawolf2.horizonwright.core.navigation.NavigationRequest;
 import io.github.kaseyawolf2.horizonwright.core.navigation.NavigationState;
 import io.github.kaseyawolf2.horizonwright.forge.client.AutomationInputHold;
+import io.github.kaseyawolf2.horizonwright.forge.client.ClientBootstrap;
 import io.github.kaseyawolf2.horizonwright.forge.client.network.ActionPacketDispatch;
 import io.github.kaseyawolf2.horizonwright.runtime.task.FarmBackend;
 
@@ -451,6 +452,8 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
             }
             guard.begin(lease);
             ownsActionSession = true;
+            ClientBootstrap.blockDamageShield()
+                .acquire(request.getRequestId());
             phase = Phase.BREAKING;
             detail = "Breaking one exact mature crop";
             aimAt(
@@ -683,6 +686,8 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
         }
 
         private void stopBreakingInput() {
+            ClientBootstrap.blockDamageShield()
+                .release(request.getRequestId());
             minecraft.playerController.resetBlockRemoving();
             attackInput.release();
         }

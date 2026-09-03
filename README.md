@@ -98,8 +98,8 @@ persistence, so reconnect cannot duplicate the service operation, and the
 resumed excavation retains the same frontier. This composition is covered by
 automated completion, failure, collision, and restart tests but remains
 physically unverified pending installation and the prepared-station test.
-The dashboard now includes a guided Profile assets page. It captures a tool and
-repair material from numbered player-inventory slots and captures a vanilla
+The dashboard now includes a guided Profile assets page. It captures a preferred tool and
+approved repair material from numbered player-inventory slots and captures a vanilla
 chest or Tinkers station from the block currently under the crosshair. Operators
 provide short names; Horizonwright derives item registry identities, metadata,
 dimension, and coordinates without exposing JSON or NBT. Dependent assets are

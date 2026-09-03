@@ -15,15 +15,22 @@ public final class ExcavationObservationResult {
     private final ExcavationFrontier startFrontier;
     private final ExcavationObservation observation;
     private final ExcavationSuspensionReason suspensionReason;
+    private final int repairToolSlot;
 
     public ExcavationObservationResult(long taskRevision, long actionEpoch, String geometryKey,
         ExcavationFrontier startFrontier, ExcavationObservation observation) {
-        this(taskRevision, actionEpoch, geometryKey, startFrontier, observation, ExcavationSuspensionReason.NONE);
+        this(taskRevision, actionEpoch, geometryKey, startFrontier, observation, ExcavationSuspensionReason.NONE, -1);
     }
 
     public ExcavationObservationResult(long taskRevision, long actionEpoch, String geometryKey,
         ExcavationFrontier startFrontier, ExcavationObservation observation,
         ExcavationSuspensionReason suspensionReason) {
+        this(taskRevision, actionEpoch, geometryKey, startFrontier, observation, suspensionReason, -1);
+    }
+
+    public ExcavationObservationResult(long taskRevision, long actionEpoch, String geometryKey,
+        ExcavationFrontier startFrontier, ExcavationObservation observation,
+        ExcavationSuspensionReason suspensionReason, int repairToolSlot) {
         if (taskRevision < 1L) {
             throw new IllegalArgumentException("taskRevision must be positive");
         }
@@ -36,6 +43,11 @@ public final class ExcavationObservationResult {
         this.startFrontier = Objects.requireNonNull(startFrontier, "startFrontier");
         this.observation = Objects.requireNonNull(observation, "observation");
         this.suspensionReason = Objects.requireNonNull(suspensionReason, "suspensionReason");
+        if (suspensionReason != ExcavationSuspensionReason.REPAIR_REQUIRED && repairToolSlot >= 0) {
+            throw new IllegalArgumentException("only a repair suspension may identify a repair tool slot");
+        }
+        if (repairToolSlot > 35) throw new IllegalArgumentException("repair tool slot must be from 0 to 35");
+        this.repairToolSlot = repairToolSlot;
     }
 
     public long getTaskRevision() {
@@ -60,6 +72,13 @@ public final class ExcavationObservationResult {
 
     public ExcavationSuspensionReason getSuspensionReason() {
         return suspensionReason;
+    }
+
+    public int getRepairToolSlot() {
+        if (suspensionReason != ExcavationSuspensionReason.REPAIR_REQUIRED) {
+            throw new IllegalStateException("observation did not request tool repair");
+        }
+        return repairToolSlot;
     }
 
     private static String requireText(String value, String field) {

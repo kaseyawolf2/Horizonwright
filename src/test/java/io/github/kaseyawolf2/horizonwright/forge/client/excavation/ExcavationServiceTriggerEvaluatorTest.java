@@ -3,6 +3,8 @@ package io.github.kaseyawolf2.horizonwright.forge.client.excavation;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertThrows;
 
+import java.util.Arrays;
+
 import org.junit.Test;
 
 import io.github.kaseyawolf2.horizonwright.core.excavation.ExcavationBlockClassification;
@@ -78,5 +80,25 @@ public class ExcavationServiceTriggerEvaluatorTest {
                 requirements,
                 20,
                 new RepairToolSnapshot("tool", 100, 1000, 5)));
+    }
+
+    @Test
+    public void selectsMostDamagedRepairableToolAcrossInventory() {
+        ExcavationServiceRequirements requirements = ExcavationServiceRequirements.of(false, true, 0, 10);
+        RepairToolSnapshot pickaxe = new RepairToolSnapshot("pickaxe", 860, 1000, 0);
+        RepairToolSnapshot shovel = new RepairToolSnapshot("shovel", 490, 500, 7);
+
+        assertEquals(
+            7,
+            evaluator.repairRequiredTool(requirements, Arrays.asList(pickaxe, shovel))
+                .get()
+                .getReservedInventorySlot());
+        assertEquals(
+            ExcavationSuspensionReason.REPAIR_REQUIRED,
+            evaluator.evaluateAll(
+                ExcavationBlockClassification.BREAKABLE,
+                requirements,
+                20,
+                Arrays.asList(pickaxe, shovel)));
     }
 }

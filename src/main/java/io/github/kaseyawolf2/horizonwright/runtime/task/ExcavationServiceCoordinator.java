@@ -80,10 +80,27 @@ public final class ExcavationServiceCoordinator {
         return RepairTask.createLinked(
             childId,
             policy.getRepairStationId(),
-            policy.getReservedToolSlot(),
+            repairToolSlot(parent, policy),
             policy.getPredictedWorkDamage(),
             parentId,
             revision);
+    }
+
+    private static int repairToolSlot(TaskSnapshot parent, ExcavationServicePolicy policy) {
+        if (!parent.getBlockedReason()
+            .isPresent()) return policy.getReservedToolSlot();
+        String location = parent.getBlockedReason()
+            .get()
+            .getLocation();
+        String prefix = "repair-tool-slot:";
+        if (!location.startsWith(prefix)) return policy.getReservedToolSlot();
+        try {
+            int slot = Integer.parseInt(location.substring(prefix.length()));
+            if (slot < 0 || slot > 35) return policy.getReservedToolSlot();
+            return slot;
+        } catch (NumberFormatException invalid) {
+            return policy.getReservedToolSlot();
+        }
     }
 
     private static ExcavationCheckpoint decode(TaskSnapshot parent) {

@@ -72,9 +72,9 @@ final class TinkersRepairTransactionPredictor {
             throw new IllegalStateException(
                 "the reserved player inventory slot must be empty while its tool is in the station");
         }
-        ItemFingerprint inputItem = initial.getSlots()
-            .get(1);
-        requireReservation(loadout, LoadoutRole.TOOL, inputItem, "input tool");
+        // Tool identity is authenticated by the pinned Tinkers decoder and the repair verifier.
+        // Do not restrict repair to the single historical loadout tool: excavation can legitimately
+        // choose a shovel, axe, mattock, or another compatible tool from any inventory slot.
         if (evidence.getPredictedOutput() == null || evidence.getPredictedMaterialConsumed() == 0) {
             return Prediction.noOperation(evidence);
         }
