@@ -1,15 +1,18 @@
 package io.github.kaseyawolf2.horizonwright.forge.client.excavation;
 
 import java.util.EnumSet;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
 import net.minecraft.block.Block;
+import net.minecraft.block.material.Material;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.settings.KeyBinding;
 import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.item.ItemStack;
 import net.minecraft.util.MovingObjectPosition;
 import net.minecraft.util.Vec3;
+import net.minecraftforge.common.ForgeHooks;
 
 import io.github.kaseyawolf2.horizonwright.DevelopmentTrace;
 import io.github.kaseyawolf2.horizonwright.core.action.ActionCapability;
@@ -527,30 +530,30 @@ public final class LiveExcavationBackend implements ExcavationBackend {
             BlockPosition position = request.getIntent()
                 .getPosition();
             Block target = minecraft.theWorld.getBlock(position.getX(), position.getY(), position.getZ());
+            int metadata = minecraft.theWorld.getBlockMetadata(position.getX(), position.getY(), position.getZ());
             int preferred = request.getPreferredToolSlot();
-            int selected = minecraft.thePlayer.inventory.currentItem;
-            float bestStrength = Float.NEGATIVE_INFINITY;
-            for (int slot = 0; slot < 9; slot++) {
-                float candidateStrength = strength(minecraft.thePlayer.inventory.mainInventory[slot], target);
-                DevelopmentTrace.event(
-                    "excavation-live",
-                    "tool-candidate",
-                    "request",
-                    request.getRequestId(),
-                    "slot",
-                    slot,
-                    "item",
-                    describeStack(minecraft.thePlayer.inventory.mainInventory[slot]),
-                    "strength",
-                    candidateStrength,
-                    "preferred",
-                    slot == preferred);
-                if (candidateStrength > bestStrength || candidateStrength == bestStrength && slot == preferred) {
-                    bestStrength = candidateStrength;
-                    selected = slot;
+            int previous = minecraft.thePlayer.inventory.currentItem;
+            ExcavationToolCandidateScore best = null;
+            try {
+                for (int slot = 0; slot < 9; slot++) {
+                    minecraft.thePlayer.inventory.currentItem = slot;
+                    ItemStack stack = minecraft.thePlayer.inventory.mainInventory[slot];
+                    ExcavationToolCandidateScore candidate = scoreTool(
+                        slot,
+                        stack,
+                        target,
+                        metadata,
+                        position,
+                        slot == preferred);
+                    traceToolCandidate(candidate, stack, target, metadata);
+                    if (candidate.isBetterThan(best)) best = candidate;
                 }
+            } finally {
+                minecraft.thePlayer.inventory.currentItem = previous;
             }
-            priorHotbarSlot = minecraft.thePlayer.inventory.currentItem;
+            if (best == null) throw new IllegalStateException("hotbar tool evaluation returned no candidates");
+            int selected = best.getSlot();
+            priorHotbarSlot = previous;
             if (selected != priorHotbarSlot) {
                 minecraft.thePlayer.inventory.currentItem = selected;
                 minecraft.playerController.updateController();
@@ -564,14 +567,140 @@ public final class LiveExcavationBackend implements ExcavationBackend {
                 priorHotbarSlot,
                 "preferred",
                 preferred,
-                "strength",
-                bestStrength,
+                "canHarvest",
+                best.canHarvest(),
+                "effectiveToolClass",
+                best.isEffectiveToolClass(),
+                "progressPerTick",
+                best.getProgressPerTick(),
+                "remainingFraction",
+                best.getRemainingFraction(),
                 "changed",
                 toolSlotChanged);
         }
 
-        private float strength(ItemStack stack, Block target) {
-            return stack == null ? 1.0F : stack.func_150997_a(target);
+        private ExcavationToolCandidateScore scoreTool(int slot, ItemStack stack, Block target, int metadata,
+            BlockPosition position, boolean preferred) {
+            boolean canHarvest = ForgeHooks.canHarvestBlock(target, minecraft.thePlayer, metadata);
+            float progress;
+            try {
+                progress = target.getPlayerRelativeBlockHardness(
+                    minecraft.thePlayer,
+                    minecraft.theWorld,
+                    position.getX(),
+                    position.getY(),
+                    position.getZ());
+            } catch (RuntimeException failure) {
+                DevelopmentTrace.event(
+                    "excavation-live",
+                    "tool-progress-failed",
+                    "request",
+                    request.getRequestId(),
+                    "slot",
+                    slot,
+                    "failure",
+                    DevelopmentTrace.error(failure));
+                progress = 0.0F;
+            }
+            if (Float.isNaN(progress) || progress < 0.0F) progress = 0.0F;
+            double remaining = remainingFraction(stack, slot);
+            return new ExcavationToolCandidateScore(
+                slot,
+                stack == null || remaining > 0.0D,
+                canHarvest,
+                progress,
+                hasEffectiveToolClass(stack, target, metadata),
+                remaining,
+                preferred);
+        }
+
+        private boolean hasEffectiveToolClass(ItemStack stack, Block target, int metadata) {
+            if (stack == null) return false;
+            try {
+                if (ForgeHooks.isToolEffective(stack, target, metadata)) return true;
+                String expected = expectedToolClass(target, metadata);
+                if (expected == null) return false;
+                Set<String> classes = stack.getItem()
+                    .getToolClasses(stack);
+                return classes.contains(expected) || stack.getItem()
+                    .getHarvestLevel(stack, expected) >= 0;
+            } catch (RuntimeException failure) {
+                return false;
+            }
+        }
+
+        private String expectedToolClass(Block target, int metadata) {
+            String declared = target.getHarvestTool(metadata);
+            if (declared != null) return declared;
+            Material material = target.getMaterial();
+            if (material == Material.rock || material == Material.iron
+                || material == Material.anvil
+                || material == Material.glass
+                || material == Material.ice
+                || material == Material.packedIce) {
+                return "pickaxe";
+            }
+            if (material == Material.wood) return "axe";
+            if (material == Material.ground || material == Material.grass
+                || material == Material.sand
+                || material == Material.clay
+                || material == Material.snow
+                || material == Material.craftedSnow) {
+                return "shovel";
+            }
+            return null;
+        }
+
+        private double remainingFraction(ItemStack stack, int slot) {
+            if (stack == null) return 1.0D;
+            try {
+                return toolReader.read(stack, slot)
+                    .getRemainingFraction();
+            } catch (RuntimeException notTinkersTool) {
+                if (!stack.isItemStackDamageable()) return 1.0D;
+                int maximum = stack.getMaxDamage();
+                return maximum <= 0 ? 1.0D
+                    : Math.max(0.0D, Math.min(1.0D, (double) (maximum - stack.getItemDamage()) / maximum));
+            }
+        }
+
+        private void traceToolCandidate(ExcavationToolCandidateScore candidate, ItemStack stack, Block target,
+            int metadata) {
+            float metadataAwareDigSpeed;
+            try {
+                metadataAwareDigSpeed = stack == null ? 1.0F
+                    : stack.getItem()
+                        .getDigSpeed(stack, target, metadata);
+            } catch (RuntimeException failure) {
+                metadataAwareDigSpeed = 0.0F;
+            }
+            DevelopmentTrace.event(
+                "excavation-live",
+                "tool-candidate",
+                "request",
+                request.getRequestId(),
+                "slot",
+                candidate.getSlot(),
+                "item",
+                describeStack(stack),
+                "block",
+                Block.blockRegistry.getNameForObject(target),
+                "metadata",
+                metadata,
+                "usable",
+                candidate.isUsable(),
+                "canHarvest",
+                candidate.canHarvest(),
+                "effectiveToolClass",
+                candidate.isEffectiveToolClass(),
+                "progressPerTick",
+                candidate.getProgressPerTick(),
+                "metadataAwareDigSpeed",
+                metadataAwareDigSpeed,
+                "remainingFraction",
+                candidate.getRemainingFraction(),
+                "preferred",
+                candidate.isPreferred());
         }
 
         private void restoreHotbarSlot() {
