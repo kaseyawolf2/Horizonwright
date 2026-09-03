@@ -270,7 +270,7 @@ public final class GuiProfileAssets extends GuiScreen {
         drawCenteredString(fontRendererObj, "Horizonwright profile assets", width / 2, top + 14, 0xFFF0C674);
         drawCenteredString(
             fontRendererObj,
-            "Guided capture - no registry names, NBT, coordinates, or JSON",
+            "Set up tools, storage, repairs, and sleeping",
             width / 2,
             top + 29,
             0xFF8FAAD0);

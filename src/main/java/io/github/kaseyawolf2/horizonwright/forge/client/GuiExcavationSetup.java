@@ -170,7 +170,7 @@ public final class GuiExcavationSetup extends GuiScreen {
         drawCenteredString(fontRendererObj, "New clean-volume excavation", width / 2, top + 14, 0xFFF0C674);
         drawCenteredString(
             fontRendererObj,
-            "Validated cylinder and named service bindings",
+            "Choose the area and support stations for this job",
             width / 2,
             top + 29,
             0xFF8FAAD0);

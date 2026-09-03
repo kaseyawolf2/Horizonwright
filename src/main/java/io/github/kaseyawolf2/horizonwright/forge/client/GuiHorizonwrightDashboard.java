@@ -29,6 +29,7 @@ public final class GuiHorizonwrightDashboard extends GuiScreen {
     private static final int BARITONE_TAB_BUTTON = 5;
     private static final int PROFILE_ASSETS_TAB_BUTTON = 6;
     private static final int TASKS_BUTTON = 7;
+    private static final int OVERVIEW_TAB_BUTTON = 8;
     private static final int RESUME_CHOICE_BUTTON_BASE = 100;
     private static final int RESUME_PREVIOUS_BUTTON = 200;
     private static final int RESUME_NEXT_BUTTON = 201;
@@ -40,6 +41,7 @@ public final class GuiHorizonwrightDashboard extends GuiScreen {
     private int left;
     private int top;
     private int panelWidth;
+    private int panelHeight;
     private GuiButton taskControlButton;
     private GuiButton dryRunButton;
     private GuiButton automationStopButton;
@@ -72,29 +74,53 @@ public final class GuiHorizonwrightDashboard extends GuiScreen {
     public void initGui() {
         buttonList.clear();
         panelWidth = Math.min(420, width - 24);
+        panelHeight = Math.min(320, height - 16);
         left = (width - panelWidth) / 2;
-        top = Math.max(8, (height - 274) / 2);
+        top = Math.max(8, (height - panelHeight) / 2);
 
-        taskControlButton = new GuiButton(PAUSE_BUTTON, left + 12, top + 232, 92, 20, "Pause active");
-        dryRunButton = new GuiButton(DRY_RUN_BUTTON, left + 110, top + 232, 92, 20, "Dry-run: off");
-        automationStopButton = new GuiButton(AUTOMATION_STOP_BUTTON, left + 208, top + 232, 118, 20, "Stop automation");
+        int actionY = top + panelHeight - 28;
+        taskControlButton = new GuiButton(PAUSE_BUTTON, left + 12, actionY, 92, 20, "Pause active");
+        dryRunButton = new GuiButton(DRY_RUN_BUTTON, left + 110, actionY, 92, 20, "Dry-run: off");
+        automationStopButton = new GuiButton(AUTOMATION_STOP_BUTTON, left + 208, actionY, 118, 20, "Stop automation");
         taskControlButton.enabled = false;
         dryRunButton.enabled = false;
         automationStopButton.enabled = false;
         buttonList.add(taskControlButton);
         buttonList.add(dryRunButton);
         buttonList.add(automationStopButton);
-        buttonList.add(new GuiButton(CLOSE_BUTTON, left + panelWidth - 82, top + 232, 70, 20, "Close"));
-        buttonList.add(new GuiButton(BARITONE_TAB_BUTTON, left + panelWidth - 94, top + 8, 82, 20, "Baritone"));
-        buttonList.add(new GuiButton(PROFILE_ASSETS_TAB_BUTTON, left + 12, top + 8, 92, 20, "Profile assets"));
-        buttonList.add(new GuiButton(TASKS_BUTTON, left + 110, top + 8, 64, 20, "Tasks"));
+        buttonList.add(new GuiButton(CLOSE_BUTTON, left + panelWidth - 82, actionY, 70, 20, "Close"));
+
+        int navigationWidth = panelWidth - 24;
+        int tabGap = 4;
+        int tabWidth = (navigationWidth - tabGap * 3) / 4;
+        int navigationY = top + 42;
+        GuiButton overviewTab = new GuiButton(OVERVIEW_TAB_BUTTON, left + 12, navigationY, tabWidth, 20, "Overview");
+        overviewTab.enabled = false;
+        buttonList.add(overviewTab);
+        buttonList.add(new GuiButton(TASKS_BUTTON, left + 12 + tabWidth + tabGap, navigationY, tabWidth, 20, "Tasks"));
+        buttonList.add(
+            new GuiButton(
+                PROFILE_ASSETS_TAB_BUTTON,
+                left + 12 + (tabWidth + tabGap) * 2,
+                navigationY,
+                tabWidth,
+                20,
+                "Profile"));
+        buttonList.add(
+            new GuiButton(
+                BARITONE_TAB_BUTTON,
+                left + 12 + (tabWidth + tabGap) * 3,
+                navigationY,
+                navigationWidth - (tabWidth + tabGap) * 3,
+                20,
+                "Baritone"));
 
         resumeChoiceButtons.clear();
         for (int index = 0; index < RESUME_CHOICES_PER_PAGE; index++) {
             GuiButton choice = new GuiButton(
                 RESUME_CHOICE_BUTTON_BASE + index,
                 left + 42,
-                top + 66 + index * 24,
+                top + 88 + index * 24,
                 panelWidth - 84,
                 20,
                 "");
@@ -102,9 +128,9 @@ public final class GuiHorizonwrightDashboard extends GuiScreen {
             resumeChoiceButtons.add(choice);
             buttonList.add(choice);
         }
-        resumePreviousButton = new GuiButton(RESUME_PREVIOUS_BUTTON, left + 42, top + 192, 72, 20, "Previous");
-        resumeNextButton = new GuiButton(RESUME_NEXT_BUTTON, left + 120, top + 192, 72, 20, "Next");
-        resumeCancelButton = new GuiButton(RESUME_CANCEL_BUTTON, left + panelWidth - 114, top + 192, 72, 20, "Cancel");
+        resumePreviousButton = new GuiButton(RESUME_PREVIOUS_BUTTON, left + 42, top + 214, 72, 20, "Previous");
+        resumeNextButton = new GuiButton(RESUME_NEXT_BUTTON, left + 120, top + 214, 72, 20, "Next");
+        resumeCancelButton = new GuiButton(RESUME_CANCEL_BUTTON, left + panelWidth - 114, top + 214, 72, 20, "Cancel");
         buttonList.add(resumePreviousButton);
         buttonList.add(resumeNextButton);
         buttonList.add(resumeCancelButton);
@@ -257,11 +283,11 @@ public final class GuiHorizonwrightDashboard extends GuiScreen {
         }
 
         drawDefaultBackground();
-        drawRect(left, top, left + panelWidth, top + 264, 0xE010141B);
+        drawRect(left, top, left + panelWidth, top + panelHeight, 0xE010141B);
         drawCenteredString(fontRendererObj, "Horizonwright " + Tags.VERSION, width / 2, top + 14, 0xFFF0C674);
-        drawCenteredString(fontRendererObj, "Milestone 1 - Task control", width / 2, top + 29, 0xFF8FAAD0);
+        drawCenteredString(fontRendererObj, "Operations dashboard", width / 2, top + 28, 0xFF8FAAD0);
 
-        drawString(fontRendererObj, "Active task", left + 16, top + 52, 0xFFAAAAAA);
+        drawString(fontRendererObj, "Active task", left + 16, top + 76, 0xFFAAAAAA);
         drawString(
             fontRendererObj,
             activeTask == null ? "none"
@@ -273,34 +299,34 @@ public final class GuiHorizonwrightDashboard extends GuiScreen {
                         + activeTask.getDetail(),
                     42),
             left + 112,
-            top + 52,
+            top + 76,
             0xFFE0E0E0);
-        drawString(fontRendererObj, "Queue", left + 16, top + 70, 0xFFAAAAAA);
-        drawString(fontRendererObj, queueSummary(controller), left + 112, top + 70, 0xFFE0E0E0);
-        drawString(fontRendererObj, "Blocked", left + 16, top + 88, 0xFFAAAAAA);
+        drawString(fontRendererObj, "Queue", left + 16, top + 94, 0xFFAAAAAA);
+        drawString(fontRendererObj, queueSummary(controller), left + 112, top + 94, 0xFFE0E0E0);
+        drawString(fontRendererObj, "Blocked", left + 16, top + 112, 0xFFAAAAAA);
         drawString(
             fontRendererObj,
             blockedTask == null ? "none" : truncate(blockedSummary(blockedTask), 46),
             left + 112,
-            top + 88,
+            top + 112,
             blockedTask == null ? 0xFFE0E0E0 : 0xFFFFAA66);
-        drawString(fontRendererObj, "Navigation", left + 16, top + 106, 0xFFAAAAAA);
+        drawString(fontRendererObj, "Navigation", left + 16, top + 130, 0xFFAAAAAA);
         drawString(
             fontRendererObj,
             truncate(snapshot.getNavigationDiagnostic(), 46),
             left + 112,
-            top + 106,
+            top + 130,
             0xFFE0E0E0);
-        drawString(fontRendererObj, "Action epoch", left + 16, top + 124, 0xFFAAAAAA);
+        drawString(fontRendererObj, "Automation", left + 16, top + 148, 0xFFAAAAAA);
         drawString(
             fontRendererObj,
-            Long.toString(
-                snapshot.getActionBroker()
-                    .getEpoch()),
+            deathLocked ? "Blocked by death state"
+                : automationStopped ? "Stopped - player control is free"
+                    : snapshot.isDryRun() ? "Dry-run - no gameplay actions" : "Ready",
             left + 112,
-            top + 124,
-            0xFFE0E0E0);
-        drawString(fontRendererObj, "Action leases", left + 16, top + 142, 0xFFAAAAAA);
+            top + 148,
+            deathLocked ? 0xFFFF7777 : automationStopped || snapshot.isDryRun() ? 0xFFFFAA66 : 0xFF77DD77);
+        drawString(fontRendererObj, "Actions active", left + 16, top + 166, 0xFFAAAAAA);
         drawString(
             fontRendererObj,
             Integer.toString(
@@ -308,9 +334,9 @@ public final class GuiHorizonwrightDashboard extends GuiScreen {
                     .getActiveOwners()
                     .size()),
             left + 112,
-            top + 142,
+            top + 166,
             0xFFE0E0E0);
-        drawString(fontRendererObj, "Mode", left + 16, top + 160, 0xFFAAAAAA);
+        drawString(fontRendererObj, "Control", left + 16, top + 184, 0xFFAAAAAA);
         drawString(
             fontRendererObj,
             deathLocked ? EnumChatFormatting.RED + "DEATH SAFETY LOCKED"
@@ -318,7 +344,7 @@ public final class GuiHorizonwrightDashboard extends GuiScreen {
                     : snapshot.isDryRun() ? EnumChatFormatting.YELLOW + "DRY-RUN (leases disabled)"
                         : EnumChatFormatting.GREEN + "Live, operator-supervised",
             left + 112,
-            top + 160,
+            top + 184,
             0xFFFFFFFF);
         NavigationProgress progress = snapshot.getNavigationProgress();
         drawString(
@@ -326,16 +352,16 @@ public final class GuiHorizonwrightDashboard extends GuiScreen {
             progress == null ? "Navigation request: none"
                 : truncate(progress.getRequestId() + ": " + progress.getState() + " - " + progress.getDetail(), 58),
             left + 16,
-            top + 180,
+            top + 206,
             0xFFB8C8DE);
         drawString(
             fontRendererObj,
             truncate(operatorMessage, 58),
             left + 16,
-            top + 198,
+            top + 224,
             operatorMessage.toLowerCase()
                 .contains("failed") ? 0xFFFF7777 : 0xFFB8C8DE);
-        drawString(fontRendererObj, "Unattended operation remains disabled.", left + 16, top + 216, 0xFFCC7777);
+        drawString(fontRendererObj, "Unattended operation remains disabled.", left + 16, top + 244, 0xFFCC7777);
 
         if (resumeSelectorOpen) {
             drawResumeSelectorPanel(resumeCandidates.size());
@@ -345,8 +371,8 @@ public final class GuiHorizonwrightDashboard extends GuiScreen {
         if (!resumeSelectorOpen && blockedTask != null
             && mouseX >= left + 108
             && mouseX <= left + panelWidth - 12
-            && mouseY >= top + 82
-            && mouseY <= top + 100) {
+            && mouseY >= top + 106
+            && mouseY <= top + 124) {
             drawHoveringText(
                 fontRendererObj.listFormattedStringToWidth(GuiTaskManager.taskDetails(blockedTask), panelWidth - 64),
                 mouseX,
@@ -363,24 +389,24 @@ public final class GuiHorizonwrightDashboard extends GuiScreen {
         automationStopButton.displayString = "Stop unavailable";
 
         drawDefaultBackground();
-        drawRect(left, top, left + panelWidth, top + 264, 0xE010141B);
+        drawRect(left, top, left + panelWidth, top + panelHeight, 0xE010141B);
         drawCenteredString(fontRendererObj, "Horizonwright " + Tags.VERSION, width / 2, top + 14, 0xFFF0C674);
-        drawCenteredString(fontRendererObj, "Milestone 1 - Task control", width / 2, top + 29, 0xFF8FAAD0);
-        drawString(fontRendererObj, "Session", left + 16, top + 58, 0xFFAAAAAA);
-        drawString(fontRendererObj, "Unavailable", left + 112, top + 58, 0xFFFFAA66);
-        drawString(fontRendererObj, truncate(diagnostic, 58), left + 16, top + 82, 0xFFFFAA66);
+        drawCenteredString(fontRendererObj, "Operations dashboard", width / 2, top + 28, 0xFF8FAAD0);
+        drawString(fontRendererObj, "Session", left + 16, top + 82, 0xFFAAAAAA);
+        drawString(fontRendererObj, "Unavailable", left + 112, top + 82, 0xFFFFAA66);
+        drawString(fontRendererObj, truncate(diagnostic, 58), left + 16, top + 106, 0xFFFFAA66);
         drawString(
             fontRendererObj,
             "Join the bound world or resolve the session diagnostic.",
             left + 16,
-            top + 106,
+            top + 130,
             0xFFB8C8DE);
-        drawString(fontRendererObj, truncate(operatorMessage, 58), left + 16, top + 198, 0xFFB8C8DE);
+        drawString(fontRendererObj, truncate(operatorMessage, 58), left + 16, top + 224, 0xFFB8C8DE);
         drawString(
             fontRendererObj,
             "No Horizonwright action controls are available.",
             left + 16,
-            top + 216,
+            top + 244,
             0xFFCC7777);
         super.drawScreen(mouseX, mouseY, partialTicks);
     }
@@ -419,18 +445,18 @@ public final class GuiHorizonwrightDashboard extends GuiScreen {
 
     private void drawResumeSelectorPanel(int candidateCount) {
         int pageCount = Math.max(1, (candidateCount + RESUME_CHOICES_PER_PAGE - 1) / RESUME_CHOICES_PER_PAGE);
-        drawRect(left + 28, top + 42, left + panelWidth - 28, top + 224, 0xFA10141B);
+        drawRect(left + 28, top + 66, left + panelWidth - 28, top + 246, 0xFA10141B);
         drawCenteredString(
             fontRendererObj,
             "Select a task to resume  (page " + (resumeSelectorPage + 1) + "/" + pageCount + ")",
             width / 2,
-            top + 50,
+            top + 74,
             0xFFF0C674);
         drawCenteredString(
             fontRendererObj,
             "Only the selected task will regain automation authority.",
             width / 2,
-            top + 216,
+            top + 238,
             0xFFB8C8DE);
     }
 

@@ -1,5 +1,6 @@
 package io.github.kaseyawolf2.horizonwright.forge.client;
 
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 
@@ -65,19 +66,19 @@ public final class GuiBaritoneSettings extends GuiScreen {
         panelHeight = Math.min(520, height - 20);
         left = (width - panelWidth) / 2;
         top = (height - panelHeight) / 2;
-        contentTop = top + 70;
-        listWidth = Math.max(240, Math.min(360, (panelWidth - 40) / 2));
+        contentTop = top + 94;
+        listWidth = Math.max(120, Math.min(360, (panelWidth - 40) / 2));
         detailsLeft = left + 20 + listWidth;
         detailsWidth = left + panelWidth - 12 - detailsLeft;
-        settingsPerPage = Math.max(6, Math.min(14, (panelHeight - 130) / 22));
+        settingsPerPage = Math.max(1, Math.min(14, (panelHeight - 184) / 22));
 
         buttonList.clear();
-        buttonList.add(new GuiButton(BACK_TAB, left + 12, top + 10, 92, 20, "Dashboard"));
-        GuiButton selectedTab = new GuiButton(BARITONE_TAB, left + 110, top + 10, 110, 20, "Baritone config");
+        buttonList.add(new GuiButton(BACK_TAB, left + 12, top + 38, 92, 20, "Dashboard"));
+        GuiButton selectedTab = new GuiButton(BARITONE_TAB, left + 110, top + 38, 110, 20, "Baritone config");
         selectedTab.enabled = false;
         buttonList.add(selectedTab);
 
-        searchField = new GuiTextField(fontRendererObj, left + 12, top + 42, panelWidth - 24, 18);
+        searchField = new GuiTextField(fontRendererObj, left + 12, top + 66, panelWidth - 24, 18);
         searchField.setMaxStringLength(120);
         searchField.setFocused(true);
 
@@ -94,7 +95,7 @@ public final class GuiBaritoneSettings extends GuiScreen {
         valueField = new GuiTextField(fontRendererObj, detailsLeft + 8, editorY, detailsWidth - 16, 18);
         valueField.setMaxStringLength(4096);
         int actionY = top + panelHeight - 30;
-        int actionWidth = Math.max(54, (detailsWidth - 28) / 3);
+        int actionWidth = Math.max(38, (detailsWidth - 28) / 3);
         applyButton = new GuiButton(APPLY_VALUE, detailsLeft + 8, actionY, actionWidth, 20, "Apply");
         resetButton = new GuiButton(RESET_VALUE, detailsLeft + 12 + actionWidth, actionY, actionWidth, 20, "Reset");
         toggleButton = new GuiButton(
@@ -198,7 +199,7 @@ public final class GuiBaritoneSettings extends GuiScreen {
         drawCenteredString(fontRendererObj, "Baritone configuration", width / 2, top + 16, 0xFFF0C674);
         if (searchField.getText()
             .isEmpty() && !searchField.isFocused()) {
-            drawString(fontRendererObj, "Search settings...", left + 16, top + 47, 0xFF777777);
+            drawString(fontRendererObj, "Search settings...", left + 16, top + 71, 0xFF777777);
         }
         searchField.drawTextBox();
 
@@ -264,6 +265,7 @@ public final class GuiBaritoneSettings extends GuiScreen {
             0xFFB8C8DE);
         valueField.drawTextBox();
         super.drawScreen(mouseX, mouseY, partialTicks);
+        drawSettingTooltip(mouseX, mouseY);
     }
 
     @Override
@@ -330,6 +332,31 @@ public final class GuiBaritoneSettings extends GuiScreen {
             }
         }
         return null;
+    }
+
+    private void drawSettingTooltip(int mouseX, int mouseY) {
+        int start = page * settingsPerPage;
+        for (int index = 0; index < settingsPerPage; index++) {
+            int matchIndex = start + index;
+            if (matchIndex >= matches.size()) return;
+            GuiButton button = button(SETTING_BUTTON_BASE + index);
+            if (!button.visible || mouseX < button.xPosition
+                || mouseX >= button.xPosition + button.width
+                || mouseY < button.yPosition
+                || mouseY >= button.yPosition + button.height) continue;
+            BaritoneSettingsCatalog.Entry entry = matches.get(matchIndex);
+            drawHoveringText(
+                Arrays.asList(
+                    entry.getName(),
+                    "Type: " + entry.getType(),
+                    "Current: " + entry.getCurrentValue(),
+                    "Default: " + entry.getDefaultValue(),
+                    entry.isJavaOnly() ? "Read-only: controlled by Java code" : "Click to inspect or edit"),
+                mouseX,
+                mouseY,
+                fontRendererObj);
+            return;
+        }
     }
 
     private GuiButton button(int id) {
