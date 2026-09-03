@@ -1,5 +1,7 @@
 package io.github.kaseyawolf2.horizonwright.forge.client;
 
+import java.lang.reflect.Field;
+
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.PlayerControllerMP;
 import net.minecraft.item.ItemStack;
@@ -44,9 +46,9 @@ public final class ProgressiveBlockDamageShield {
             return;
         }
         PlayerControllerMP controller = minecraft.playerController;
-        if (!controller.isHittingBlock) return;
+        if (!ControllerStateAccess.isHittingBlock(controller)) return;
         saved = new SavedState(controller);
-        controller.isHittingBlock = false;
+        ControllerStateAccess.setHittingBlock(controller, false);
         DevelopmentTrace.event(
             "block-damage-shield",
             "disarmed-gui-reset",
@@ -66,7 +68,7 @@ public final class ProgressiveBlockDamageShield {
 
     private void restoreIfNeeded() {
         if (saved == null || minecraft.playerController == null) return;
-        if (minecraft.currentScreen == null && minecraft.playerController.isHittingBlock) {
+        if (minecraft.currentScreen == null && ControllerStateAccess.isHittingBlock(minecraft.playerController)) {
             saved = null;
             DevelopmentTrace.event("block-damage-shield", "vanilla-resumed-after-gui-close", "owner", owner);
             return;
@@ -95,24 +97,84 @@ public final class ProgressiveBlockDamageShield {
         private final int hitDelay;
 
         private SavedState(PlayerControllerMP controller) {
-            x = controller.currentBlockX;
-            y = controller.currentBlockY;
-            z = controller.currentblockZ;
-            item = controller.currentItemHittingBlock;
-            damage = controller.curBlockDamageMP;
-            soundTicks = controller.stepSoundTickCounter;
-            hitDelay = controller.blockHitDelay;
+            x = ControllerStateAccess.integer(controller, ControllerStateAccess.CURRENT_BLOCK_X);
+            y = ControllerStateAccess.integer(controller, ControllerStateAccess.CURRENT_BLOCK_Y);
+            z = ControllerStateAccess.integer(controller, ControllerStateAccess.CURRENT_BLOCK_Z);
+            item = (ItemStack) ControllerStateAccess.value(controller, ControllerStateAccess.CURRENT_ITEM);
+            damage = ControllerStateAccess.floating(controller, ControllerStateAccess.CURRENT_DAMAGE);
+            soundTicks = ControllerStateAccess.floating(controller, ControllerStateAccess.SOUND_TICKS);
+            hitDelay = ControllerStateAccess.integer(controller, ControllerStateAccess.HIT_DELAY);
         }
 
         private void restore(PlayerControllerMP controller) {
-            controller.currentBlockX = x;
-            controller.currentBlockY = y;
-            controller.currentblockZ = z;
-            controller.currentItemHittingBlock = item;
-            controller.curBlockDamageMP = damage;
-            controller.stepSoundTickCounter = soundTicks;
-            controller.blockHitDelay = hitDelay;
-            controller.isHittingBlock = true;
+            ControllerStateAccess.set(controller, ControllerStateAccess.CURRENT_BLOCK_X, x);
+            ControllerStateAccess.set(controller, ControllerStateAccess.CURRENT_BLOCK_Y, y);
+            ControllerStateAccess.set(controller, ControllerStateAccess.CURRENT_BLOCK_Z, z);
+            ControllerStateAccess.set(controller, ControllerStateAccess.CURRENT_ITEM, item);
+            ControllerStateAccess.set(controller, ControllerStateAccess.CURRENT_DAMAGE, damage);
+            ControllerStateAccess.set(controller, ControllerStateAccess.SOUND_TICKS, soundTicks);
+            ControllerStateAccess.set(controller, ControllerStateAccess.HIT_DELAY, hitDelay);
+            ControllerStateAccess.setHittingBlock(controller, true);
+        }
+    }
+
+    private static final class ControllerStateAccess {
+
+        private static final Field CURRENT_BLOCK_X = field("currentBlockX", "field_78775_c");
+        private static final Field CURRENT_BLOCK_Y = field("currentBlockY", "field_78772_d");
+        private static final Field CURRENT_BLOCK_Z = field("currentblockZ", "field_78773_e");
+        private static final Field CURRENT_ITEM = field("currentItemHittingBlock", "field_85183_f");
+        private static final Field CURRENT_DAMAGE = field("curBlockDamageMP", "field_78770_f");
+        private static final Field SOUND_TICKS = field("stepSoundTickCounter", "field_78780_h");
+        private static final Field HIT_DELAY = field("blockHitDelay", "field_78781_i");
+        private static final Field HITTING_BLOCK = field("isHittingBlock", "field_78778_j");
+
+        private ControllerStateAccess() {}
+
+        private static boolean isHittingBlock(PlayerControllerMP controller) {
+            return (Boolean) value(controller, HITTING_BLOCK);
+        }
+
+        private static void setHittingBlock(PlayerControllerMP controller, boolean value) {
+            set(controller, HITTING_BLOCK, value);
+        }
+
+        private static int integer(PlayerControllerMP controller, Field field) {
+            return (Integer) value(controller, field);
+        }
+
+        private static float floating(PlayerControllerMP controller, Field field) {
+            return (Float) value(controller, field);
+        }
+
+        private static Object value(PlayerControllerMP controller, Field field) {
+            try {
+                return field.get(controller);
+            } catch (IllegalAccessException failure) {
+                throw new IllegalStateException("Cannot read progressive block-damage state", failure);
+            }
+        }
+
+        private static void set(PlayerControllerMP controller, Field field, Object value) {
+            try {
+                field.set(controller, value);
+            } catch (IllegalAccessException failure) {
+                throw new IllegalStateException("Cannot restore progressive block-damage state", failure);
+            }
+        }
+
+        private static Field field(String developmentName, String runtimeName) {
+            for (String name : new String[] { developmentName, runtimeName }) {
+                try {
+                    Field field = PlayerControllerMP.class.getDeclaredField(name);
+                    field.setAccessible(true);
+                    return field;
+                } catch (NoSuchFieldException ignored) {
+                    // Try the other known name for this exact Minecraft field.
+                }
+            }
+            throw new IllegalStateException(
+                "Unsupported PlayerControllerMP: missing " + developmentName + " / " + runtimeName);
         }
     }
 }
