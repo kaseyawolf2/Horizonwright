@@ -235,6 +235,29 @@ public class RepairTaskRunnerTest {
     }
 
     @Test
+    public void revalidationReusesPlanningRevisionForRevisionBoundTransactionIds() {
+        harness = new Harness();
+        harness.backend.revisionBoundTransactionId = true;
+        TaskSpec spec = taskSpec("repair-revision-bound-transaction");
+        harness.controller.submit(spec);
+
+        TaskSnapshot prepared = task(harness.controller.tick(), spec.getId());
+        assertEquals(
+            "PREPARED",
+            prepared.getCheckpoint()
+                .getValues()
+                .get("phase"));
+
+        TaskSnapshot submitted = task(harness.controller.tick(), spec.getId());
+        assertEquals(
+            "AWAITING_CONFIRMATION",
+            submitted.getCheckpoint()
+                .getValues()
+                .get("phase"));
+        assertEquals(1, harness.backend.submissions);
+    }
+
+    @Test
     public void rejectionAndMissingMaterialNeverReachAutomaticReplay() {
         harness = new Harness();
         TaskSpec rejected = taskSpec("repair-rejected");
@@ -360,6 +383,7 @@ public class RepairTaskRunnerTest {
         private boolean automatedStationAccess;
         private boolean automatedInputStaging;
         private boolean previewMutatedInput;
+        private boolean revisionBoundTransactionId;
         private int submissions;
         private int stationAccessSubmissions;
         private int inputStagingSubmissions;
@@ -417,7 +441,8 @@ public class RepairTaskRunnerTest {
                 null,
                 null);
             ContainerTransaction transaction = new ContainerTransaction(
-                request.getTaskId() + "-transaction",
+                request.getTaskId() + "-transaction"
+                    + (revisionBoundTransactionId ? "-r" + request.getCheckpointRevision() : ""),
                 request.getActionEpoch(),
                 Collections.singletonList(
                     new VerifiedContainerClick("consume-material", unapprovedClick ? 6 : 1, 0, 0, before, after)));

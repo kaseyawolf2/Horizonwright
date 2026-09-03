@@ -378,7 +378,11 @@ final class RepairTaskRunner implements TaskRunner {
     private StepResult executePrepared(TaskStepContext context, RepairBackend backend) {
         RepairObservationResult observed;
         try {
-            observed = observe(context, backend);
+            // PREPARED advances the checkpoint revision after persisting the exact plan. Revalidate
+            // against the planning revision so backends that derive transaction/click correlation IDs
+            // from that revision reproduce the persisted transaction instead of manufacturing a
+            // bookkeeping-only mismatch on every tick.
+            observed = observe(context, backend, state.getRevision() - 1L);
         } catch (RuntimeException failure) {
             return StepResult.failed(
                 context.getActionEpoch(),
@@ -558,7 +562,11 @@ final class RepairTaskRunner implements TaskRunner {
     }
 
     private RepairObservationResult observe(TaskStepContext context, RepairBackend backend) {
-        RepairObservationRequest request = observationRequest(context);
+        return observe(context, backend, state.getRevision());
+    }
+
+    private RepairObservationResult observe(TaskStepContext context, RepairBackend backend, long checkpointRevision) {
+        RepairObservationRequest request = observationRequest(context, checkpointRevision);
         RepairObservationResult observed = backend.observe(request);
         if (observed == null || !request.getTaskId()
             .equals(observed.getTaskId())
@@ -574,9 +582,13 @@ final class RepairTaskRunner implements TaskRunner {
     }
 
     private RepairObservationRequest observationRequest(TaskStepContext context) {
+        return observationRequest(context, state.getRevision());
+    }
+
+    private RepairObservationRequest observationRequest(TaskStepContext context, long checkpointRevision) {
         return new RepairObservationRequest(
             spec.getId(),
-            state.getRevision(),
+            checkpointRevision,
             context.getActionEpoch(),
             RepairTask.stationId(spec),
             RepairTask.reservedInventorySlot(spec));
