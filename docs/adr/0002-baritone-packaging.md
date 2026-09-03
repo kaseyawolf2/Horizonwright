@@ -22,7 +22,7 @@ Require a separate, exact-version Baritone JAR at runtime. The user-selected
 enhanced build is
 `baritone-v1.2.19-mc1.7.10-1-7-10-forge+fcbbd4882c.jar`, with production
 binary SHA-256
-`9eeadebbabb253aae53af90d46e280c23b217f4df29d5b693eec814d7379ede1`.
+`f253f077181bcf0f008dcbe020c40e93a9bed0f5581d463c81fbd94bb4235ac6`.
 The clean external filename contains compiled local improvements; its embedded
 Gradle version deliberately retains the source tree's `-dirty` marker.
 
@@ -71,7 +71,7 @@ mutation fails the route rather than broadening its lease.
 - Minecraft 1.7.10 fork: <https://github.com/kaseyawolf2/baritone>
 - Build commit identity: `fcbbd4882cc7d846a8e613dea4b50203e1fb4ebc`
 - Corresponding Gradle sources artifact SHA-256:
-  `e07fe0fbeaa81286035578c65f0cb5ccdb565283f1643db2230e92f6fe968455`
+  `c1ff3406763fb2b640f72c282933b73121c22c53dc9e5e4a3079f879d50da86f`
 
 The vendored binary and corresponding Gradle sources artifact are the
 authoritative durable compatibility record for this enhanced build.
