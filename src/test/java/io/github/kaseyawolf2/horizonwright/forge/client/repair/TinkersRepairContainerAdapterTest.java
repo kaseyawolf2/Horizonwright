@@ -56,6 +56,7 @@ public class TinkersRepairContainerAdapterTest {
     public void stableToolIdentityExcludesRepairStateAndRetainsConstructionNbt() {
         Item item = new FakeModifyableItem();
         ItemStack damagedStack = tool(item, 700, 1000, 3, "head-a");
+        damagedStack.setItemDamage(85);
         damagedStack.getTagCompound()
             .getCompoundTag("InfiTool")
             .setInteger("RepairCount", 4);
@@ -63,6 +64,7 @@ public class TinkersRepairContainerAdapterTest {
             .getCompoundTag("InfiTool")
             .setBoolean("Broken", true);
         ItemStack repairedStack = tool(item, 500, 1000, 3, "head-a");
+        repairedStack.setItemDamage(1);
         repairedStack.getTagCompound()
             .getCompoundTag("InfiTool")
             .setInteger("RepairCount", 5);

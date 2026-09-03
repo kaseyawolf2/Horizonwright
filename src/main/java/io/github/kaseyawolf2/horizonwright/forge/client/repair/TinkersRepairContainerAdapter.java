@@ -181,10 +181,9 @@ public final class TinkersRepairContainerAdapter {
         stableBase.removeTag("RepairCount");
         stableBase.removeTag("Broken");
         stableBase.removeTag("ToRemove");
-        String stableIdentity = registryIdentity.trim() + "|meta="
-            + stack.getItemDamage()
-            + "|stableNbt="
-            + sha256(canonicalNbt(stableTag));
+        // ToolCore uses ItemStack metadata as a derived durability-bar value, so it changes
+        // during a repair and is not a material/component identity field.
+        String stableIdentity = registryIdentity.trim() + "|stableNbt=" + sha256(canonicalNbt(stableTag));
         return new RepairToolSnapshot(stableIdentity, damage, maximumDamage, reservedInventorySlot);
     }
 
