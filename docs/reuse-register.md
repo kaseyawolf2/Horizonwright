@@ -36,8 +36,8 @@ snapshot in `vendor/baritone/` is now the authoritative record.
 | Minecraft 1.7.10 fork | `https://github.com/kaseyawolf2/baritone` |
 | Clean snapshot | `fcbbd4882cc7d846a8e613dea4b50203e1fb4ebc` |
 | Embedded build version | `v1.2.19-mc1.7.10-1-7-10-forge+fcbbd4882c-dirty` |
-| Binary SHA-256 | `3276c7f96323a0a6ca88ddafd178e039f68959ef62801c984b68a564738965ca` |
-| Sources JAR SHA-256 | `4bb143fb6f9be7965a72212333d4334b1edfb788625566e95092a2a758b090c8` |
+| Binary SHA-256 | `64bfc50f885edb84c0b075d01e6e4016884dc9f4e75ac7f2dfaf64cd50d4794a` |
+| Sources JAR SHA-256 | `15cd014228d7e24598c4662c56a1373ad807922206589852133e013bbd4225c5` |
 | License | LGPL-3.0-or-later; complete LGPL/GPL material and fastutil's Apache-2.0 license are in `vendor/baritone/` |
 
 The snapshot commit and tag were local-only when captured. Do not invent a

@@ -29,7 +29,7 @@ Horizonwright's original source is licensed under the MIT License.
   `fcbbd4882cc7d846a8e613dea4b50203e1fb4ebc`
 - License: LGPL-3.0-or-later
 - Validated binary SHA-256:
-  `3276c7f96323a0a6ca88ddafd178e039f68959ef62801c984b68a564738965ca`
+  `64bfc50f885edb84c0b075d01e6e4016884dc9f4e75ac7f2dfaf64cd50d4794a`
 - Complete GPLv3 text SHA-256:
   `3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986`
 - Complete corresponding source, LGPL/GPL license material, and checksums:
