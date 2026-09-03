@@ -73,11 +73,18 @@ final class RepairTaskRunner implements TaskRunner {
         RepairBackend backend = runtime.getRepairBackend();
         RepairBackendAvailability availability = availability(backend);
         if (backend == null || !availability.isAvailable()) {
+            if (backend != null && availability.isWaitingForOperator()) {
+                return StepResult.waitFor(
+                    context.getActionEpoch(),
+                    taskCheckpoint,
+                    0L,
+                    availability.getDiagnostic() + "; repair will continue automatically when it is open");
+            }
             return blocked(
                 context,
                 availability.getDiagnostic(),
                 "the pinned, compatible Tinkers repair station",
-                "Open the configured Tool Station or Tool Forge, then resume this task.");
+                "Resolve the repair-backend problem, then resume this task.");
         }
         if (activeHandle != null) {
             if (activeBackend != backend)

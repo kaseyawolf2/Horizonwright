@@ -136,6 +136,34 @@ public class ExcavationServiceCoordinatorTest {
     }
 
     @Test
+    public void legacyBlockedRepairChildIsResumedIntoLiveStationWaiting() {
+        controller = controller(ChildOutcome.LEGACY_STATION_WAIT);
+        TaskSpec parent = ExcavationTask.cleanVolumeCylinder(
+            "legacy-repair-wait",
+            0,
+            8,
+            8,
+            1,
+            12,
+            12,
+            ExcavationServicePolicy.repairOnly("tool-forge", 4, 100));
+        controller.submit(parent);
+        ControllerSnapshot blocked = tickUntil(parent.getId(), TaskState.BLOCKED);
+        ExcavationServiceCoordinator coordinator = new ExcavationServiceCoordinator(controller);
+        assertEquals(1, coordinator.coordinate(blocked));
+        String childId = ExcavationServiceCoordinator.childId(
+            parent.getId(),
+            task(blocked, parent.getId()).getCheckpoint()
+                .getRevision(),
+            ExcavationSuspensionReason.REPAIR_REQUIRED);
+        ControllerSnapshot childBlocked = tickUntil(childId, TaskState.BLOCKED);
+
+        assertEquals(1, coordinator.coordinate(childBlocked));
+        assertEquals(TaskState.QUEUED, task(controller.snapshot(), childId).getState());
+        assertEquals(TaskState.BLOCKED, task(controller.snapshot(), parent.getId()).getState());
+    }
+
+    @Test
     public void repairChildUsesTheDamagedToolSlotRecordedByTheParent() {
         controller = controller(ChildOutcome.COMPLETED);
         TaskSpec parent = ExcavationTask.cleanVolumeCylinder(
@@ -246,7 +274,8 @@ public class ExcavationServiceCoordinatorTest {
 
     private enum ChildOutcome {
         COMPLETED,
-        FAILED
+        FAILED,
+        LEGACY_STATION_WAIT
     }
 
     private static final class CoordinatedRunnerFactory implements TaskRunnerFactory {
@@ -260,9 +289,22 @@ public class ExcavationServiceCoordinatorTest {
         @Override
         public TaskRunner create(TaskSpec spec, TaskCheckpoint checkpoint) {
             if (ExcavationTask.TYPE.equals(spec.getType())) return excavationRunner(spec, checkpoint);
-            return context -> childOutcome == ChildOutcome.COMPLETED
-                ? StepResult.completed(context.getActionEpoch(), context.getCheckpoint(), "service verified")
-                : StepResult.failed(context.getActionEpoch(), context.getCheckpoint(), "service failed", false);
+            return context -> {
+                if (childOutcome == ChildOutcome.COMPLETED) {
+                    return StepResult.completed(context.getActionEpoch(), context.getCheckpoint(), "service verified");
+                }
+                if (childOutcome == ChildOutcome.LEGACY_STATION_WAIT) {
+                    return StepResult.blocked(
+                        context.getActionEpoch(),
+                        context.getCheckpoint(),
+                        BlockedReason.missingRequirement(
+                            "Open the exact pinned Tool Station or Tool Forge",
+                            "tool-forge",
+                            "the pinned, compatible Tinkers repair station",
+                            "Open the configured Tool Station or Tool Forge, then resume this task."));
+                }
+                return StepResult.failed(context.getActionEpoch(), context.getCheckpoint(), "service failed", false);
+            };
         }
 
         private static TaskRunner excavationRunner(TaskSpec spec, TaskCheckpoint createdCheckpoint) {

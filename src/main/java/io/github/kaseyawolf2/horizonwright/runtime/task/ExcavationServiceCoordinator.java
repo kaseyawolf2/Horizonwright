@@ -16,6 +16,7 @@ import io.github.kaseyawolf2.horizonwright.core.task.TaskState;
 public final class ExcavationServiceCoordinator {
 
     private static final String CHILD_PREFIX = "hw-service-";
+    private static final String LEGACY_REPAIR_STATION_WAIT = "Open the exact pinned Tool Station or Tool Forge";
 
     private final IHorizonwrightController controller;
 
@@ -45,6 +46,13 @@ public final class ExcavationServiceCoordinator {
             }
             TaskSnapshot child = existing.get();
             if (!sameLinkedChild(child.getSpec(), expectedChild, parent, checkpoint, reason)) continue;
+            if (isLegacyRepairStationWait(child)) {
+                controller.resume(
+                    child.getSpec()
+                        .getId());
+                mutations++;
+                continue;
+            }
             if (child.getState() == TaskState.COMPLETED) {
                 controller.resume(
                     parent.getSpec()
@@ -128,6 +136,16 @@ public final class ExcavationServiceCoordinator {
         return task.getState() == TaskState.BLOCKED && ExcavationTask.TYPE.equals(
             task.getSpec()
                 .getType());
+    }
+
+    private static boolean isLegacyRepairStationWait(TaskSnapshot child) {
+        return RepairTask.TYPE.equals(
+            child.getSpec()
+                .getType())
+            && child.getState() == TaskState.BLOCKED
+            && child.getBlockedReason()
+                .map(reason -> LEGACY_REPAIR_STATION_WAIT.equals(reason.getDetail()))
+                .orElse(false);
     }
 
     private static boolean supports(ExcavationServicePolicy policy, ExcavationSuspensionReason reason) {

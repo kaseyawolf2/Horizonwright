@@ -67,7 +67,8 @@ public final class LiveTinkersRepairBackend implements RepairBackend {
                 open.getClass()
                     .getName())
                 != null ? RepairBackendAvailability.available(compatibility.getDiagnostic())
-                    : RepairBackendAvailability.unavailable("Open the exact pinned Tool Station or Tool Forge");
+                    : RepairBackendAvailability
+                        .waitingForOperator("Waiting for the exact pinned Tool Station or Tool Forge to be opened");
         }
         DevelopmentTrace.event(
             "repair-live",

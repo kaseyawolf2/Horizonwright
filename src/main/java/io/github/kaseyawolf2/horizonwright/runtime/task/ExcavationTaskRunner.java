@@ -351,8 +351,10 @@ final class ExcavationTaskRunner implements TaskRunner {
             : -1;
         String action = reason == ExcavationSuspensionReason.UNLOADING_REQUIRED
             ? "Complete the configured unload transaction, then resume this task."
-            : "Repair the damaged Tinkers tool from inventory slot " + repairSlot
-                + " at the configured station, then resume this task.";
+            : "Open the configured Tool Station or Tool Forge. Horizonwright will repair the damaged Tinkers tool "
+                + "from inventory slot "
+                + repairSlot
+                + " and resume excavation automatically.";
         return StepResult.blocked(
             context.getActionEpoch(),
             taskCheckpoint,

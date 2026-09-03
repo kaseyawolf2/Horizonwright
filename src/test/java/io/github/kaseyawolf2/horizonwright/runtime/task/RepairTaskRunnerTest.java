@@ -123,6 +123,30 @@ public class RepairTaskRunnerTest {
     }
 
     @Test
+    public void waitsLiveForOperatorToOpenStationThenContinuesWithoutManualResume() {
+        harness = new Harness();
+        harness.backend.stationOpen = false;
+        TaskSpec spec = taskSpec("repair-wait-for-station");
+        harness.controller.submit(spec);
+
+        TaskSnapshot waiting = task(harness.controller.tick(), spec.getId());
+        assertEquals(TaskState.RUNNING, waiting.getState());
+        assertEquals(0, harness.backend.submissions);
+
+        harness.backend.stationOpen = true;
+        TaskSnapshot prepared = task(harness.controller.tick(), spec.getId());
+        assertEquals(TaskState.RUNNING, prepared.getState());
+        assertEquals(
+            "PREPARED",
+            prepared.getCheckpoint()
+                .getValues()
+                .get("phase"));
+
+        harness.controller.tick();
+        assertEquals(1, harness.backend.submissions);
+    }
+
+    @Test
     public void rejectionAndMissingMaterialNeverReachAutomaticReplay() {
         harness = new Harness();
         TaskSpec rejected = taskSpec("repair-rejected");
@@ -244,13 +268,15 @@ public class RepairTaskRunnerTest {
         private boolean changedPrediction;
         private boolean noMaterial;
         private boolean unapprovedClick;
+        private boolean stationOpen = true;
         private int submissions;
         private ActionLease lastLease;
         private Handle active;
 
         @Override
         public RepairBackendAvailability availability() {
-            return RepairBackendAvailability.available("pinned test forge open");
+            return stationOpen ? RepairBackendAvailability.available("pinned test forge open")
+                : RepairBackendAvailability.waitingForOperator("waiting for pinned test forge");
         }
 
         @Override
