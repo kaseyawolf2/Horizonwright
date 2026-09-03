@@ -182,6 +182,34 @@ public class RepairTaskRunnerTest {
     }
 
     @Test
+    public void stagesInputsUnderContainerAuthorityBeforePreparingRepair() {
+        harness = new Harness();
+        harness.backend.automatedInputStaging = true;
+        TaskSpec spec = taskSpec("repair-stage-inputs");
+        harness.controller.submit(spec);
+
+        TaskSnapshot staging = task(harness.controller.tick(), spec.getId());
+        assertEquals(TaskState.RUNNING, staging.getState());
+        assertEquals(1, harness.backend.inputStagingSubmissions);
+        assertTrue(
+            harness.backend.lastInputStagingLease.getCapabilities()
+                .contains(ActionCapability.CONTAINER));
+
+        assertEquals(TaskState.RUNNING, task(harness.controller.tick(), spec.getId()).getState());
+        harness.backend.confirmInputStaging();
+        assertEquals(TaskState.RUNNING, task(harness.controller.tick(), spec.getId()).getState());
+
+        TaskSnapshot prepared = task(harness.controller.tick(), spec.getId());
+        assertEquals(
+            "PREPARED",
+            prepared.getCheckpoint()
+                .getValues()
+                .get("phase"));
+        harness.controller.tick();
+        assertEquals(1, harness.backend.submissions);
+    }
+
+    @Test
     public void rejectionAndMissingMaterialNeverReachAutomaticReplay() {
         harness = new Harness();
         TaskSpec rejected = taskSpec("repair-rejected");
@@ -305,12 +333,16 @@ public class RepairTaskRunnerTest {
         private boolean unapprovedClick;
         private boolean stationOpen = true;
         private boolean automatedStationAccess;
+        private boolean automatedInputStaging;
         private int submissions;
         private int stationAccessSubmissions;
+        private int inputStagingSubmissions;
         private ActionLease lastLease;
         private ActionLease lastStationLease;
+        private ActionLease lastInputStagingLease;
         private Handle active;
         private StationHandle stationAccess;
+        private FakeInputStagingHandle inputStaging;
 
         @Override
         public RepairBackendAvailability availability() {
@@ -325,6 +357,17 @@ public class RepairTaskRunnerTest {
             lastStationLease = lease;
             stationAccess = new StationHandle(request.getRequestId());
             return stationAccess;
+        }
+
+        @Override
+        public RepairBackend.InputStagingHandle stageInputs(RepairObservationRequest request, ActionLease lease) {
+            if (!automatedInputStaging || inputStaging != null && inputStaging.state == InputStagingState.CONFIRMED)
+                return null;
+            inputStagingSubmissions++;
+            lastInputStagingLease = lease;
+            inputStaging = new FakeInputStagingHandle(
+                request.getTaskId() + "-input-staging-r" + request.getCheckpointRevision());
+            return inputStaging;
         }
 
         @Override
@@ -419,6 +462,35 @@ public class RepairTaskRunnerTest {
         private void confirmStationAccess() {
             stationOpen = true;
             stationAccess.state = StationAccessState.CONFIRMED;
+        }
+
+        private void confirmInputStaging() {
+            inputStaging.state = InputStagingState.CONFIRMED;
+        }
+    }
+
+    private static final class FakeInputStagingHandle implements RepairBackend.InputStagingHandle {
+
+        private final String requestId;
+        private RepairBackend.InputStagingState state = RepairBackend.InputStagingState.EXECUTING;
+
+        private FakeInputStagingHandle(String requestId) {
+            this.requestId = requestId;
+        }
+
+        @Override
+        public String getRequestId() {
+            return requestId;
+        }
+
+        @Override
+        public RepairBackend.InputStagingProgress progress() {
+            return new RepairBackend.InputStagingProgress(requestId, state, state.name());
+        }
+
+        @Override
+        public void cancel() {
+            state = RepairBackend.InputStagingState.CANCELLED;
         }
     }
 

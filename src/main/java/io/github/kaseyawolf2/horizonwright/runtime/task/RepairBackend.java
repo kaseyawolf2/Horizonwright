@@ -11,8 +11,59 @@ public interface RepairBackend {
 
     RepairActionHandle execute(RepairActionRequest request, ActionLease lease);
 
+    /**
+     * Stages the reserved tool and an approved repair material in an already-open station.
+     * Returns {@code null} when the station is already ready for exact repair observation.
+     */
+    default InputStagingHandle stageInputs(RepairObservationRequest request, ActionLease lease) {
+        return null;
+    }
+
     default StationAccessHandle accessStation(StationAccessRequest request, ActionLease lease) {
         return null;
+    }
+
+    interface InputStagingHandle {
+
+        String getRequestId();
+
+        InputStagingProgress progress();
+
+        void cancel();
+    }
+
+    enum InputStagingState {
+        SUBMITTED,
+        EXECUTING,
+        CONFIRMED,
+        CANCELLED,
+        FAILED
+    }
+
+    final class InputStagingProgress {
+
+        private final String requestId;
+        private final InputStagingState state;
+        private final String detail;
+
+        public InputStagingProgress(String requestId, InputStagingState state, String detail) {
+            this.requestId = required(requestId, "request id");
+            if (state == null) throw new IllegalArgumentException("input staging state is required");
+            this.state = state;
+            this.detail = required(detail, "input staging detail");
+        }
+
+        public String getRequestId() {
+            return requestId;
+        }
+
+        public InputStagingState getState() {
+            return state;
+        }
+
+        public String getDetail() {
+            return detail;
+        }
     }
 
     final class StationAccessRequest {

@@ -30,7 +30,12 @@ public class TinkersRepairActionHandleTest {
         RepairActionRequest request = request(transaction);
         FakeExecutor executor = new FakeExecutor();
         CountingConfirmation confirmations = new CountingConfirmation();
-        TinkersRepairActionHandle handle = new TinkersRepairActionHandle(request, executor, confirmations);
+        int[] sessionCloses = { 0 };
+        TinkersRepairActionHandle handle = new TinkersRepairActionHandle(
+            request,
+            executor,
+            confirmations,
+            () -> sessionCloses[0]++);
 
         assertEquals(
             RepairActionState.EXECUTING,
@@ -45,11 +50,13 @@ public class TinkersRepairActionHandleTest {
                 .get()
                 .getOutputTool());
         assertEquals(1, confirmations.calls);
+        assertEquals(1, sessionCloses[0]);
         assertEquals(
             RepairActionState.CONFIRMED,
             handle.progress()
                 .getState());
         assertEquals(1, confirmations.calls);
+        assertEquals(1, sessionCloses[0]);
     }
 
     @Test

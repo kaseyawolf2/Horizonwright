@@ -41,6 +41,9 @@ final class RepairTaskRunner implements TaskRunner {
     private RepairBackend.StationAccessRequest stationAccessRequest;
     private RepairBackend.StationAccessHandle stationAccessHandle;
     private ActionLease stationAccessLease;
+    private RepairBackend inputStagingBackend;
+    private RepairBackend.InputStagingHandle inputStagingHandle;
+    private ActionLease inputStagingLease;
 
     RepairTaskRunner(TaskSpec spec, TaskCheckpoint checkpoint, RepairRuntimeAccess runtime) {
         this(spec, checkpoint, runtime, RepairPolicy.planDefaults());
@@ -83,6 +86,12 @@ final class RepairTaskRunner implements TaskRunner {
             }
             return observeStationAccess(context);
         }
+        if (inputStagingHandle != null) {
+            if (inputStagingBackend != backend) {
+                return failed(context, "Repair backend changed during input staging", stopActive(), false);
+            }
+            return observeInputStaging(context);
+        }
         RepairBackendAvailability availability = availability(backend);
         if (backend == null || !availability.isAvailable()) {
             if (backend != null && availability.isWaitingForOperator()) {
@@ -100,7 +109,10 @@ final class RepairTaskRunner implements TaskRunner {
             return observeAction(context);
         }
         if (restoredUncertainPhase) return reconcileRestored(context, backend);
-        if (state.getPhase() == RepairTaskCheckpoint.Phase.READY) return prepare(context, backend);
+        if (state.getPhase() == RepairTaskCheckpoint.Phase.READY) {
+            StepResult staging = startInputStaging(context, backend);
+            return staging == null ? prepare(context, backend) : staging;
+        }
         if (state.getPhase() == RepairTaskCheckpoint.Phase.PREPARED) return executePrepared(context, backend);
         return failed(
             context,
@@ -207,6 +219,95 @@ final class RepairTaskRunner implements TaskRunner {
                     "Inspect the saved station and route, then resume this task.");
             default:
                 return failed(context, "Unknown repair-station access state", stopActive(), false);
+        }
+    }
+
+    private StepResult startInputStaging(TaskStepContext context, RepairBackend backend) {
+        Optional<ActionLease> acquired = context.getActions()
+            .tryAcquire(REQUIRED_CAPABILITIES);
+        if (!acquired.isPresent()) {
+            return StepResult.waitFor(context.getActionEpoch(), taskCheckpoint, 0L, "waiting for CONTAINER capability");
+        }
+        ActionLease lease = acquired.get();
+        RepairObservationRequest request = observationRequest(context);
+        RepairBackend.InputStagingHandle handle;
+        try {
+            handle = backend.stageInputs(request, lease);
+        } catch (RuntimeException failure) {
+            RuntimeException cleanup = closeLease(lease);
+            if (cleanup != null) failure.addSuppressed(cleanup);
+            return blocked(
+                context,
+                "Automatic repair input staging failed: " + describe(failure),
+                "the damaged tool and compatible repair material",
+                "Inspect the registered loadout and open station, then resume this task.");
+        }
+        if (handle == null) {
+            RuntimeException cleanup = closeLease(lease);
+            return cleanup == null ? null
+                : failed(context, "Could not release unused repair-staging lease", cleanup, false);
+        }
+        String expectedRequestId = spec.getId() + "-input-staging-r" + state.getRevision();
+        if (!expectedRequestId.equals(handle.getRequestId())) {
+            try {
+                handle.cancel();
+            } catch (RuntimeException ignored) {
+                // The mismatched handle is rejected; lease cleanup remains mandatory.
+            }
+            RuntimeException cleanup = closeLease(lease);
+            return failed(context, "Repair backend returned a mismatched input-staging handle", cleanup, false);
+        }
+        inputStagingBackend = backend;
+        inputStagingHandle = handle;
+        inputStagingLease = lease;
+        return StepResult
+            .progress(context.getActionEpoch(), taskCheckpoint, "Started staging the damaged tool and repair material");
+    }
+
+    private StepResult observeInputStaging(TaskStepContext context) {
+        if (inputStagingLease == null || !inputStagingLease.isValid()
+            || inputStagingLease.getEpoch() != context.getActionEpoch()) {
+            return failed(context, "Repair input-staging lease is no longer authoritative", stopActive(), false);
+        }
+        RepairBackend.InputStagingProgress progress;
+        try {
+            progress = inputStagingHandle.progress();
+            if (progress == null || !inputStagingHandle.getRequestId()
+                .equals(progress.getRequestId())) {
+                throw new IllegalStateException("repair backend returned stale input-staging progress");
+            }
+        } catch (RuntimeException failure) {
+            return failed(context, "Repair input staging failed: " + describe(failure), stopActive(), false);
+        }
+        switch (progress.getState()) {
+            case SUBMITTED:
+            case EXECUTING:
+                return StepResult.waitFor(context.getActionEpoch(), taskCheckpoint, 0L, progress.getDetail());
+            case CONFIRMED:
+                RuntimeException releaseFailure = stopInputStaging(false);
+                if (releaseFailure != null) {
+                    return failed(
+                        context,
+                        "Confirmed repair input-staging lease cleanup failed",
+                        releaseFailure,
+                        false);
+                }
+                return StepResult.progress(
+                    context.getActionEpoch(),
+                    taskCheckpoint,
+                    "Tool and compatible repair material are staged; repair preview confirmed");
+            case CANCELLED:
+            case FAILED:
+                RuntimeException cleanup = stopInputStaging(false);
+                return blocked(
+                    context,
+                    appendCleanup(
+                        "Automatic repair input staging " + progress.getState() + ": " + progress.getDetail(),
+                        cleanup),
+                    "a compatible tool and repair material in the registered loadout",
+                    "Inspect the station contents and loadout, then resume this task.");
+            default:
+                return failed(context, "Unknown repair input-staging state", stopActive(), false);
         }
     }
 
@@ -458,12 +559,7 @@ final class RepairTaskRunner implements TaskRunner {
     }
 
     private RepairObservationResult observe(TaskStepContext context, RepairBackend backend) {
-        RepairObservationRequest request = new RepairObservationRequest(
-            spec.getId(),
-            state.getRevision(),
-            context.getActionEpoch(),
-            RepairTask.stationId(spec),
-            RepairTask.reservedInventorySlot(spec));
+        RepairObservationRequest request = observationRequest(context);
         RepairObservationResult observed = backend.observe(request);
         if (observed == null || !request.getTaskId()
             .equals(observed.getTaskId())
@@ -476,6 +572,15 @@ final class RepairTaskRunner implements TaskRunner {
             throw new IllegalStateException("repair backend returned stale or mismatched evidence");
         }
         return observed;
+    }
+
+    private RepairObservationRequest observationRequest(TaskStepContext context) {
+        return new RepairObservationRequest(
+            spec.getId(),
+            state.getRevision(),
+            context.getActionEpoch(),
+            RepairTask.stationId(spec),
+            RepairTask.reservedInventorySlot(spec));
     }
 
     private StepResult suspend(TaskStepContext context) {
@@ -534,8 +639,11 @@ final class RepairTaskRunner implements TaskRunner {
         clearActive();
         RuntimeException failure = cancelAndClose(handle, lease);
         RuntimeException stationFailure = stopStationAccess(true);
-        if (failure == null) return stationFailure;
-        if (stationFailure != null) failure.addSuppressed(stationFailure);
+        RuntimeException stagingFailure = stopInputStaging(true);
+        if (failure == null) failure = stationFailure;
+        else if (stationFailure != null) failure.addSuppressed(stationFailure);
+        if (failure == null) return stagingFailure;
+        if (stagingFailure != null) failure.addSuppressed(stagingFailure);
         return failure;
     }
 
@@ -553,6 +661,26 @@ final class RepairTaskRunner implements TaskRunner {
         stationAccessRequest = null;
         stationAccessHandle = null;
         stationAccessLease = null;
+        RuntimeException failure = null;
+        if (cancel && handle != null) {
+            try {
+                handle.cancel();
+            } catch (RuntimeException current) {
+                failure = current;
+            }
+        }
+        RuntimeException closeFailure = closeLease(lease);
+        if (failure == null) return closeFailure;
+        if (closeFailure != null) failure.addSuppressed(closeFailure);
+        return failure;
+    }
+
+    private RuntimeException stopInputStaging(boolean cancel) {
+        RepairBackend.InputStagingHandle handle = inputStagingHandle;
+        ActionLease lease = inputStagingLease;
+        inputStagingBackend = null;
+        inputStagingHandle = null;
+        inputStagingLease = null;
         RuntimeException failure = null;
         if (cancel && handle != null) {
             try {

@@ -20,6 +20,8 @@ import io.github.kaseyawolf2.horizonwright.core.action.ActionSessionGuard;
 import io.github.kaseyawolf2.horizonwright.core.container.ContainerSnapshot;
 import io.github.kaseyawolf2.horizonwright.core.container.ContainerTransaction;
 import io.github.kaseyawolf2.horizonwright.core.container.ItemFingerprint;
+import io.github.kaseyawolf2.horizonwright.core.logistics.LoadoutReservation;
+import io.github.kaseyawolf2.horizonwright.core.logistics.LoadoutRole;
 import io.github.kaseyawolf2.horizonwright.core.logistics.NamedLoadout;
 import io.github.kaseyawolf2.horizonwright.core.navigation.NavigationBackend;
 import io.github.kaseyawolf2.horizonwright.core.navigation.NavigationHandle;
@@ -67,6 +69,7 @@ public final class LiveTinkersRepairBackend implements RepairBackend {
         adapter,
         snapshots);
     private StationAccessHandle activeStationAccess;
+    private InputStagingHandle activeInputStaging;
 
     public LiveTinkersRepairBackend(Minecraft minecraft, ActionSessionGuard guard, NavigationSource navigationSource,
         ConfigurationSource configuration, ConfirmedContainerTransactionExecutor executor,
@@ -115,6 +118,74 @@ public final class LiveTinkersRepairBackend implements RepairBackend {
             return handle;
         } catch (RuntimeException failure) {
             activeStationAccess = null;
+            handle.cancel();
+            throw failure;
+        }
+    }
+
+    @Override
+    public synchronized InputStagingHandle stageInputs(RepairObservationRequest request, ActionLease lease) {
+        requireClient(request);
+        requireStagingLease(request, lease);
+        if (activeInputStaging != null) {
+            throw new IllegalStateException("another repair input-staging operation is already active");
+        }
+        Container container = minecraft.thePlayer.openContainer;
+        NamedLoadout loadout = configuration.resolve(request.getStationId(), container);
+        TinkersRepairContainerAdapter.Layout layout = TinkersRepairContainerAdapter
+            .requirePinnedLayout(container, minecraft.thePlayer.inventory);
+        if (minecraft.thePlayer.inventory.getItemStack() != null) {
+            throw new IllegalStateException("repair input staging requires an empty cursor");
+        }
+        TinkersRepairContainerInspection inspection = adapter
+            .inspect(container, minecraft.thePlayer.inventory, request.getReservedInventorySlot());
+        if (isRepairPreviewReady(inspection)) return null;
+
+        int toolSource = -1;
+        ItemStack stationTool = slot(container, 1).getStack();
+        if (stationTool == null) {
+            toolSource = TinkersRepairContainerAdapter
+                .containerSlotForPlayerInventory(layout.getStationSlotCount(), request.getReservedInventorySlot());
+            if (slot(container, toolSource).getStack() == null) {
+                throw new IllegalStateException("reserved inventory slot has no damaged tool to stage");
+            }
+            adapter.readTool(slot(container, toolSource).getStack(), request.getReservedInventorySlot());
+        } else {
+            adapter.readTool(stationTool, request.getReservedInventorySlot());
+        }
+
+        int materialTarget = approvedStationMaterialSlot(container, layout.getStationSlotCount(), loadout);
+        int materialSource = -1;
+        if (materialTarget < 0) {
+            materialTarget = firstEmptyMaterialSlot(container, layout.getStationSlotCount());
+            if (materialTarget < 0) {
+                throw new IllegalStateException(
+                    "repair station has no empty material slot and no valid repair preview");
+            }
+            materialSource = approvedMaterialSource(
+                container,
+                layout.getStationSlotCount(),
+                request.getReservedInventorySlot(),
+                loadout);
+            if (materialSource < 0) {
+                throw new IllegalStateException(
+                    "no inventory stack matches the registered REPAIR_MATERIAL reservation; inventory was not changed");
+            }
+        }
+        LiveInputStagingHandle handle = new LiveInputStagingHandle(
+            request,
+            lease,
+            loadout,
+            layout,
+            toolSource,
+            materialSource,
+            materialTarget);
+        activeInputStaging = handle;
+        try {
+            handle.start();
+            return handle;
+        } catch (RuntimeException failure) {
+            activeInputStaging = null;
             handle.cancel();
             throw failure;
         }
@@ -264,11 +335,26 @@ public final class LiveTinkersRepairBackend implements RepairBackend {
             "inputMaximumDamage",
             request.getInputTool()
                 .getMaximumDamage());
-        executor.begin(request.getTransaction());
-        return new TinkersRepairActionHandle(
-            request,
-            executor,
-            new LiveConfirmationSource(minecraft, adapter, snapshots));
+        if (!guard.isReadyForSession()) {
+            throw new IllegalStateException("previous action packets are still draining before repair execution");
+        }
+        guard.begin(lease);
+        try {
+            executor.begin(request.getTransaction());
+            return new TinkersRepairActionHandle(
+                request,
+                executor,
+                new LiveConfirmationSource(minecraft, adapter, snapshots),
+                () -> stopActionSession(lease));
+        } catch (RuntimeException failure) {
+            stopActionSession(lease);
+            throw failure;
+        }
+    }
+
+    private void stopActionSession(ActionLease lease) {
+        guard.quarantine(lease);
+        guard.end(lease);
     }
 
     private void requireClient(Object request) {
@@ -285,6 +371,91 @@ public final class LiveTinkersRepairBackend implements RepairBackend {
             || !capabilities.contains(ActionCapability.CONTAINER)) {
             throw new IllegalStateException("an authoritative CONTAINER lease is required");
         }
+    }
+
+    private static void requireStagingLease(RepairObservationRequest request, ActionLease lease) {
+        Set<ActionCapability> capabilities = lease == null ? null : lease.getCapabilities();
+        if (lease == null || !lease.isValid()
+            || lease.getEpoch() != request.getActionEpoch()
+            || capabilities == null
+            || !capabilities.contains(ActionCapability.CONTAINER)) {
+            throw new IllegalStateException("an authoritative CONTAINER lease is required for repair input staging");
+        }
+    }
+
+    private boolean isRepairPreviewReady(TinkersRepairContainerInspection inspection) {
+        if (inspection == null || inspection.getStatus() != TinkersRepairContainerInspection.Status.RECOGNIZED) {
+            return false;
+        }
+        TinkersRepairContainerEvidence evidence = inspection.getEvidence()
+            .get();
+        return evidence.getPredictedOutput() != null && evidence.getPredictedMaterialConsumed() > 0;
+    }
+
+    private int approvedMaterialSource(Container container, int stationSlots, int reservedInventorySlot,
+        NamedLoadout loadout) {
+        for (int inventorySlot = 0; inventorySlot < 36; inventorySlot++) {
+            if (inventorySlot == reservedInventorySlot) continue;
+            int containerSlot = TinkersRepairContainerAdapter
+                .containerSlotForPlayerInventory(stationSlots, inventorySlot);
+            ItemStack stack = slot(container, containerSlot).getStack();
+            ItemFingerprint fingerprint = snapshots.fingerprint(stack);
+            if (fingerprint == null) continue;
+            for (LoadoutReservation reservation : loadout.getReservations()) {
+                if (reservation.getRole() == LoadoutRole.REPAIR_MATERIAL && reservation.matches(fingerprint)) {
+                    DevelopmentTrace.event(
+                        "repair-input-staging",
+                        "material-selected",
+                        "inventorySlot",
+                        inventorySlot,
+                        "containerSlot",
+                        containerSlot,
+                        "item",
+                        fingerprint,
+                        "reservation",
+                        reservation.getId());
+                    return containerSlot;
+                }
+            }
+        }
+        return -1;
+    }
+
+    private int approvedStationMaterialSlot(Container container, int stationSlots, NamedLoadout loadout) {
+        for (int containerSlot = 2; containerSlot < stationSlots; containerSlot++) {
+            ItemFingerprint fingerprint = snapshots.fingerprint(slot(container, containerSlot).getStack());
+            if (fingerprint == null) continue;
+            for (LoadoutReservation reservation : loadout.getReservations()) {
+                if (reservation.getRole() == LoadoutRole.REPAIR_MATERIAL && reservation.matches(fingerprint)) {
+                    DevelopmentTrace.event(
+                        "repair-input-staging",
+                        "station-material-reused",
+                        "containerSlot",
+                        containerSlot,
+                        "item",
+                        fingerprint,
+                        "reservation",
+                        reservation.getId());
+                    return containerSlot;
+                }
+            }
+        }
+        return -1;
+    }
+
+    private static int firstEmptyMaterialSlot(Container container, int stationSlots) {
+        for (int slot = 2; slot < stationSlots; slot++) {
+            if (slot(container, slot).getStack() == null) return slot;
+        }
+        return -1;
+    }
+
+    private static net.minecraft.inventory.Slot slot(Container container, int index) {
+        Object value = container.inventorySlots.get(index);
+        if (!(value instanceof net.minecraft.inventory.Slot)) {
+            throw new IllegalStateException("container slot " + index + " is not a Minecraft Slot");
+        }
+        return (net.minecraft.inventory.Slot) value;
     }
 
     private static void requireStationAccessLease(StationAccessRequest request, ActionLease lease) {
@@ -335,6 +506,275 @@ public final class LiveTinkersRepairBackend implements RepairBackend {
             result.getTransaction() == null ? "none"
                 : result.getTransaction()
                     .getTransactionId());
+    }
+
+    private final class LiveInputStagingHandle implements InputStagingHandle {
+
+        private static final long SETTLE_NANOS = 150_000_000L;
+        private static final long TIMEOUT_NANOS = 20_000_000_000L;
+
+        private enum Phase {
+            PICK_UP_TOOL,
+            PLACE_TOOL,
+            PICK_UP_MATERIAL,
+            PLACE_MATERIAL,
+            WAIT_FOR_PREVIEW
+        }
+
+        private final RepairObservationRequest request;
+        private final ActionLease lease;
+        private final NamedLoadout loadout;
+        private final TinkersRepairContainerAdapter.Layout layout;
+        private final int toolSource;
+        private final int materialSource;
+        private final int materialTarget;
+        private final int windowId;
+        private final ItemFingerprint tool;
+        private final ItemFingerprint material;
+        private final long deadlineNanos = saturatingAdd(System.nanoTime(), TIMEOUT_NANOS);
+        private final String requestId;
+        private Phase phase;
+        private InputStagingState state = InputStagingState.SUBMITTED;
+        private String detail = "Preparing repair inputs";
+        private boolean clickSubmitted;
+        private long settleAfterNanos;
+        private boolean ownsActionSession;
+
+        private LiveInputStagingHandle(RepairObservationRequest request, ActionLease lease, NamedLoadout loadout,
+            TinkersRepairContainerAdapter.Layout layout, int toolSource, int materialSource, int materialTarget) {
+            this.request = request;
+            this.lease = lease;
+            this.loadout = loadout;
+            this.layout = layout;
+            this.toolSource = toolSource;
+            this.materialSource = materialSource;
+            this.materialTarget = materialTarget;
+            Container container = minecraft.thePlayer.openContainer;
+            windowId = container.windowId;
+            ItemStack toolStack = toolSource < 0 ? slot(container, 1).getStack()
+                : slot(container, toolSource).getStack();
+            tool = snapshots.fingerprint(toolStack);
+            material = snapshots
+                .fingerprint(slot(container, materialSource < 0 ? materialTarget : materialSource).getStack());
+            requestId = request.getTaskId() + "-input-staging-r" + request.getCheckpointRevision();
+            phase = toolSource >= 0 ? Phase.PICK_UP_TOOL
+                : materialSource >= 0 ? Phase.PICK_UP_MATERIAL : Phase.WAIT_FOR_PREVIEW;
+        }
+
+        private void start() {
+            if (!guard.isReadyForSession()) {
+                throw new IllegalStateException("previous action packets are still draining before input staging");
+            }
+            guard.begin(lease);
+            ownsActionSession = true;
+            state = InputStagingState.EXECUTING;
+            detail = toolSource < 0
+                ? materialSource < 0 ? "Tool and approved station material are staged; waiting for repair preview"
+                    : "Tool is already staged; preparing repair material"
+                : "Preparing to move the damaged tool into the repair station";
+            trace(
+                "started",
+                "toolSource",
+                toolSource,
+                "materialSource",
+                materialSource,
+                "materialTarget",
+                materialTarget,
+                "tool",
+                tool,
+                "material",
+                material);
+        }
+
+        @Override
+        public String getRequestId() {
+            return requestId;
+        }
+
+        @Override
+        public synchronized InputStagingProgress progress() {
+            if (isTerminal()) return snapshot();
+            if (!minecraft.func_152345_ab() || minecraft.thePlayer == null
+                || minecraft.thePlayer.openContainer == null
+                || minecraft.playerController == null) {
+                fail("Minecraft client or repair container became unavailable");
+                return snapshot();
+            }
+            if (!lease.isValid()) {
+                fail("Repair input-staging lease was revoked");
+                return snapshot();
+            }
+            if (System.nanoTime() - deadlineNanos >= 0L) {
+                fail("Timed out waiting for synchronized Tool Station input state during " + phase);
+                return snapshot();
+            }
+            Container container = minecraft.thePlayer.openContainer;
+            if (container.windowId != windowId) {
+                fail("Open container changed during repair input staging");
+                return snapshot();
+            }
+            try {
+                configuration.resolve(request.getStationId(), container);
+                TinkersRepairContainerAdapter.requirePinnedLayout(container, minecraft.thePlayer.inventory);
+                advance(container);
+            } catch (RuntimeException failure) {
+                fail(
+                    failure.getClass()
+                        .getSimpleName() + ": "
+                        + failure.getMessage());
+            }
+            return snapshot();
+        }
+
+        @Override
+        public synchronized void cancel() {
+            if (isTerminal()) return;
+            state = InputStagingState.CANCELLED;
+            detail = "Repair input staging was cancelled; any synchronized items remain visible in the station";
+            trace("cancelled", "phase", phase);
+            stopActionSession();
+            clearInputStaging(this);
+        }
+
+        private void advance(Container container) {
+            switch (phase) {
+                case PICK_UP_TOOL:
+                    if (!clickSubmitted) {
+                        dispatch(toolSource, "Picking up the damaged tool from its reserved inventory slot");
+                    } else if (settled() && slot(container, toolSource).getStack() == null
+                        && tool.equals(snapshots.fingerprint(minecraft.thePlayer.inventory.getItemStack()))) {
+                            next(Phase.PLACE_TOOL, "Damaged tool picked up; moving it into the Tool Station input");
+                        }
+                    break;
+                case PLACE_TOOL:
+                    if (!clickSubmitted) {
+                        dispatch(1, "Placing the damaged tool in the Tool Station input");
+                    } else if (settled() && minecraft.thePlayer.inventory.getItemStack() == null
+                        && tool.equals(snapshots.fingerprint(slot(container, 1).getStack()))) {
+                            next(
+                                materialSource < 0 ? Phase.WAIT_FOR_PREVIEW : Phase.PICK_UP_MATERIAL,
+                                materialSource < 0 ? "Damaged tool staged; waiting for repair preview"
+                                    : "Damaged tool staged; preparing compatible repair material");
+                        }
+                    break;
+                case PICK_UP_MATERIAL:
+                    if (!clickSubmitted) {
+                        dispatch(materialSource, "Picking up the registered repair material");
+                    } else if (settled() && slot(container, materialSource).getStack() == null
+                        && material.equals(snapshots.fingerprint(minecraft.thePlayer.inventory.getItemStack()))) {
+                            next(Phase.PLACE_MATERIAL, "Repair material picked up; moving it into the station");
+                        }
+                    break;
+                case PLACE_MATERIAL:
+                    if (!clickSubmitted) {
+                        dispatch(materialTarget, "Placing the registered repair material in the station");
+                    } else if (settled() && minecraft.thePlayer.inventory.getItemStack() == null
+                        && material.equals(snapshots.fingerprint(slot(container, materialTarget).getStack()))) {
+                            next(
+                                Phase.WAIT_FOR_PREVIEW,
+                                "Repair inputs staged; waiting for synchronized repair preview");
+                        }
+                    break;
+                case WAIT_FOR_PREVIEW:
+                    TinkersRepairContainerInspection inspection = adapter
+                        .inspect(container, minecraft.thePlayer.inventory, request.getReservedInventorySlot());
+                    if (isRepairPreviewReady(inspection)) {
+                        TinkersRepairContainerEvidence evidence = inspection.getEvidence()
+                            .get();
+                        state = InputStagingState.CONFIRMED;
+                        detail = "Tool Station produced a repair preview using approved material";
+                        trace(
+                            "confirmed",
+                            "predictedDamage",
+                            evidence.getPredictedOutput()
+                                .getDamage(),
+                            "predictedConsumed",
+                            evidence.getPredictedMaterialConsumed());
+                        stopActionSession();
+                        clearInputStaging(this);
+                    } else {
+                        detail = "Waiting for the Tool Station to produce a compatible repair preview";
+                    }
+                    break;
+                default:
+                    throw new IllegalStateException("unknown repair input-staging phase");
+            }
+        }
+
+        private void dispatch(int containerSlot, String nextDetail) {
+            minecraft.playerController.windowClick(windowId, containerSlot, 0, 0, minecraft.thePlayer);
+            clickSubmitted = true;
+            settleAfterNanos = saturatingAdd(System.nanoTime(), SETTLE_NANOS);
+            detail = nextDetail;
+            trace(
+                "click",
+                "phase",
+                phase,
+                "slot",
+                containerSlot,
+                "cursor",
+                snapshots.fingerprint(minecraft.thePlayer.inventory.getItemStack()));
+        }
+
+        private boolean settled() {
+            return System.nanoTime() - settleAfterNanos >= 0L;
+        }
+
+        private void next(Phase next, String nextDetail) {
+            trace("phase-complete", "phase", phase, "next", next);
+            phase = next;
+            detail = nextDetail;
+            clickSubmitted = false;
+        }
+
+        private void fail(String message) {
+            state = InputStagingState.FAILED;
+            detail = message;
+            trace(
+                "failed",
+                "phase",
+                phase,
+                "detail",
+                message,
+                "cursor",
+                minecraft.thePlayer == null ? "unavailable"
+                    : snapshots.fingerprint(minecraft.thePlayer.inventory.getItemStack()));
+            stopActionSession();
+            clearInputStaging(this);
+        }
+
+        private void stopActionSession() {
+            if (!ownsActionSession) return;
+            LiveTinkersRepairBackend.this.stopActionSession(lease);
+            ownsActionSession = false;
+        }
+
+        private boolean isTerminal() {
+            return state == InputStagingState.CONFIRMED || state == InputStagingState.CANCELLED
+                || state == InputStagingState.FAILED;
+        }
+
+        private InputStagingProgress snapshot() {
+            return new InputStagingProgress(requestId, state, detail);
+        }
+
+        private void trace(String event, Object... fields) {
+            Object[] prefixed = new Object[fields.length + 8];
+            prefixed[0] = "request";
+            prefixed[1] = requestId;
+            prefixed[2] = "station";
+            prefixed[3] = request.getStationId();
+            prefixed[4] = "window";
+            prefixed[5] = windowId;
+            prefixed[6] = "loadout";
+            prefixed[7] = loadout.getId();
+            System.arraycopy(fields, 0, prefixed, 8, fields.length);
+            DevelopmentTrace.event("repair-input-staging", event, prefixed);
+        }
+    }
+
+    private synchronized void clearInputStaging(InputStagingHandle expected) {
+        if (activeInputStaging == expected) activeInputStaging = null;
     }
 
     private final class LiveStationAccessHandle implements StationAccessHandle {

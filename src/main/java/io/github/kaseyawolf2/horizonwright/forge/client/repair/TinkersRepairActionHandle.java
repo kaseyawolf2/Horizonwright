@@ -18,20 +18,34 @@ final class TinkersRepairActionHandle implements RepairActionHandle {
         RepairActionConfirmation confirm(RepairActionRequest request);
     }
 
+    interface SessionCloser {
+
+        void close();
+    }
+
     private final RepairActionRequest request;
     private final ConfirmedContainerTransactionExecutor executor;
     private final ConfirmationSource confirmations;
+    private final SessionCloser sessionCloser;
     private RepairActionConfirmation confirmation;
     private RuntimeException confirmationFailure;
+    private boolean sessionClosed;
 
     TinkersRepairActionHandle(RepairActionRequest request, ConfirmedContainerTransactionExecutor executor,
         ConfirmationSource confirmations) {
+        this(request, executor, confirmations, () -> {});
+    }
+
+    TinkersRepairActionHandle(RepairActionRequest request, ConfirmedContainerTransactionExecutor executor,
+        ConfirmationSource confirmations, SessionCloser sessionCloser) {
         if (request == null || executor == null || confirmations == null) {
             throw new IllegalArgumentException("request, executor, and confirmations are required");
         }
+        if (sessionCloser == null) throw new IllegalArgumentException("session closer is required");
         this.request = request;
         this.executor = executor;
         this.confirmations = confirmations;
+        this.sessionCloser = sessionCloser;
     }
 
     @Override
@@ -63,6 +77,7 @@ final class TinkersRepairActionHandle implements RepairActionHandle {
             String reason = transaction.getAbortReason();
             RepairActionState result = reason.startsWith("server rejected") ? RepairActionState.REJECTED
                 : RepairActionState.FAILED;
+            closeSession();
             return progress(result, reason, null);
         }
         if (state != ContainerTransactionState.COMPLETED) {
@@ -80,18 +95,30 @@ final class TinkersRepairActionHandle implements RepairActionHandle {
             }
         }
         if (confirmationFailure != null) {
+            closeSession();
             return progress(
                 RepairActionState.FAILED,
                 "Repair confirmation failed: " + confirmationFailure.getMessage(),
                 null);
         }
+        closeSession();
         return progress(RepairActionState.CONFIRMED, "Verified repaired tool in its reserved slot", confirmation);
     }
 
     @Override
     public void cancel() {
         DevelopmentTrace.event("repair-live", "cancel", "request", request.getRequestId());
-        executor.cancel(request.getTransaction(), "repair task released its live transaction");
+        try {
+            executor.cancel(request.getTransaction(), "repair task released its live transaction");
+        } finally {
+            closeSession();
+        }
+    }
+
+    private synchronized void closeSession() {
+        if (sessionClosed) return;
+        sessionClosed = true;
+        sessionCloser.close();
     }
 
     private RepairActionProgress progress(RepairActionState state, String detail,
