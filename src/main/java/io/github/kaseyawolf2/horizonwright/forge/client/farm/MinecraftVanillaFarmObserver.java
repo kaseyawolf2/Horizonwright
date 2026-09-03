@@ -16,6 +16,7 @@ import io.github.kaseyawolf2.horizonwright.core.base.CropObservation;
 import io.github.kaseyawolf2.horizonwright.core.base.NamedArea;
 import io.github.kaseyawolf2.horizonwright.core.base.SeedReserveEvidence;
 import io.github.kaseyawolf2.horizonwright.core.container.ItemFingerprint;
+import io.github.kaseyawolf2.horizonwright.forge.client.MinecraftRuntimeAccess;
 import io.github.kaseyawolf2.horizonwright.forge.client.container.MinecraftContainerSnapshotter;
 
 /** Bounded client-thread observer for exact vanilla 1.7.10 crop blocks and seed inventory. */
@@ -67,7 +68,7 @@ public final class MinecraftVanillaFarmObserver {
     public CropObservation observeRequired(BasePosition position) {
         requireClient();
         if (position == null || position.getDimensionId() != minecraft.theWorld.provider.dimensionId
-            || !minecraft.theWorld.getChunkProvider()
+            || !MinecraftRuntimeAccess.chunkProvider(minecraft.theWorld)
                 .chunkExists(position.getX() >> 4, position.getZ() >> 4)) {
             throw new IllegalStateException("farm target is not loaded in the current dimension");
         }
@@ -80,7 +81,7 @@ public final class MinecraftVanillaFarmObserver {
     CropObservation observeSupported(BasePosition position) {
         requireClient();
         if (position == null || position.getDimensionId() != minecraft.theWorld.provider.dimensionId
-            || !minecraft.theWorld.getChunkProvider()
+            || !MinecraftRuntimeAccess.chunkProvider(minecraft.theWorld)
                 .chunkExists(position.getX() >> 4, position.getZ() >> 4))
             return null;
         return observeIfCrop(position);
@@ -135,13 +136,16 @@ public final class MinecraftVanillaFarmObserver {
     }
 
     private CropObservation observeIfCrop(BasePosition position) {
-        Block block = minecraft.theWorld.getBlock(position.getX(), position.getY(), position.getZ());
+        Block block = MinecraftRuntimeAccess
+            .block(minecraft.theWorld, position.getX(), position.getY(), position.getZ());
         Object registryName = Block.blockRegistry.getNameForObject(block);
-        int metadata = minecraft.theWorld.getBlockMetadata(position.getX(), position.getY(), position.getZ());
+        int metadata = MinecraftRuntimeAccess
+            .blockMetadata(minecraft.theWorld, position.getX(), position.getY(), position.getZ());
         VanillaCropClassifier.Descriptor descriptor = classifier
             .classify(block, registryName == null ? null : registryName.toString(), metadata);
         if (descriptor == null) return null;
-        TileEntity tile = minecraft.theWorld.getTileEntity(position.getX(), position.getY(), position.getZ());
+        TileEntity tile = MinecraftRuntimeAccess
+            .tileEntity(minecraft.theWorld, position.getX(), position.getY(), position.getZ());
         return new CropObservation(
             position,
             descriptor.getFamily(),
@@ -186,7 +190,7 @@ public final class MinecraftVanillaFarmObserver {
         }
         for (int chunkX = minimum.getX() >> 4; chunkX <= maximum.getX() >> 4; chunkX++) {
             for (int chunkZ = minimum.getZ() >> 4; chunkZ <= maximum.getZ() >> 4; chunkZ++) {
-                if (!minecraft.theWorld.getChunkProvider()
+                if (!MinecraftRuntimeAccess.chunkProvider(minecraft.theWorld)
                     .chunkExists(chunkX, chunkZ)) {
                     throw new IllegalStateException("every chunk in the named farm plot must be loaded");
                 }

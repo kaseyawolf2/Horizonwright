@@ -6,6 +6,7 @@ import net.minecraft.client.settings.KeyBinding;
 import io.github.kaseyawolf2.horizonwright.HorizonwrightRuntime;
 import io.github.kaseyawolf2.horizonwright.core.safety.death.DeathLatchRecord;
 import io.github.kaseyawolf2.horizonwright.core.task.TaskControllerState;
+import io.github.kaseyawolf2.horizonwright.forge.client.MinecraftRuntimeAccess;
 
 /** Concrete emergency-stop bridge; all Minecraft mutations are marshalled onto the client thread. */
 public final class MinecraftClientDeathInterlockDelegate implements ClientDeathInterlockDelegate {
@@ -95,7 +96,7 @@ public final class MinecraftClientDeathInterlockDelegate implements ClientDeathI
         }
         KeyBinding.unPressAllKeys();
         if (minecraft.thePlayer != null) {
-            minecraft.thePlayer.clearItemInUse();
+            MinecraftRuntimeAccess.clearItemInUse(minecraft.thePlayer);
         }
         if (minecraft.playerController != null) {
             minecraft.playerController.resetBlockRemoving();

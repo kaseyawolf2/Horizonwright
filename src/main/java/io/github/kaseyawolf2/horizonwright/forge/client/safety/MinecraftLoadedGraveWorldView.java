@@ -6,6 +6,8 @@ import java.util.List;
 import net.minecraft.client.Minecraft;
 import net.minecraft.tileentity.TileEntity;
 
+import io.github.kaseyawolf2.horizonwright.forge.client.MinecraftRuntimeAccess;
+
 /** Minecraft-thread adapter over only currently loaded chunks and tile entities. */
 final class MinecraftLoadedGraveWorldView implements LoadedGraveWorldView {
 
@@ -34,7 +36,7 @@ final class MinecraftLoadedGraveWorldView implements LoadedGraveWorldView {
     @Override
     public boolean isChunkLoaded(int chunkX, int chunkZ) {
         requireClientThread();
-        return minecraft.theWorld.getChunkProvider()
+        return MinecraftRuntimeAccess.chunkProvider(minecraft.theWorld)
             .chunkExists(chunkX, chunkZ);
     }
 
@@ -53,6 +55,6 @@ final class MinecraftLoadedGraveWorldView implements LoadedGraveWorldView {
     @Override
     public TileEntity getTileEntity(int x, int y, int z) {
         requireClientThread();
-        return minecraft.theWorld.getTileEntity(x, y, z);
+        return MinecraftRuntimeAccess.tileEntity(minecraft.theWorld, x, y, z);
     }
 }

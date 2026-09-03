@@ -37,6 +37,7 @@ import io.github.kaseyawolf2.horizonwright.core.repair.RepairPolicy;
 import io.github.kaseyawolf2.horizonwright.core.repair.RepairToolSnapshot;
 import io.github.kaseyawolf2.horizonwright.forge.client.AutomationInputHold;
 import io.github.kaseyawolf2.horizonwright.forge.client.ClientBootstrap;
+import io.github.kaseyawolf2.horizonwright.forge.client.MinecraftRuntimeAccess;
 import io.github.kaseyawolf2.horizonwright.forge.client.network.ActionPacketDispatch;
 import io.github.kaseyawolf2.horizonwright.forge.client.repair.TinkersInventoryToolReader;
 import io.github.kaseyawolf2.horizonwright.runtime.task.ConfirmedExcavationTargetResult;
@@ -556,8 +557,10 @@ public final class LiveExcavationBackend implements ExcavationBackend {
         private void selectBestHotbarTool() {
             BlockPosition position = request.getIntent()
                 .getPosition();
-            Block target = minecraft.theWorld.getBlock(position.getX(), position.getY(), position.getZ());
-            int metadata = minecraft.theWorld.getBlockMetadata(position.getX(), position.getY(), position.getZ());
+            Block target = MinecraftRuntimeAccess
+                .block(minecraft.theWorld, position.getX(), position.getY(), position.getZ());
+            int metadata = MinecraftRuntimeAccess
+                .blockMetadata(minecraft.theWorld, position.getX(), position.getY(), position.getZ());
             int preferred = request.getPreferredToolSlot();
             int previous = minecraft.thePlayer.inventory.currentItem;
             ExcavationToolCandidateScore best = null;
@@ -788,7 +791,8 @@ public final class LiveExcavationBackend implements ExcavationBackend {
             BlockPosition position = request.getIntent()
                 .getPosition();
             EntityPlayer player = minecraft.thePlayer;
-            Vec3 eyes = Vec3.createVectorHelper(player.posX, player.posY + player.getEyeHeight(), player.posZ);
+            Vec3 eyes = Vec3
+                .createVectorHelper(player.posX, player.posY + MinecraftRuntimeAccess.eyeHeight(player), player.posZ);
             Vec3 center = Vec3
                 .createVectorHelper(position.getX() + 0.5D, position.getY() + 0.5D, position.getZ() + 0.5D);
             double reach = minecraft.playerController.getBlockReachDistance() + 0.5D;
@@ -810,7 +814,7 @@ public final class LiveExcavationBackend implements ExcavationBackend {
                     center);
                 return false;
             }
-            MovingObjectPosition hit = minecraft.theWorld.rayTraceBlocks(eyes, center, false);
+            MovingObjectPosition hit = MinecraftRuntimeAccess.rayTraceBlocks(minecraft.theWorld, eyes, center, false);
             boolean reachable = hit != null && hit.typeOfHit == MovingObjectPosition.MovingObjectType.BLOCK
                 && hit.blockX == position.getX()
                 && hit.blockY == position.getY()
@@ -884,7 +888,7 @@ public final class LiveExcavationBackend implements ExcavationBackend {
             BlockPosition position = request.getIntent()
                 .getPosition();
             double dx = position.getX() + 0.5D - player.posX;
-            double dy = position.getY() + 0.5D - (player.posY + player.getEyeHeight());
+            double dy = position.getY() + 0.5D - (player.posY + MinecraftRuntimeAccess.eyeHeight(player));
             double dz = position.getZ() + 0.5D - player.posZ;
             double horizontal = Math.sqrt(dx * dx + dz * dz);
             player.rotationYaw = (float) (Math.atan2(dz, dx) * 180.0D / Math.PI) - 90.0F;
@@ -896,7 +900,7 @@ public final class LiveExcavationBackend implements ExcavationBackend {
             BlockPosition position = request.getIntent()
                 .getPosition();
             double dx = player.posX - (position.getX() + 0.5D);
-            double dy = player.posY + player.getEyeHeight() - (position.getY() + 0.5D);
+            double dy = player.posY + MinecraftRuntimeAccess.eyeHeight(player) - (position.getY() + 0.5D);
             double dz = player.posZ - (position.getZ() + 0.5D);
             double ax = Math.abs(dx);
             double ay = Math.abs(dy);

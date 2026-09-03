@@ -120,7 +120,7 @@ public final class ClientBootstrap {
         runtimeSessions = new ClientRuntimeSessionManager(new HorizonwrightRuntimeSessionFactory(connection -> {
             Minecraft minecraft = Minecraft.getMinecraft();
             boolean connected = minecraft.theWorld != null && minecraft.thePlayer != null;
-            long worldTime = connected ? minecraft.theWorld.getWorldTime() : 0L;
+            long worldTime = connected ? MinecraftRuntimeAccess.worldTime(minecraft.theWorld) : 0L;
             return scheduleEnvironment.observe(connected, worldTime, Collections.<String>emptySet());
         }, (runtime, connection) -> new DisabledDeathSafetyBoundary()),
             identity -> new TaskControllerRuntimeSessionPersistence(persistenceStore, identity),
@@ -387,7 +387,8 @@ public final class ClientBootstrap {
             if (announcedBlockedTasks.add(taskId)) {
                 String next = reason.getRequiredUserAction()
                     .isEmpty() ? "Open H > Tasks for details." : reason.getRequiredUserAction();
-                minecraft.thePlayer.addChatMessage(
+                MinecraftRuntimeAccess.addChatMessage(
+                    minecraft.thePlayer,
                     new ChatComponentText(
                         EnumChatFormatting.RED + "Horizonwright blocked "
                             + taskId
@@ -476,8 +477,7 @@ public final class ClientBootstrap {
         if (minecraft.getIntegratedServer() == null) {
             return "Singleplayer world";
         }
-        String worldName = minecraft.getIntegratedServer()
-            .getFolderName();
+        String worldName = MinecraftRuntimeAccess.folderName(minecraft.getIntegratedServer());
         return worldName == null || worldName.trim()
             .isEmpty() ? "Singleplayer world" : worldName.trim();
     }

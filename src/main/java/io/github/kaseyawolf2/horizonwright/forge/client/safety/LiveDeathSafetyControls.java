@@ -23,6 +23,7 @@ import io.github.kaseyawolf2.horizonwright.core.safety.death.ManualHoldReason;
 import io.github.kaseyawolf2.horizonwright.core.safety.death.RecoveryNavigationRequest;
 import io.github.kaseyawolf2.horizonwright.core.safety.death.RecoveryNavigationStatus;
 import io.github.kaseyawolf2.horizonwright.core.safety.death.RecoveryPhase;
+import io.github.kaseyawolf2.horizonwright.forge.client.MinecraftRuntimeAccess;
 
 /** Conservative production controls for the live death-safety directive effect. */
 final class LiveDeathSafetyControls implements MinecraftDeathSafetyDirectiveEffect.TaskWorkControl,
@@ -240,7 +241,7 @@ final class LiveDeathSafetyControls implements MinecraftDeathSafetyDirectiveEffe
         EntityClientPlayerMP player = minecraft.thePlayer;
         player.inventory.currentItem = preparedEmptySlot;
         player.sendQueue.addToSendQueue(new C09PacketHeldItemChange(preparedEmptySlot));
-        player.setSneaking(true);
+        MinecraftRuntimeAccess.setSneaking(player, true);
         player.sendQueue.addToSendQueue(new C0BPacketEntityAction(player, 1));
         automaticSneaking = true;
         preparationSent = true;
@@ -296,7 +297,7 @@ final class LiveDeathSafetyControls implements MinecraftDeathSafetyDirectiveEffe
 
     private void releaseGravePreparation(EntityClientPlayerMP player) {
         if (automaticSneaking && player != null) {
-            player.setSneaking(false);
+            MinecraftRuntimeAccess.setSneaking(player, false);
             player.sendQueue.addToSendQueue(new C0BPacketEntityAction(player, 2));
         }
         preparedGravePermitId = 0L;

@@ -24,6 +24,7 @@ import io.github.kaseyawolf2.horizonwright.core.safety.death.GraveIdentity;
 import io.github.kaseyawolf2.horizonwright.core.safety.death.GraveSearchStatus;
 import io.github.kaseyawolf2.horizonwright.core.safety.death.InventoryManifest;
 import io.github.kaseyawolf2.horizonwright.core.safety.death.RecoveryPhase;
+import io.github.kaseyawolf2.horizonwright.forge.client.MinecraftRuntimeAccess;
 import io.github.kaseyawolf2.horizonwright.forge.client.network.DeathSafetyPacketBridge;
 import io.github.kaseyawolf2.horizonwright.forge.client.network.DeathSafetyPacketBridgeFactory;
 import io.github.kaseyawolf2.horizonwright.forge.client.network.DeathSafetyPacketContext;
@@ -90,7 +91,7 @@ final class LiveClientDeathSafetyBoundary implements RuntimeSessionDeathStateBou
         MinecraftClientDeathContextSource source = new MinecraftClientDeathContextSource(minecraft, runtime);
         EntityClientPlayerMP player = minecraft.thePlayer;
         graveScanner = new MinecraftOpenBlocksGraveScanner(minecraft);
-        maximumHealth = positiveMaximumHealth(player.getMaxHealth());
+        maximumHealth = positiveMaximumHealth(MinecraftRuntimeAccess.maximumHealth(player));
         ConnectionIdentity identity = connectionIdentity(source.getPlayerIdentity());
         if (state == null) {
             deathSafety.openFresh(identity);
@@ -105,7 +106,7 @@ final class LiveClientDeathSafetyBoundary implements RuntimeSessionDeathStateBou
     public synchronized void clientTick() {
         ensureActive();
         Minecraft minecraft = requireJoinedClientThread();
-        maximumHealth = positiveMaximumHealth(minecraft.thePlayer.getMaxHealth());
+        maximumHealth = positiveMaximumHealth(MinecraftRuntimeAccess.maximumHealth(minecraft.thePlayer));
         long tick = advanceClientTick();
         DeathSafetySnapshot snapshot = deathSafety.clientTick(tick);
         if (snapshot.getRecoveryPhase() == RecoveryPhase.NAVIGATING_WITH_INTERACTIONS_DISABLED) {
@@ -292,7 +293,8 @@ final class LiveClientDeathSafetyBoundary implements RuntimeSessionDeathStateBou
         }
         try {
             Optional<OpenBlocksGraveTileEvidence> evidence = graveTileReader.read(
-                minecraft.theWorld.getTileEntity(
+                MinecraftRuntimeAccess.tileEntity(
+                    minecraft.theWorld,
                     expected.getPosition()
                         .getX(),
                     expected.getPosition()
@@ -311,8 +313,8 @@ final class LiveClientDeathSafetyBoundary implements RuntimeSessionDeathStateBou
                 evidence.get()
                     .getIdentity(),
                 minecraft.theWorld.provider.dimensionId,
-                minecraft.thePlayer.getHeldItem() == null,
-                minecraft.thePlayer.isSneaking());
+                MinecraftRuntimeAccess.heldItem(minecraft.thePlayer) == null,
+                MinecraftRuntimeAccess.isSneaking(minecraft.thePlayer));
         } catch (IllegalStateException unsupportedAdapter) {
             graveActivationPacketSnapshot = null;
             if (!graveAdapterFailureLogged) {
@@ -351,7 +353,7 @@ final class LiveClientDeathSafetyBoundary implements RuntimeSessionDeathStateBou
         String oldPlayerIdentity = snapshot.getUnresolvedDeathProjection()
             .get()
             .getOldPlayerIdentity();
-        String username = minecraft.thePlayer.getCommandSenderName();
+        String username = MinecraftRuntimeAccess.commandSenderName(minecraft.thePlayer);
         if (phase == RecoveryPhase.SEARCHING_FOR_GRAVE || phase == RecoveryPhase.STABILIZING_GRAVE) {
             Optional<InventoryManifest> expectedGraveContents = preDeathInventory.get()
                 .subtractContents(

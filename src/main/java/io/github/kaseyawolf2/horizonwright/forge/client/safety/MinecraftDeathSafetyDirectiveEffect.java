@@ -7,6 +7,7 @@ import io.github.kaseyawolf2.horizonwright.core.safety.death.DeathSafetyDirectiv
 import io.github.kaseyawolf2.horizonwright.core.safety.death.DeathSafetySnapshot;
 import io.github.kaseyawolf2.horizonwright.core.safety.death.ManualHoldReason;
 import io.github.kaseyawolf2.horizonwright.core.safety.death.RecoveryNavigationRequest;
+import io.github.kaseyawolf2.horizonwright.forge.client.MinecraftRuntimeAccess;
 
 /**
  * Deterministic Minecraft-side implementation of the non-durable death directives.
@@ -228,7 +229,7 @@ public final class MinecraftDeathSafetyDirectiveEffect implements DeathSafetyDir
                 public void run() {
                     Minecraft minecraft = Minecraft.getMinecraft();
                     if (minecraft.thePlayer != null) {
-                        minecraft.thePlayer.clearItemInUse();
+                        MinecraftRuntimeAccess.clearItemInUse(minecraft.thePlayer);
                     }
                 }
             });

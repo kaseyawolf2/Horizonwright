@@ -195,7 +195,7 @@ public final class GuiProfileAssets extends GuiScreen {
 
     private void saveBed(ProfileAssetEditor editor) {
         Target target = target();
-        if (mc.theWorld.getBlock(target.x, target.y, target.z) != Blocks.bed) {
+        if (MinecraftRuntimeAccess.block(mc.theWorld, target.x, target.y, target.z) != Blocks.bed) {
             throw new IllegalArgumentException("look directly at a vanilla bed block first");
         }
         String id = ProfileAssetInput.stableId(bedId.getText(), "bed name");
@@ -207,7 +207,7 @@ public final class GuiProfileAssets extends GuiScreen {
         String id = ProfileAssetInput.stableId(bedId.getText(), "bed name");
         requireSavedLocation(id);
         io.github.kaseyawolf2.horizonwright.HorizonwrightRuntime runtime = requireRuntime();
-        long suffix = mc.theWorld == null ? 0L : Math.max(0L, mc.theWorld.getTotalWorldTime());
+        long suffix = mc.theWorld == null ? 0L : Math.max(0L, MinecraftRuntimeAccess.totalWorldTime(mc.theWorld));
         runtime.submitSleep(SleepTask.once("sleep-" + id + "-" + suffix, id));
         status = "Queued one safe sleep attempt at '" + id + "'.";
     }
@@ -359,7 +359,7 @@ public final class GuiProfileAssets extends GuiScreen {
         if (hit == null || hit.typeOfHit != MovingObjectPosition.MovingObjectType.BLOCK) {
             throw new IllegalArgumentException("look directly at the block first");
         }
-        TileEntity tile = mc.theWorld.getTileEntity(hit.blockX, hit.blockY, hit.blockZ);
+        TileEntity tile = MinecraftRuntimeAccess.tileEntity(mc.theWorld, hit.blockX, hit.blockY, hit.blockZ);
         return new Target(mc.theWorld.provider.dimensionId, hit.blockX, hit.blockY, hit.blockZ, tile);
     }
 

@@ -824,7 +824,7 @@ public final class HorizonwrightClientCommand extends CommandBase {
         ChatComponentText choice = new ChatComponentText(
             "[Resume] " + candidate.getSpec()
                 .getDisplayName() + "  [" + taskId + "]");
-        choice.getChatStyle()
+        MinecraftRuntimeAccess.chatStyle(choice)
             .setColor(EnumChatFormatting.AQUA)
             .setUnderlined(Boolean.TRUE)
             .setChatClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, "/hw resume " + taskId))

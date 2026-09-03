@@ -31,6 +31,7 @@ import io.github.kaseyawolf2.horizonwright.core.navigation.NavigationProgress;
 import io.github.kaseyawolf2.horizonwright.core.navigation.NavigationRequest;
 import io.github.kaseyawolf2.horizonwright.core.navigation.NavigationState;
 import io.github.kaseyawolf2.horizonwright.core.persistence.NamedLocation;
+import io.github.kaseyawolf2.horizonwright.forge.client.MinecraftRuntimeAccess;
 import io.github.kaseyawolf2.horizonwright.forge.client.network.ActionPacketDispatch;
 import io.github.kaseyawolf2.horizonwright.runtime.task.SleepBackend;
 
@@ -170,10 +171,11 @@ public final class LiveVanillaSleepBackend implements SleepBackend {
             location.getZ());
         boolean sameDimension = minecraft.theWorld.provider != null
             && minecraft.theWorld.provider.dimensionId == location.getDimensionId();
-        boolean loaded = sameDimension
-            && minecraft.theWorld.blockExists(location.getX(), location.getY(), location.getZ());
+        boolean loaded = sameDimension && MinecraftRuntimeAccess
+            .blockExists(minecraft.theWorld, location.getX(), location.getY(), location.getZ());
         boolean exactBed = loaded
-            && minecraft.theWorld.getBlock(location.getX(), location.getY(), location.getZ()) == Blocks.bed;
+            && MinecraftRuntimeAccess.block(minecraft.theWorld, location.getX(), location.getY(), location.getZ())
+                == Blocks.bed;
         // An unloaded registered location may authorize only the approach. Exact block,
         // danger, and click reach are all revalidated after the approach completes.
         boolean providerAvailable = sameDimension && (!loaded || exactBed);
@@ -182,7 +184,7 @@ public final class LiveVanillaSleepBackend implements SleepBackend {
         boolean reachable = providerAvailable && navigation != null
             && navigation.availability()
                 .isAvailable();
-        long time = Math.max(0L, minecraft.theWorld.getWorldTime());
+        long time = Math.max(0L, MinecraftRuntimeAccess.worldTime(minecraft.theWorld));
         long revision = ++observationRevision;
         String fingerprint = location.getId() + ":"
             + location.getDimensionId()
@@ -246,18 +248,20 @@ public final class LiveVanillaSleepBackend implements SleepBackend {
             .getBoundingBox(bed.getX(), bed.getY(), bed.getZ(), bed.getX() + 1, bed.getY() + 1, bed.getZ() + 1)
             .expand(8.0D, 5.0D, 8.0D);
         @SuppressWarnings("unchecked")
-        List<EntityMob> hostiles = minecraft.theWorld.getEntitiesWithinAABB(EntityMob.class, box);
+        List<EntityMob> hostiles = MinecraftRuntimeAccess
+            .getEntitiesWithinAabb(minecraft.theWorld, EntityMob.class, box);
         for (EntityMob hostile : hostiles) if (hostile != null && !hostile.isDead) return true;
         return false;
     }
 
     private boolean canReach(BasePosition bed) {
         EntityPlayer player = minecraft.thePlayer;
-        Vec3 eyes = Vec3.createVectorHelper(player.posX, player.posY + player.getEyeHeight(), player.posZ);
+        Vec3 eyes = Vec3
+            .createVectorHelper(player.posX, player.posY + MinecraftRuntimeAccess.eyeHeight(player), player.posZ);
         Vec3 center = Vec3.createVectorHelper(bed.getX() + 0.5D, bed.getY() + 0.5D, bed.getZ() + 0.5D);
         double reach = Math.min(minecraft.playerController.getBlockReachDistance(), MAX_INTERACTION_DISTANCE);
         if (eyes.squareDistanceTo(center) > reach * reach) return false;
-        MovingObjectPosition hit = minecraft.theWorld.rayTraceBlocks(eyes, center, false);
+        MovingObjectPosition hit = MinecraftRuntimeAccess.rayTraceBlocks(minecraft.theWorld, eyes, center, false);
         return hit != null && hit.typeOfHit == MovingObjectPosition.MovingObjectType.BLOCK
             && hit.blockX == bed.getX()
             && hit.blockY == bed.getY()
@@ -349,9 +353,9 @@ public final class LiveVanillaSleepBackend implements SleepBackend {
                 "cancelRequested",
                 cancellationRequested,
                 "worldTime",
-                minecraft.theWorld.getWorldTime(),
+                MinecraftRuntimeAccess.worldTime(minecraft.theWorld),
                 "sleeping",
-                minecraft.thePlayer.isPlayerSleeping());
+                MinecraftRuntimeAccess.isPlayerSleeping(minecraft.thePlayer));
             if (isTerminal()) return snapshot();
             if (cancellationRequested) {
                 cancelOnClientThread();
@@ -417,8 +421,9 @@ public final class LiveVanillaSleepBackend implements SleepBackend {
                 clearActive(this);
                 return;
             }
-            boolean exactBed = minecraft.theWorld.blockExists(bed.getX(), bed.getY(), bed.getZ())
-                && minecraft.theWorld.getBlock(bed.getX(), bed.getY(), bed.getZ()) == Blocks.bed;
+            boolean exactBed = MinecraftRuntimeAccess
+                .blockExists(minecraft.theWorld, bed.getX(), bed.getY(), bed.getZ())
+                && MinecraftRuntimeAccess.block(minecraft.theWorld, bed.getX(), bed.getY(), bed.getZ()) == Blocks.bed;
             if (freshDecision.getAction() != SleepActionKind.USE_REGISTERED_BED || !exactBed || !canReach(bed)) {
                 trace(
                     "pre-interaction-rejected",
@@ -442,7 +447,7 @@ public final class LiveVanillaSleepBackend implements SleepBackend {
             boolean accepted = minecraft.playerController.onPlayerRightClick(
                 minecraft.thePlayer,
                 minecraft.theWorld,
-                minecraft.thePlayer.getHeldItem(),
+                MinecraftRuntimeAccess.heldItem(minecraft.thePlayer),
                 bed.getX(),
                 bed.getY(),
                 bed.getZ(),
@@ -480,9 +485,10 @@ public final class LiveVanillaSleepBackend implements SleepBackend {
 
         private MovingObjectPosition rayTraceBed(BasePosition target) {
             EntityPlayer player = minecraft.thePlayer;
-            Vec3 eyes = Vec3.createVectorHelper(player.posX, player.posY + player.getEyeHeight(), player.posZ);
+            Vec3 eyes = Vec3
+                .createVectorHelper(player.posX, player.posY + MinecraftRuntimeAccess.eyeHeight(player), player.posZ);
             Vec3 center = Vec3.createVectorHelper(target.getX() + 0.5D, target.getY() + 0.5D, target.getZ() + 0.5D);
-            MovingObjectPosition hit = minecraft.theWorld.rayTraceBlocks(eyes, center, false);
+            MovingObjectPosition hit = MinecraftRuntimeAccess.rayTraceBlocks(minecraft.theWorld, eyes, center, false);
             return hit != null && hit.typeOfHit == MovingObjectPosition.MovingObjectType.BLOCK
                 && hit.blockX == target.getX()
                 && hit.blockY == target.getY()
@@ -490,13 +496,13 @@ public final class LiveVanillaSleepBackend implements SleepBackend {
         }
 
         private void confirmSleep() {
-            if (minecraft.thePlayer.isPlayerSleeping()) {
+            if (MinecraftRuntimeAccess.isPlayerSleeping(minecraft.thePlayer)) {
                 consecutiveSleepingTicks++;
             } else {
                 consecutiveSleepingTicks = 0;
             }
             boolean daytime = !SleepWindow.vanilla()
-                .contains(minecraft.theWorld.getWorldTime());
+                .contains(MinecraftRuntimeAccess.worldTime(minecraft.theWorld));
             trace(
                 "confirmation",
                 "sleepingTicks",
@@ -504,7 +510,7 @@ public final class LiveVanillaSleepBackend implements SleepBackend {
                 "daytime",
                 daytime,
                 "worldTime",
-                minecraft.theWorld.getWorldTime());
+                MinecraftRuntimeAccess.worldTime(minecraft.theWorld));
             if (consecutiveSleepingTicks >= REQUIRED_SLEEPING_TICKS || daytime) {
                 state = ActionState.CONFIRMED;
                 detail = consecutiveSleepingTicks >= REQUIRED_SLEEPING_TICKS ? "Stable player sleeping state confirmed"
@@ -522,7 +528,7 @@ public final class LiveVanillaSleepBackend implements SleepBackend {
         private void aimAt(BasePosition target) {
             Entity player = minecraft.thePlayer;
             double dx = target.getX() + 0.5D - player.posX;
-            double dy = target.getY() + 0.5D - (player.posY + minecraft.thePlayer.getEyeHeight());
+            double dy = target.getY() + 0.5D - (player.posY + MinecraftRuntimeAccess.eyeHeight(minecraft.thePlayer));
             double dz = target.getZ() + 0.5D - player.posZ;
             player.rotationYaw = (float) (Math.atan2(dz, dx) * 180.0D / Math.PI) - 90.0F;
             player.rotationPitch = (float) -(Math.atan2(dy, Math.sqrt(dx * dx + dz * dz)) * 180.0D / Math.PI);

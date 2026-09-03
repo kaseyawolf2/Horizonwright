@@ -13,6 +13,7 @@ import io.github.kaseyawolf2.horizonwright.core.persistence.NamedStorageEndpoint
 import io.github.kaseyawolf2.horizonwright.core.persistence.PersistenceLoadResult;
 import io.github.kaseyawolf2.horizonwright.core.persistence.ProfileEnvelope;
 import io.github.kaseyawolf2.horizonwright.core.persistence.WorldProfileIdentity;
+import io.github.kaseyawolf2.horizonwright.forge.client.MinecraftRuntimeAccess;
 
 /** Resolves unload policy from the exact active profile partition. */
 public final class ProfileVanillaChestUnloadConfiguration implements LiveVanillaChestUnloadBackend.ConfigurationSource {
@@ -55,7 +56,8 @@ public final class ProfileVanillaChestUnloadConfiguration implements LiveVanilla
             || minecraft.theWorld.provider.dimensionId != location.getDimensionId()) {
             throw mismatch(storageId);
         }
-        TileEntity tile = minecraft.theWorld.getTileEntity(location.getX(), location.getY(), location.getZ());
+        TileEntity tile = MinecraftRuntimeAccess
+            .tileEntity(minecraft.theWorld, location.getX(), location.getY(), location.getZ());
         if (!(tile instanceof IInventory)) {
             throw mismatch(storageId);
         }

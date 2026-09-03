@@ -20,6 +20,7 @@ import net.minecraft.util.MathHelper;
 import io.github.kaseyawolf2.horizonwright.HorizonwrightRuntime;
 import io.github.kaseyawolf2.horizonwright.core.safety.death.DimensionBlockPosition;
 import io.github.kaseyawolf2.horizonwright.core.safety.death.InventoryStack;
+import io.github.kaseyawolf2.horizonwright.forge.client.MinecraftRuntimeAccess;
 
 /** Immutable Minecraft-thread capture used by the pre-S06 death hook. */
 public final class MinecraftClientDeathContextSource implements ClientDeathContextSource {
@@ -45,7 +46,8 @@ public final class MinecraftClientDeathContextSource implements ClientDeathConte
             MathHelper.floor_double(player.posX),
             MathHelper.floor_double(player.posY),
             MathHelper.floor_double(player.posZ));
-        playerIdentity = player.getUniqueID() + "@" + Integer.toHexString(System.identityHashCode(player));
+        playerIdentity = MinecraftRuntimeAccess.uniqueId(player) + "@"
+            + Integer.toHexString(System.identityHashCode(player));
         activeTaskId = runtime.controllerSnapshot()
             .getActiveTaskId()
             .orElse(null);

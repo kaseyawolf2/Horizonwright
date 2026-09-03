@@ -160,7 +160,7 @@ public final class GuiProfileAreas extends GuiScreen {
         String plotId = ProfileAssetInput.stableId(areaId.getText(), "area name");
         requireSavedArea(plotId);
         int reserve = ProfileAssetInput.nonNegativeInteger(seedReserve.getText(), "minimum seed reserve");
-        String taskId = "farm-" + plotId + "-" + mc.theWorld.getTotalWorldTime();
+        String taskId = "farm-" + plotId + "-" + MinecraftRuntimeAccess.totalWorldTime(mc.theWorld);
         HorizonwrightRuntime runtime = CurrentRuntimeUiResolver.resolve(runtimeProvider)
             .getRuntime();
         TaskSnapshot submitted = runtime.submitFarm(FarmTask.finitePass(taskId, plotId, reserve));

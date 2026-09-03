@@ -18,6 +18,7 @@ import io.github.kaseyawolf2.horizonwright.core.safety.death.GraveSearchObservat
 import io.github.kaseyawolf2.horizonwright.core.safety.death.RecoveryNavigationStatus;
 import io.github.kaseyawolf2.horizonwright.core.safety.death.RecoveryVerificationObservation;
 import io.github.kaseyawolf2.horizonwright.core.safety.death.RespawnObservation;
+import io.github.kaseyawolf2.horizonwright.forge.client.MinecraftRuntimeAccess;
 
 /** Live per-connection composition for client snapshots, redundant death signals, and exact packet gates. */
 public final class ClientDeathSafetyRuntime {
@@ -97,8 +98,8 @@ public final class ClientDeathSafetyRuntime {
                 .getConnectionEpoch(),
             clientTick,
             source);
-        double health = player.getHealth();
-        double maximumHealth = player.getMaxHealth();
+        double health = MinecraftRuntimeAccess.health(player);
+        double maximumHealth = MinecraftRuntimeAccess.maximumHealth(player);
         DeathSafetyUpdate healthUpdate = active.getController()
             .onHealthObservation(
                 active.getStamps()

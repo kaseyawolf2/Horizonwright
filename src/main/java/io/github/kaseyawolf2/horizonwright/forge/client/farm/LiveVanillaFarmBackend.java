@@ -28,6 +28,7 @@ import io.github.kaseyawolf2.horizonwright.core.navigation.NavigationRequest;
 import io.github.kaseyawolf2.horizonwright.core.navigation.NavigationState;
 import io.github.kaseyawolf2.horizonwright.forge.client.AutomationInputHold;
 import io.github.kaseyawolf2.horizonwright.forge.client.ClientBootstrap;
+import io.github.kaseyawolf2.horizonwright.forge.client.MinecraftRuntimeAccess;
 import io.github.kaseyawolf2.horizonwright.forge.client.network.ActionPacketDispatch;
 import io.github.kaseyawolf2.horizonwright.runtime.task.FarmBackend;
 
@@ -506,7 +507,8 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
         }
 
         private void plantOnce() {
-            if (!guard.isActiveLease(lease) || !minecraft.theWorld.isAirBlock(
+            if (!guard.isActiveLease(lease) || !MinecraftRuntimeAccess.isAirBlock(
+                minecraft.theWorld,
                 request.getDecision()
                     .getTarget()
                     .getX(),
@@ -614,7 +616,8 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
                 return false;
             }
             EntityPlayer player = minecraft.thePlayer;
-            Vec3 eyes = Vec3.createVectorHelper(player.posX, player.posY + player.getEyeHeight(), player.posZ);
+            Vec3 eyes = Vec3
+                .createVectorHelper(player.posX, player.posY + MinecraftRuntimeAccess.eyeHeight(player), player.posZ);
             Vec3 center = Vec3.createVectorHelper(target.getX() + 0.5D, target.getY() + 0.5D, target.getZ() + 0.5D);
             double reach = minecraft.playerController.getBlockReachDistance() + 0.5D;
             double distanceSquared = eyes.squareDistanceTo(center);
@@ -635,7 +638,7 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
                     center);
                 return false;
             }
-            MovingObjectPosition hit = minecraft.theWorld.rayTraceBlocks(eyes, center, false);
+            MovingObjectPosition hit = MinecraftRuntimeAccess.rayTraceBlocks(minecraft.theWorld, eyes, center, false);
             boolean reachable = hit != null && hit.typeOfHit == MovingObjectPosition.MovingObjectType.BLOCK
                 && hit.blockX == target.getX()
                 && hit.blockY == target.getY()
@@ -658,7 +661,7 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
         private void aimAt(BasePosition target) {
             EntityPlayer player = minecraft.thePlayer;
             double dx = target.getX() + 0.5D - player.posX;
-            double dy = target.getY() + 0.5D - (player.posY + player.getEyeHeight());
+            double dy = target.getY() + 0.5D - (player.posY + MinecraftRuntimeAccess.eyeHeight(player));
             double dz = target.getZ() + 0.5D - player.posZ;
             player.rotationYaw = (float) (Math.atan2(dz, dx) * 180.0D / Math.PI) - 90.0F;
             player.rotationPitch = (float) -(Math.atan2(dy, Math.sqrt(dx * dx + dz * dz)) * 180.0D / Math.PI);

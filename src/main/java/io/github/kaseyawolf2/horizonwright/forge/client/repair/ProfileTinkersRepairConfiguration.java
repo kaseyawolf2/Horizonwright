@@ -12,6 +12,7 @@ import io.github.kaseyawolf2.horizonwright.core.persistence.NamedRepairStation;
 import io.github.kaseyawolf2.horizonwright.core.persistence.PersistenceLoadResult;
 import io.github.kaseyawolf2.horizonwright.core.persistence.ProfileEnvelope;
 import io.github.kaseyawolf2.horizonwright.core.persistence.WorldProfileIdentity;
+import io.github.kaseyawolf2.horizonwright.forge.client.MinecraftRuntimeAccess;
 
 /** Atomically resolves an exact profile repair-station location and material loadout. */
 public final class ProfileTinkersRepairConfiguration implements LiveTinkersRepairBackend.ConfigurationSource {
@@ -52,7 +53,8 @@ public final class ProfileTinkersRepairConfiguration implements LiveTinkersRepai
             || minecraft.theWorld.provider.dimensionId != location.getDimensionId()) {
             throw mismatch(stationId);
         }
-        TileEntity tile = minecraft.theWorld.getTileEntity(location.getX(), location.getY(), location.getZ());
+        TileEntity tile = MinecraftRuntimeAccess
+            .tileEntity(minecraft.theWorld, location.getX(), location.getY(), location.getZ());
         Object firstSlot = container.inventorySlots.isEmpty() ? null : container.inventorySlots.get(0);
         if (tile == null || !(firstSlot instanceof Slot) || ((Slot) firstSlot).inventory != tile) {
             throw mismatch(stationId);
