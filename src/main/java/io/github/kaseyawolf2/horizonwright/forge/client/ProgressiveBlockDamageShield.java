@@ -60,8 +60,7 @@ public final class ProgressiveBlockDamageShield {
                 "owner",
                 owner,
                 "screen",
-                minecraft.currentScreen.getClass()
-                    .getSimpleName());
+                currentScreenName());
             return;
         }
         ControllerStateAccess.setHittingBlock(controller, false);
@@ -71,8 +70,7 @@ public final class ProgressiveBlockDamageShield {
             "owner",
             owner,
             "screen",
-            minecraft.currentScreen.getClass()
-                .getSimpleName(),
+            currentScreenName(),
             "damage",
             saved.damage);
     }
@@ -114,6 +112,12 @@ public final class ProgressiveBlockDamageShield {
         if (value == null || value.trim()
             .isEmpty()) throw new IllegalArgumentException("owner must not be blank");
         return value.trim();
+    }
+
+    private String currentScreenName() {
+        return minecraft.currentScreen == null ? "none"
+            : minecraft.currentScreen.getClass()
+                .getSimpleName();
     }
 
     private static final class SavedState {
