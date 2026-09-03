@@ -222,7 +222,7 @@ public final class HorizonwrightClientCommand extends CommandBase {
                 (DevelopmentTrace.isEnabled() ? EnumChatFormatting.GREEN : EnumChatFormatting.GRAY)
                     + "Horizonwright development tracing is "
                     + (DevelopmentTrace.isEnabled() ? "ON" : "OFF")
-                    + ". Full events are written to latest.log."));
+                    + ". Full events are written to fml-client-latest.log."));
     }
 
     private static void showUnavailable(ICommandSender sender, CurrentRuntimeUiResolver.Resolution resolution) {

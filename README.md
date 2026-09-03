@@ -205,7 +205,8 @@ Snapshot builds enable high-volume structured tracing by default. Every record s
 `[HWTRACE]` and includes a monotonic sequence number, component, event, and correlation fields.
 The trace covers runtime/world-session lifecycle, persistence, schedules, task transitions,
 runner results, action leases, outbound action authorization, Baritone navigation, and the live
-farm, excavation, and sleep phase machines. Full output is written to Minecraft's `latest.log`;
+farm, excavation, and sleep phase machines. Full output is written to Forge's
+`fml-client-latest.log`;
 it is intentionally verbose while the live integrations are still being physically tested.
 
 Use `/hw debug status`, `/hw debug on`, or `/hw debug off` to inspect or change tracing for the

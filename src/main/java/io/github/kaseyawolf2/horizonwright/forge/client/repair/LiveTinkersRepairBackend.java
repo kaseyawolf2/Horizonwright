@@ -7,6 +7,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.inventory.Container;
 import net.minecraft.item.ItemStack;
 
+import io.github.kaseyawolf2.horizonwright.DevelopmentTrace;
 import io.github.kaseyawolf2.horizonwright.core.action.ActionCapability;
 import io.github.kaseyawolf2.horizonwright.core.action.ActionLease;
 import io.github.kaseyawolf2.horizonwright.core.container.ContainerSnapshot;
@@ -57,24 +58,55 @@ public final class LiveTinkersRepairBackend implements RepairBackend {
 
     @Override
     public RepairBackendAvailability availability() {
+        RepairBackendAvailability result;
         if (!compatibility.isAvailable()) {
-            return RepairBackendAvailability.unavailable(compatibility.getDiagnostic());
+            result = RepairBackendAvailability.unavailable(compatibility.getDiagnostic());
+        } else if (!minecraft.func_152345_ab() || minecraft.thePlayer == null) {
+            result = RepairBackendAvailability.unavailable("A joined Minecraft client thread is required");
+        } else {
+            Container open = minecraft.thePlayer.openContainer;
+            result = open != null && TinkersRepairContainerAdapter.layoutFor(
+                open.getClass()
+                    .getName())
+                != null ? RepairBackendAvailability.available(compatibility.getDiagnostic())
+                    : RepairBackendAvailability.unavailable("Open the exact pinned Tool Station or Tool Forge");
         }
-        if (!minecraft.func_152345_ab() || minecraft.thePlayer == null) {
-            return RepairBackendAvailability.unavailable("A joined Minecraft client thread is required");
-        }
-        Container open = minecraft.thePlayer.openContainer;
-        return open != null && TinkersRepairContainerAdapter.layoutFor(
-            open.getClass()
-                .getName())
-            != null ? RepairBackendAvailability.available(compatibility.getDiagnostic())
-                : RepairBackendAvailability.unavailable("Open the exact pinned Tool Station or Tool Forge");
+        DevelopmentTrace.event(
+            "repair-live",
+            "availability",
+            "available",
+            result.isAvailable(),
+            "diagnostic",
+            result.getDiagnostic(),
+            "container",
+            minecraft.thePlayer == null || minecraft.thePlayer.openContainer == null ? "none"
+                : minecraft.thePlayer.openContainer.getClass()
+                    .getName());
+        return result;
     }
 
     @Override
     public RepairObservationResult observe(RepairObservationRequest request) {
         requireClient(request);
         Container container = minecraft.thePlayer.openContainer;
+        DevelopmentTrace.event(
+            "repair-live",
+            "observe-start",
+            "task",
+            request.getTaskId(),
+            "revision",
+            request.getCheckpointRevision(),
+            "epoch",
+            request.getActionEpoch(),
+            "station",
+            request.getStationId(),
+            "reservedSlot",
+            request.getReservedInventorySlot(),
+            "window",
+            container.windowId,
+            "container",
+            container.getClass()
+                .getName());
         NamedLoadout loadout = configuration.resolve(request.getStationId(), container);
         TinkersRepairContainerAdapter.Layout layout = TinkersRepairContainerAdapter
             .requirePinnedLayout(container, minecraft.thePlayer.inventory);
@@ -94,7 +126,7 @@ public final class LiveTinkersRepairBackend implements RepairBackend {
             request.getActionEpoch());
         TinkersRepairContainerEvidence evidence = prediction.getEvidence();
         ContainerTransaction transaction = prediction.getTransaction();
-        return new RepairObservationResult(
+        RepairObservationResult result = new RepairObservationResult(
             request.getTaskId(),
             request.getCheckpointRevision(),
             request.getActionEpoch(),
@@ -108,6 +140,8 @@ public final class LiveTinkersRepairBackend implements RepairBackend {
             transaction == null ? null : evidence.getPredictedOutput(),
             transaction == null ? 0 : evidence.getPredictedMaterialConsumed(),
             transaction);
+        traceObservation("observed", result);
+        return result;
     }
 
     private RepairObservationResult observeReturnedTool(RepairObservationRequest request, Container container,
@@ -122,7 +156,7 @@ public final class LiveTinkersRepairBackend implements RepairBackend {
         ItemFingerprint fingerprint = snapshots.fingerprint(tool);
         requireToolReservation(loadout, fingerprint);
         RepairToolSnapshot toolEvidence = adapter.readTool(tool, request.getReservedInventorySlot());
-        return new RepairObservationResult(
+        RepairObservationResult result = new RepairObservationResult(
             request.getTaskId(),
             request.getCheckpointRevision(),
             request.getActionEpoch(),
@@ -137,6 +171,8 @@ public final class LiveTinkersRepairBackend implements RepairBackend {
             null,
             0,
             null);
+        traceObservation("returned-tool-observed", result);
+        return result;
     }
 
     private static void requireToolReservation(NamedLoadout loadout, ItemFingerprint tool) {
@@ -150,6 +186,28 @@ public final class LiveTinkersRepairBackend implements RepairBackend {
     public RepairActionHandle execute(RepairActionRequest request, ActionLease lease) {
         requireClient(request);
         requireLease(request, lease);
+        DevelopmentTrace.event(
+            "repair-live",
+            "execute",
+            "request",
+            request.getRequestId(),
+            "revision",
+            request.getCheckpointRevision(),
+            "epoch",
+            request.getActionEpoch(),
+            "transaction",
+            request.getTransaction()
+                .getTransactionId(),
+            "clicks",
+            request.getTransaction()
+                .getClicks()
+                .size(),
+            "inputDamage",
+            request.getInputTool()
+                .getDamage(),
+            "inputMaximumDamage",
+            request.getInputTool()
+                .getMaximumDamage());
         executor.begin(request.getTransaction());
         return new TinkersRepairActionHandle(
             request,
@@ -173,6 +231,44 @@ public final class LiveTinkersRepairBackend implements RepairBackend {
         }
     }
 
+    private static void traceObservation(String event, RepairObservationResult result) {
+        DevelopmentTrace.event(
+            "repair-live",
+            event,
+            "task",
+            result.getTaskId(),
+            "revision",
+            result.getCheckpointRevision(),
+            "epoch",
+            result.getActionEpoch(),
+            "station",
+            result.getStationId(),
+            "window",
+            result.getWindowId(),
+            "stationSlots",
+            result.getStationSlotCount(),
+            "reservedContainerSlot",
+            result.getReservedContainerSlot(),
+            "materialSlots",
+            result.getApprovedMaterialContainerSlots(),
+            "inputDamage",
+            result.getInputTool()
+                .getDamage(),
+            "inputMaximumDamage",
+            result.getInputTool()
+                .getMaximumDamage(),
+            "predictedDamage",
+            result.getPredictedOutput() == null ? "none"
+                : result.getPredictedOutput()
+                    .getDamage(),
+            "predictedConsumed",
+            result.getPredictedMaterialConsumed(),
+            "transaction",
+            result.getTransaction() == null ? "none"
+                : result.getTransaction()
+                    .getTransactionId());
+    }
+
     private static final class LiveConfirmationSource implements TinkersRepairActionHandle.ConfirmationSource {
 
         private final Minecraft minecraft;
@@ -188,6 +284,7 @@ public final class LiveTinkersRepairBackend implements RepairBackend {
 
         @Override
         public RepairActionConfirmation confirm(RepairActionRequest request) {
+            DevelopmentTrace.event("repair-live", "confirm-start", "request", request.getRequestId());
             if (!minecraft.func_152345_ab() || minecraft.thePlayer == null
                 || minecraft.thePlayer.openContainer == null) {
                 throw new IllegalStateException("joined client and repair container are no longer available");
@@ -215,7 +312,23 @@ public final class LiveTinkersRepairBackend implements RepairBackend {
                     .getExpectedBefore(),
                 expected,
                 stationSlots);
-            return new RepairActionConfirmation(request.getTransactionFingerprint(), outputTool, consumed, true);
+            RepairActionConfirmation confirmation = new RepairActionConfirmation(
+                request.getTransactionFingerprint(),
+                outputTool,
+                consumed,
+                true);
+            DevelopmentTrace.event(
+                "repair-live",
+                "confirmed",
+                "request",
+                request.getRequestId(),
+                "outputDamage",
+                outputTool.getDamage(),
+                "outputMaximumDamage",
+                outputTool.getMaximumDamage(),
+                "materialConsumed",
+                consumed);
+            return confirmation;
         }
 
         private static int stationSlotCount(String containerType) {

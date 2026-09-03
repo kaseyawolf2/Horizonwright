@@ -4,6 +4,7 @@ import java.util.Optional;
 
 import net.minecraft.client.Minecraft;
 
+import io.github.kaseyawolf2.horizonwright.DevelopmentTrace;
 import io.github.kaseyawolf2.horizonwright.core.action.ActionSessionGuard;
 import io.github.kaseyawolf2.horizonwright.core.container.ContainerClickCorrelation;
 import io.github.kaseyawolf2.horizonwright.core.container.ContainerSnapshot;
@@ -83,11 +84,13 @@ public final class LiveContainerTransactionExecutor implements ConfirmedContaine
         if (epochs.activeEpochOrZero() != transaction.getActionEpoch()) {
             throw new IllegalStateException("container transaction does not own the active action epoch");
         }
+        trace("begin", transaction, "boundaryReady", packets.isBoundaryReady());
         active = new ContainerClickCorrelation(transaction);
         packets.activate(active);
         try {
             dispatchNext();
         } catch (RuntimeException failure) {
+            trace("begin-failed", transaction, "failure", DevelopmentTrace.error(failure));
             active.cancel("live container transaction failed before its first click completed");
             releaseIfTerminal();
             throw failure;
@@ -98,8 +101,10 @@ public final class LiveContainerTransactionExecutor implements ConfirmedContaine
     public synchronized void tick() {
         client.requireClientThread();
         if (active == null) {
+            DevelopmentTrace.event("container-live", "tick-idle", "activeEpoch", epochs.activeEpochOrZero());
             return;
         }
+        trace("tick", active.getTransaction(), "correlationState", active.getState());
         try {
             long now = clock.nanoTime();
             long epoch = epochs.activeEpochOrZero();
@@ -123,6 +128,7 @@ public final class LiveContainerTransactionExecutor implements ConfirmedContaine
                 dispatchNext();
             }
         } catch (RuntimeException failure) {
+            trace("tick-failed", active.getTransaction(), "failure", DevelopmentTrace.error(failure));
             active.cancel("live container transaction failed while awaiting synchronization");
             releaseIfTerminal();
             throw failure;
@@ -132,6 +138,7 @@ public final class LiveContainerTransactionExecutor implements ConfirmedContaine
 
     public synchronized void cancel(String reason) {
         if (active != null) {
+            trace("cancel", active.getTransaction(), "reason", reason);
             active.cancel(reason);
             releaseIfTerminal();
         }
@@ -140,8 +147,18 @@ public final class LiveContainerTransactionExecutor implements ConfirmedContaine
     @Override
     public synchronized boolean cancel(ContainerTransaction expected, String reason) {
         if (expected == null || active == null || active.getTransaction() != expected) {
+            DevelopmentTrace.event(
+                "container-live",
+                "cancel-mismatch",
+                "expected",
+                expected == null ? "none" : expected.getTransactionId(),
+                "active",
+                active == null ? "none"
+                    : active.getTransaction()
+                        .getTransactionId());
             return false;
         }
+        trace("cancel", expected, "reason", reason);
         active.cancel(reason);
         releaseIfTerminal();
         return true;
@@ -170,11 +187,28 @@ public final class LiveContainerTransactionExecutor implements ConfirmedContaine
         Optional<VerifiedContainerClick> prepared = active
             .prepare(observed, epochs.activeEpochOrZero(), clock.nanoTime(), timeoutNanos);
         if (!prepared.isPresent()) {
+            trace("dispatch-not-prepared", transaction, "nextIndex", nextIndex);
             return;
         }
         try {
+            trace(
+                "dispatch",
+                transaction,
+                "click",
+                prepared.get()
+                    .getClickId(),
+                "slot",
+                prepared.get()
+                    .getSlot(),
+                "mouseButton",
+                prepared.get()
+                    .getMouseButton(),
+                "clickMode",
+                prepared.get()
+                    .getClickMode());
             client.click(prepared.get());
         } catch (RuntimeException failure) {
+            trace("dispatch-failed", transaction, "failure", DevelopmentTrace.error(failure));
             active.cancel(
                 "client failed while dispatching container click " + prepared.get()
                     .getClickId());
@@ -184,9 +218,33 @@ public final class LiveContainerTransactionExecutor implements ConfirmedContaine
 
     private void releaseIfTerminal() {
         if (active != null && active.isTerminal()) {
+            trace(
+                "released",
+                active.getTransaction(),
+                "correlationState",
+                active.getState(),
+                "abortReason",
+                active.getTransaction()
+                    .getAbortReason());
             packets.release(active);
             active = null;
         }
+    }
+
+    private void trace(String event, ContainerTransaction transaction, Object... extraFields) {
+        Object[] fields = new Object[10 + extraFields.length];
+        fields[0] = "transaction";
+        fields[1] = transaction.getTransactionId();
+        fields[2] = "state";
+        fields[3] = transaction.getState();
+        fields[4] = "epoch";
+        fields[5] = transaction.getActionEpoch();
+        fields[6] = "activeEpoch";
+        fields[7] = epochs.activeEpochOrZero();
+        fields[8] = "completedClicks";
+        fields[9] = transaction.getCompletedClickCount();
+        System.arraycopy(extraFields, 0, fields, 10, extraFields.length);
+        DevelopmentTrace.event("container-live", event, fields);
     }
 
     private static final class MinecraftClientAccess implements ClientAccess {

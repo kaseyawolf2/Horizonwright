@@ -1,5 +1,6 @@
 package io.github.kaseyawolf2.horizonwright.forge.client.repair;
 
+import io.github.kaseyawolf2.horizonwright.DevelopmentTrace;
 import io.github.kaseyawolf2.horizonwright.core.container.ContainerTransaction;
 import io.github.kaseyawolf2.horizonwright.core.container.ContainerTransactionState;
 import io.github.kaseyawolf2.horizonwright.forge.client.container.ConfirmedContainerTransactionExecutor;
@@ -42,6 +43,22 @@ final class TinkersRepairActionHandle implements RepairActionHandle {
     public synchronized RepairActionProgress progress() {
         ContainerTransaction transaction = request.getTransaction();
         ContainerTransactionState state = transaction.getState();
+        DevelopmentTrace.event(
+            "repair-live",
+            "progress",
+            "request",
+            request.getRequestId(),
+            "transaction",
+            transaction.getTransactionId(),
+            "transactionState",
+            state,
+            "completedClicks",
+            transaction.getCompletedClickCount(),
+            "totalClicks",
+            transaction.getClicks()
+                .size(),
+            "abortReason",
+            transaction.getAbortReason());
         if (state == ContainerTransactionState.ABORTED) {
             String reason = transaction.getAbortReason();
             RepairActionState result = reason.startsWith("server rejected") ? RepairActionState.REJECTED
@@ -73,11 +90,23 @@ final class TinkersRepairActionHandle implements RepairActionHandle {
 
     @Override
     public void cancel() {
+        DevelopmentTrace.event("repair-live", "cancel", "request", request.getRequestId());
         executor.cancel(request.getTransaction(), "repair task released its live transaction");
     }
 
     private RepairActionProgress progress(RepairActionState state, String detail,
         RepairActionConfirmation currentConfirmation) {
+        DevelopmentTrace.event(
+            "repair-live",
+            "progress-result",
+            "request",
+            request.getRequestId(),
+            "state",
+            state,
+            "detail",
+            detail,
+            "confirmed",
+            currentConfirmation != null);
         return new RepairActionProgress(request.getRequestId(), state, detail, currentConfirmation);
     }
 }
