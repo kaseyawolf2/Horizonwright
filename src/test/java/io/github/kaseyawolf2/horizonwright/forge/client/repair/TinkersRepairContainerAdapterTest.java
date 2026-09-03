@@ -53,12 +53,27 @@ public class TinkersRepairContainerAdapterTest {
     }
 
     @Test
-    public void stableToolIdentityExcludesOnlyDamageAndRetainsOtherNbt() {
+    public void stableToolIdentityExcludesRepairStateAndRetainsConstructionNbt() {
         Item item = new FakeModifyableItem();
-        RepairToolSnapshot damaged = TinkersRepairContainerAdapter
-            .readTool(tool(item, 700, 1000, 3, "head-a"), 2, "TConstruct:pickaxe");
-        RepairToolSnapshot repaired = TinkersRepairContainerAdapter
-            .readTool(tool(item, 500, 1000, 3, "head-a"), 2, "TConstruct:pickaxe");
+        ItemStack damagedStack = tool(item, 700, 1000, 3, "head-a");
+        damagedStack.getTagCompound()
+            .getCompoundTag("InfiTool")
+            .setInteger("RepairCount", 4);
+        damagedStack.getTagCompound()
+            .getCompoundTag("InfiTool")
+            .setBoolean("Broken", true);
+        ItemStack repairedStack = tool(item, 500, 1000, 3, "head-a");
+        repairedStack.getTagCompound()
+            .getCompoundTag("InfiTool")
+            .setInteger("RepairCount", 5);
+        repairedStack.getTagCompound()
+            .getCompoundTag("InfiTool")
+            .setBoolean("Broken", false);
+        repairedStack.getTagCompound()
+            .getCompoundTag("InfiTool")
+            .setIntArray("ToRemove", new int[] { 1 });
+        RepairToolSnapshot damaged = TinkersRepairContainerAdapter.readTool(damagedStack, 2, "TConstruct:pickaxe");
+        RepairToolSnapshot repaired = TinkersRepairContainerAdapter.readTool(repairedStack, 2, "TConstruct:pickaxe");
         RepairToolSnapshot changedPart = TinkersRepairContainerAdapter
             .readTool(tool(item, 500, 1000, 3, "head-b"), 2, "TConstruct:pickaxe");
 

@@ -174,8 +174,13 @@ public final class TinkersRepairContainerAdapter {
         int damage = base.getInteger("Damage");
         int maximumDamage = base.getInteger("TotalDurability");
         NBTTagCompound stableTag = (NBTTagCompound) tag.copy();
-        stableTag.getCompoundTag(baseTagName)
-            .removeTag("Damage");
+        NBTTagCompound stableBase = stableTag.getCompoundTag(baseTagName);
+        // These are the exact fields ModRepair intentionally mutates. They describe repair state,
+        // not the constructed tool's identity; material parts, modifiers, and durability remain bound.
+        stableBase.removeTag("Damage");
+        stableBase.removeTag("RepairCount");
+        stableBase.removeTag("Broken");
+        stableBase.removeTag("ToRemove");
         String stableIdentity = registryIdentity.trim() + "|meta="
             + stack.getItemDamage()
             + "|stableNbt="
