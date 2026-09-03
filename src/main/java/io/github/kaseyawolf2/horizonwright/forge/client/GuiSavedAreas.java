@@ -70,16 +70,16 @@ public final class GuiSavedAreas extends GuiScreen {
             areaButtons.add(button);
             buttonList.add(button);
         }
-        previousButton = new GuiButton(PREVIOUS_BUTTON, left + 18, top + 202, 76, 20, "Previous");
-        nextButton = new GuiButton(NEXT_BUTTON, left + 100, top + 202, 76, 20, "Next");
+        previousButton = new GuiHorizonwrightButton(PREVIOUS_BUTTON, left + 18, top + 202, 76, 20, "Previous");
+        nextButton = new GuiHorizonwrightButton(NEXT_BUTTON, left + 100, top + 202, 76, 20, "Next");
         buttonList.add(previousButton);
         buttonList.add(nextButton);
-        editButton = new GuiButton(EDIT_BUTTON, left + 182, top + 202, 88, 20, "Edit selected");
+        editButton = new GuiHorizonwrightButton(EDIT_BUTTON, left + 182, top + 202, 88, 20, "Edit selected");
         buttonList.add(editButton);
-        deleteButton = new GuiButton(DELETE_BUTTON, left + 276, top + 202, 120, 20, "Delete selected");
+        deleteButton = new GuiHorizonwrightButton(DELETE_BUTTON, left + 276, top + 202, 120, 20, "Delete selected");
         buttonList.add(deleteButton);
-        buttonList.add(new GuiButton(CLOSE_BUTTON, left + 18, top + 270, 70, 20, "Close"));
-        buttonList.add(new GuiButton(BACK_BUTTON, left + panelWidth - 88, top + 270, 70, 20, "Back"));
+        buttonList.add(new GuiHorizonwrightButton(CLOSE_BUTTON, left + 18, top + 270, 70, 20, "Close"));
+        buttonList.add(new GuiHorizonwrightButton(BACK_BUTTON, left + panelWidth - 88, top + 270, 70, 20, "Back"));
     }
 
     @Override

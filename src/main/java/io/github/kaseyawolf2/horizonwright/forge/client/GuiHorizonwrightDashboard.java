@@ -80,27 +80,46 @@ public final class GuiHorizonwrightDashboard extends GuiScreen {
         top = Math.max(8, (height - panelHeight) / 2);
 
         int actionY = top + panelHeight - 28;
-        taskControlButton = new GuiButton(PAUSE_BUTTON, left + 12, actionY, 92, 20, "Pause active");
-        dryRunButton = new GuiButton(DRY_RUN_BUTTON, left + 110, actionY, 92, 20, "Dry-run: off");
-        automationStopButton = new GuiButton(AUTOMATION_STOP_BUTTON, left + 208, actionY, 118, 20, "Stop automation");
+        taskControlButton = new GuiHorizonwrightButton(PAUSE_BUTTON, left + 12, actionY, 92, 20, "Pause active");
+        dryRunButton = new GuiHorizonwrightButton(DRY_RUN_BUTTON, left + 110, actionY, 92, 20, "Dry-run: off");
+        automationStopButton = new GuiHorizonwrightButton(
+            AUTOMATION_STOP_BUTTON,
+            left + 208,
+            actionY,
+            118,
+            20,
+            "Stop automation");
         taskControlButton.enabled = false;
         dryRunButton.enabled = false;
         automationStopButton.enabled = false;
         buttonList.add(taskControlButton);
         buttonList.add(dryRunButton);
         buttonList.add(automationStopButton);
-        buttonList.add(new GuiButton(CLOSE_BUTTON, left + panelWidth - 82, actionY, 70, 20, "Close"));
+        buttonList.add(new GuiHorizonwrightButton(CLOSE_BUTTON, left + panelWidth - 82, actionY, 70, 20, "Close"));
 
         int navigationWidth = panelWidth - 24;
         int tabGap = 4;
         int tabWidth = (navigationWidth - tabGap * 4) / 5;
         int navigationY = top + 42;
-        GuiButton overviewTab = new GuiButton(OVERVIEW_TAB_BUTTON, left + 12, navigationY, tabWidth, 20, "Overview");
+        GuiButton overviewTab = new GuiHorizonwrightButton(
+            OVERVIEW_TAB_BUTTON,
+            left + 12,
+            navigationY,
+            tabWidth,
+            20,
+            "Overview");
         overviewTab.enabled = false;
         buttonList.add(overviewTab);
-        buttonList.add(new GuiButton(TASKS_BUTTON, left + 12 + tabWidth + tabGap, navigationY, tabWidth, 20, "Tasks"));
         buttonList.add(
-            new GuiButton(
+            new GuiHorizonwrightButton(
+                TASKS_BUTTON,
+                left + 12 + tabWidth + tabGap,
+                navigationY,
+                tabWidth,
+                20,
+                "Tasks"));
+        buttonList.add(
+            new GuiHorizonwrightButton(
                 SCHEDULES_BUTTON,
                 left + 12 + (tabWidth + tabGap) * 2,
                 navigationY,
@@ -108,7 +127,7 @@ public final class GuiHorizonwrightDashboard extends GuiScreen {
                 20,
                 "Schedules"));
         buttonList.add(
-            new GuiButton(
+            new GuiHorizonwrightButton(
                 PROFILE_ASSETS_TAB_BUTTON,
                 left + 12 + (tabWidth + tabGap) * 3,
                 navigationY,
@@ -116,7 +135,7 @@ public final class GuiHorizonwrightDashboard extends GuiScreen {
                 20,
                 "Profile"));
         buttonList.add(
-            new GuiButton(
+            new GuiHorizonwrightButton(
                 BARITONE_TAB_BUTTON,
                 left + 12 + (tabWidth + tabGap) * 4,
                 navigationY,
@@ -137,9 +156,21 @@ public final class GuiHorizonwrightDashboard extends GuiScreen {
             resumeChoiceButtons.add(choice);
             buttonList.add(choice);
         }
-        resumePreviousButton = new GuiButton(RESUME_PREVIOUS_BUTTON, left + 42, top + 214, 72, 20, "Previous");
-        resumeNextButton = new GuiButton(RESUME_NEXT_BUTTON, left + 120, top + 214, 72, 20, "Next");
-        resumeCancelButton = new GuiButton(RESUME_CANCEL_BUTTON, left + panelWidth - 114, top + 214, 72, 20, "Cancel");
+        resumePreviousButton = new GuiHorizonwrightButton(
+            RESUME_PREVIOUS_BUTTON,
+            left + 42,
+            top + 214,
+            72,
+            20,
+            "Previous");
+        resumeNextButton = new GuiHorizonwrightButton(RESUME_NEXT_BUTTON, left + 120, top + 214, 72, 20, "Next");
+        resumeCancelButton = new GuiHorizonwrightButton(
+            RESUME_CANCEL_BUTTON,
+            left + panelWidth - 114,
+            top + 214,
+            72,
+            20,
+            "Cancel");
         buttonList.add(resumePreviousButton);
         buttonList.add(resumeNextButton);
         buttonList.add(resumeCancelButton);

@@ -69,9 +69,9 @@ public final class GuiTaskManager extends GuiScreen {
             taskButtons.add(button);
             buttonList.add(button);
         }
-        previousButton = new GuiButton(PREVIOUS_BUTTON, left + 16, top + 166, 72, 20, "Previous");
-        nextButton = new GuiButton(NEXT_BUTTON, left + 94, top + 166, 72, 20, "Next");
-        deleteButton = new GuiButton(
+        previousButton = new GuiHorizonwrightButton(PREVIOUS_BUTTON, left + 16, top + 166, 72, 20, "Previous");
+        nextButton = new GuiHorizonwrightButton(NEXT_BUTTON, left + 94, top + 166, 72, 20, "Next");
+        deleteButton = new GuiHorizonwrightButton(
             DELETE_BUTTON,
             left + panelWidth - 168,
             top + panelHeight - 28,
@@ -80,7 +80,7 @@ public final class GuiTaskManager extends GuiScreen {
             "Delete task");
         buttonList.add(previousButton);
         buttonList.add(nextButton);
-        clearCompletedButton = new GuiButton(
+        clearCompletedButton = new GuiHorizonwrightButton(
             CLEAR_COMPLETED_BUTTON,
             left + 16,
             top + panelHeight - 28,
@@ -89,7 +89,8 @@ public final class GuiTaskManager extends GuiScreen {
             "Clear completed");
         buttonList.add(clearCompletedButton);
         buttonList.add(deleteButton);
-        buttonList.add(new GuiButton(BACK_BUTTON, left + panelWidth - 72, top + panelHeight - 28, 56, 20, "Back"));
+        buttonList.add(
+            new GuiHorizonwrightButton(BACK_BUTTON, left + panelWidth - 72, top + panelHeight - 28, 56, 20, "Back"));
     }
 
     @Override

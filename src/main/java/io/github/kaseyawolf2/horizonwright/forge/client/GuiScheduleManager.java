@@ -87,8 +87,8 @@ public final class GuiScheduleManager extends GuiScreen {
             buttonList.add(button);
         }
 
-        previousButton = new GuiButton(PREVIOUS_BUTTON, left + 16, top + 166, 72, 20, "Previous");
-        nextButton = new GuiButton(NEXT_BUTTON, left + 94, top + 166, 72, 20, "Next");
+        previousButton = new GuiHorizonwrightButton(PREVIOUS_BUTTON, left + 16, top + 166, 72, 20, "Previous");
+        nextButton = new GuiHorizonwrightButton(NEXT_BUTTON, left + 94, top + 166, 72, 20, "Next");
         buttonList.add(previousButton);
         buttonList.add(nextButton);
 
@@ -97,13 +97,13 @@ public final class GuiScheduleManager extends GuiScreen {
         reserveField = field(left + 430, top + 224, 48);
 
         int actionY = top + panelHeight - 28;
-        stateButton = new GuiButton(STATE_BUTTON, left + 16, actionY, 86, 20, "Pause");
-        saveButton = new GuiButton(SAVE_BUTTON, left + 108, actionY, 108, 20, "Save settings");
-        deleteButton = new GuiButton(DELETE_BUTTON, left + 222, actionY, 118, 20, "Delete schedule");
+        stateButton = new GuiHorizonwrightButton(STATE_BUTTON, left + 16, actionY, 86, 20, "Pause");
+        saveButton = new GuiHorizonwrightButton(SAVE_BUTTON, left + 108, actionY, 108, 20, "Save settings");
+        deleteButton = new GuiHorizonwrightButton(DELETE_BUTTON, left + 222, actionY, 118, 20, "Delete schedule");
         buttonList.add(stateButton);
         buttonList.add(saveButton);
         buttonList.add(deleteButton);
-        buttonList.add(new GuiButton(BACK_BUTTON, left + panelWidth - 76, actionY, 60, 20, "Back"));
+        buttonList.add(new GuiHorizonwrightButton(BACK_BUTTON, left + panelWidth - 76, actionY, 60, 20, "Back"));
         refreshSchedules();
     }
 

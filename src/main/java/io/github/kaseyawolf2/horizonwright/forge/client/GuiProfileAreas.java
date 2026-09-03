@@ -74,8 +74,10 @@ public final class GuiProfileAreas extends GuiScreen {
         intervalMinutes.setMaxStringLength(8);
         intervalMinutes.setText("30");
         restoreCaptureDraft();
-        buttonList.add(new GuiButton(FIRST_BUTTON, left + 18, top + 110, 190, 20, "Capture corner 1 here"));
-        buttonList.add(new GuiButton(SECOND_BUTTON, left + 232, top + 110, 190, 20, "Capture corner 2 here"));
+        buttonList
+            .add(new GuiHorizonwrightButton(FIRST_BUTTON, left + 18, top + 110, 190, 20, "Capture corner 1 here"));
+        buttonList
+            .add(new GuiHorizonwrightButton(SECOND_BUTTON, left + 232, top + 110, 190, 20, "Capture corner 2 here"));
         buttonList
             .add(new GuiHorizonwrightButton(SAVE_BUTTON, left + 18, top + 188, panelWidth - 36, 22, "Save work area"));
         buttonList.add(
@@ -94,10 +96,16 @@ public final class GuiProfileAreas extends GuiScreen {
                 panelWidth - 36,
                 22,
                 "Schedule recurring farm passes"));
-        buttonList.add(new GuiButton(CLOSE_BUTTON, left + 18, top + 278, 70, 20, "Close"));
-        buttonList
-            .add(new GuiButton(SAVED_AREAS_BUTTON, left + (panelWidth - 100) / 2, top + 278, 100, 20, "Saved areas"));
-        buttonList.add(new GuiButton(BACK_BUTTON, left + panelWidth - 82, top + 278, 70, 20, "Back"));
+        buttonList.add(new GuiHorizonwrightButton(CLOSE_BUTTON, left + 18, top + 278, 70, 20, "Close"));
+        buttonList.add(
+            new GuiHorizonwrightButton(
+                SAVED_AREAS_BUTTON,
+                left + (panelWidth - 100) / 2,
+                top + 278,
+                100,
+                20,
+                "Saved areas"));
+        buttonList.add(new GuiHorizonwrightButton(BACK_BUTTON, left + panelWidth - 82, top + 278, 70, 20, "Back"));
         refreshCount();
         if (capture.hasFirst() || capture.hasSecond()) {
             status = "Corner draft retained while the page was closed. Capture the remaining corner.";

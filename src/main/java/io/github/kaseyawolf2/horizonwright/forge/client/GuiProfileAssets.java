@@ -84,16 +84,31 @@ public final class GuiProfileAssets extends GuiScreen {
         storageId = field(left + 132, top + 132, 126, "ore-chest");
         stationId = field(left + 132, top + 188, 126, "tool-forge");
         bedId = field(left + 132, top + 238, 126, "home-bed");
-        buttonList.add(new GuiButton(SAVE_LOADOUT_BUTTON, left + 382, top + 50, 96, 20, "Save loadout"));
-        buttonList.add(new GuiButton(SAVE_CHEST_BUTTON, left + 282, top + 132, 196, 20, "Save targeted vanilla chest"));
+        buttonList.add(new GuiHorizonwrightButton(SAVE_LOADOUT_BUTTON, left + 382, top + 50, 96, 20, "Save loadout"));
+        buttonList.add(
+            new GuiHorizonwrightButton(
+                SAVE_CHEST_BUTTON,
+                left + 282,
+                top + 132,
+                196,
+                20,
+                "Save targeted vanilla chest"));
+        buttonList.add(
+            new GuiHorizonwrightButton(
+                SAVE_STATION_BUTTON,
+                left + 282,
+                top + 188,
+                196,
+                20,
+                "Save targeted repair station"));
+        buttonList.add(
+            new GuiHorizonwrightButton(SAVE_BED_BUTTON, left + 282, top + 238, 196, 20, "Save targeted vanilla bed"));
+        buttonList.add(new GuiHorizonwrightButton(QUEUE_SLEEP_BUTTON, left + 282, top + 262, 94, 20, "Sleep once"));
+        buttonList.add(new GuiHorizonwrightButton(SCHEDULE_SLEEP_BUTTON, left + 382, top + 262, 96, 20, "Every night"));
+        buttonList.add(new GuiHorizonwrightButton(BACK_BUTTON, left + panelWidth - 82, top + 310, 70, 20, "Back"));
         buttonList
-            .add(new GuiButton(SAVE_STATION_BUTTON, left + 282, top + 188, 196, 20, "Save targeted repair station"));
-        buttonList.add(new GuiButton(SAVE_BED_BUTTON, left + 282, top + 238, 196, 20, "Save targeted vanilla bed"));
-        buttonList.add(new GuiButton(QUEUE_SLEEP_BUTTON, left + 282, top + 262, 94, 20, "Sleep once"));
-        buttonList.add(new GuiButton(SCHEDULE_SLEEP_BUTTON, left + 382, top + 262, 96, 20, "Every night"));
-        buttonList.add(new GuiButton(BACK_BUTTON, left + panelWidth - 82, top + 310, 70, 20, "Back"));
-        buttonList.add(new GuiButton(NEW_EXCAVATION_BUTTON, left + 12, top + 310, 128, 20, "New excavation"));
-        buttonList.add(new GuiButton(WORK_AREAS_BUTTON, left + 146, top + 310, 110, 20, "Work areas"));
+            .add(new GuiHorizonwrightButton(NEW_EXCAVATION_BUTTON, left + 12, top + 310, 128, 20, "New excavation"));
+        buttonList.add(new GuiHorizonwrightButton(WORK_AREAS_BUTTON, left + 146, top + 310, 110, 20, "Work areas"));
         refreshStatus();
     }
 

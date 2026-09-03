@@ -73,8 +73,14 @@ public final class GuiBaritoneSettings extends GuiScreen {
         settingsPerPage = Math.max(1, Math.min(14, (panelHeight - 184) / 22));
 
         buttonList.clear();
-        buttonList.add(new GuiButton(BACK_TAB, left + 12, top + 38, 92, 20, "Dashboard"));
-        GuiButton selectedTab = new GuiButton(BARITONE_TAB, left + 110, top + 38, 110, 20, "Baritone config");
+        buttonList.add(new GuiHorizonwrightButton(BACK_TAB, left + 12, top + 38, 92, 20, "Dashboard"));
+        GuiButton selectedTab = new GuiHorizonwrightButton(
+            BARITONE_TAB,
+            left + 110,
+            top + 38,
+            110,
+            20,
+            "Baritone config");
         selectedTab.enabled = false;
         buttonList.add(selectedTab);
 
@@ -94,17 +100,23 @@ public final class GuiBaritoneSettings extends GuiScreen {
         }
 
         int pagerY = contentTop + settingsPerPage * 22 + 4;
-        previousButton = new GuiButton(PREVIOUS_PAGE, left + 12, pagerY, 86, 20, "Previous");
-        nextButton = new GuiButton(NEXT_PAGE, left + 104, pagerY, 86, 20, "Next");
+        previousButton = new GuiHorizonwrightButton(PREVIOUS_PAGE, left + 12, pagerY, 86, 20, "Previous");
+        nextButton = new GuiHorizonwrightButton(NEXT_PAGE, left + 104, pagerY, 86, 20, "Next");
 
         int editorY = top + panelHeight - 58;
         valueField = new GuiTextField(fontRendererObj, detailsLeft + 8, editorY, detailsWidth - 16, 18);
         valueField.setMaxStringLength(4096);
         int actionY = top + panelHeight - 30;
         int actionWidth = Math.max(38, (detailsWidth - 28) / 3);
-        applyButton = new GuiButton(APPLY_VALUE, detailsLeft + 8, actionY, actionWidth, 20, "Apply");
-        resetButton = new GuiButton(RESET_VALUE, detailsLeft + 12 + actionWidth, actionY, actionWidth, 20, "Reset");
-        toggleButton = new GuiButton(
+        applyButton = new GuiHorizonwrightButton(APPLY_VALUE, detailsLeft + 8, actionY, actionWidth, 20, "Apply");
+        resetButton = new GuiHorizonwrightButton(
+            RESET_VALUE,
+            detailsLeft + 12 + actionWidth,
+            actionY,
+            actionWidth,
+            20,
+            "Reset");
+        toggleButton = new GuiHorizonwrightButton(
             TOGGLE_VALUE,
             detailsLeft + 16 + actionWidth * 2,
             actionY,

@@ -105,11 +105,13 @@ public final class GuiSavedAreaEditor extends GuiScreen {
                 original.getMaximum()
                     .getZ()));
 
-        buttonList.add(new GuiButton(FIRST_HERE_BUTTON, left + 350, top + 103, 128, 20, "Use my feet here"));
-        buttonList.add(new GuiButton(SECOND_HERE_BUTTON, left + 350, top + 157, 128, 20, "Use my feet here"));
+        buttonList
+            .add(new GuiHorizonwrightButton(FIRST_HERE_BUTTON, left + 350, top + 103, 128, 20, "Use my feet here"));
+        buttonList
+            .add(new GuiHorizonwrightButton(SECOND_HERE_BUTTON, left + 350, top + 157, 128, 20, "Use my feet here"));
         buttonList.add(
             new GuiHorizonwrightButton(SAVE_BUTTON, left + 18, top + 232, panelWidth - 112, 22, "Save area changes"));
-        buttonList.add(new GuiButton(BACK_BUTTON, left + panelWidth - 82, top + 233, 64, 20, "Back"));
+        buttonList.add(new GuiHorizonwrightButton(BACK_BUTTON, left + panelWidth - 82, top + 233, 64, 20, "Back"));
     }
 
     @Override

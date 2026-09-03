@@ -71,11 +71,11 @@ public final class GuiExcavationSetup extends GuiScreen {
         stationId = field(left + 138, top + 168, 120, "tool-forge");
         toolSlot = field(left + 356, top + 168, 48, "0");
         workDamage = field(left + 138, top + 196, 48, "1");
-        servicesButton = new GuiButton(SERVICES_BUTTON, left + 282, top + 196, 194, 20, "Services: ON");
+        servicesButton = new GuiHorizonwrightButton(SERVICES_BUTTON, left + 282, top + 196, 194, 20, "Services: ON");
         buttonList.add(servicesButton);
         buttonList.add(
             new GuiHorizonwrightButton(SUBMIT_BUTTON, left + 18, top + 268, panelWidth - 36, 22, "Queue excavation"));
-        buttonList.add(new GuiButton(BACK_BUTTON, left + panelWidth - 82, top + 296, 70, 20, "Back"));
+        buttonList.add(new GuiHorizonwrightButton(BACK_BUTTON, left + panelWidth - 82, top + 296, 70, 20, "Back"));
         populateSavedNames();
     }
 
