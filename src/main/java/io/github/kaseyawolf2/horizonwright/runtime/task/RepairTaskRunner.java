@@ -536,11 +536,21 @@ final class RepairTaskRunner implements TaskRunner {
         }
         RuntimeException closeFailure = releaseConfirmed();
         if (closeFailure != null) return failed(context, "Confirmed repair lease cleanup failed", closeFailure, false);
+        RepairAssessment repairedAssessment = policy
+            .assess(confirmation.getOutputTool(), RepairTask.predictedWorkDamage(spec));
         clearToReady(true);
+        if (!repairedAssessment.isRepairRequired()) {
+            return StepResult.completed(
+                context.getActionEpoch(),
+                taskCheckpoint,
+                "Verified repair reduced InfiTool.Damage by " + verification.getRepairedDamage()
+                    + "; returned tool is ready for the suspended work unit");
+        }
         return StepResult.progress(
             context.getActionEpoch(),
             taskCheckpoint,
-            "Verified repair reduced InfiTool.Damage by " + verification.getRepairedDamage());
+            "Verified partial repair reduced InfiTool.Damage by " + verification.getRepairedDamage()
+                + "; another repair pass is still required");
     }
 
     private StepResult reconcileRestored(TaskStepContext context, RepairBackend backend) {

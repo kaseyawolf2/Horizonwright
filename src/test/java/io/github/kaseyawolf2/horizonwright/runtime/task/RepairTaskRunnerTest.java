@@ -66,6 +66,7 @@ public class RepairTaskRunnerTest {
 
         harness.backend.confirm(ConfirmationMode.VALID);
         TaskSnapshot verified = task(harness.controller.tick(), spec.getId());
+        assertEquals(TaskState.COMPLETED, verified.getState());
         assertEquals(
             "READY",
             verified.getCheckpoint()
@@ -77,6 +78,32 @@ public class RepairTaskRunnerTest {
                 .getValues()
                 .get("completedRepairs"));
         assertEquals(TaskState.COMPLETED, task(harness.controller.tick(), spec.getId()).getState());
+        assertEquals(1, harness.backend.submissions);
+    }
+
+    @Test
+    public void verifiedPartialRepairRemainsReadyForAnotherPass() {
+        harness = new Harness();
+        TaskSpec spec = taskSpec("repair-partial");
+        harness.controller.submit(spec);
+        harness.controller.tick();
+        harness.controller.tick();
+
+        harness.backend.confirm(ConfirmationMode.PARTIAL);
+        TaskSnapshot verified = task(harness.controller.tick(), spec.getId());
+
+        assertEquals(TaskState.RUNNING, verified.getState());
+        assertEquals(
+            "READY",
+            verified.getCheckpoint()
+                .getValues()
+                .get("phase"));
+        assertEquals(
+            "1",
+            verified.getCheckpoint()
+                .getValues()
+                .get("completedRepairs"));
+        assertEquals(1, harness.backend.submissions);
     }
 
     @Test
@@ -329,6 +356,7 @@ public class RepairTaskRunnerTest {
 
     private enum ConfirmationMode {
         VALID,
+        PARTIAL,
         CHANGED_IDENTITY,
         CHANGED_RESERVED_SLOT,
         NO_MATERIAL_CONSUMED,
@@ -493,6 +521,8 @@ public class RepairTaskRunnerTest {
             int consumed = 1;
             if (mode == ConfirmationMode.CHANGED_IDENTITY)
                 output = new RepairToolSnapshot("other-tool", 400, 1000, RESERVED_INVENTORY_SLOT);
+            if (mode == ConfirmationMode.PARTIAL)
+                output = new RepairToolSnapshot("pick-stable", 850, 1000, RESERVED_INVENTORY_SLOT);
             if (mode == ConfirmationMode.CHANGED_RESERVED_SLOT)
                 output = new RepairToolSnapshot("pick-stable", 400, 1000, RESERVED_INVENTORY_SLOT + 1);
             if (mode == ConfirmationMode.NO_MATERIAL_CONSUMED) consumed = 0;
