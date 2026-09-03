@@ -1,5 +1,6 @@
 package io.github.kaseyawolf2.horizonwright.forge.client;
 
+import io.github.kaseyawolf2.horizonwright.DevelopmentTrace;
 import io.github.kaseyawolf2.horizonwright.core.base.BasePosition;
 import io.github.kaseyawolf2.horizonwright.core.base.NamedArea;
 
@@ -11,10 +12,12 @@ final class ProfileAreaCapture {
 
     void recordFirst(BasePosition position) {
         first = required(position);
+        DevelopmentTrace.event("work-area", "corner-captured", "corner", 1, "position", first);
     }
 
     void recordSecond(BasePosition position) {
         second = required(position);
+        DevelopmentTrace.event("work-area", "corner-captured", "corner", 2, "position", second);
     }
 
     boolean isComplete() {
@@ -35,7 +38,9 @@ final class ProfileAreaCapture {
             throw new IllegalStateException("both area corners must be captured in the same dimension");
         }
         String stableId = ProfileAssetInput.stableId(id, "area name");
-        return new NamedArea(stableId, displayName(stableId), first, second);
+        NamedArea area = new NamedArea(stableId, displayName(stableId), first, second);
+        DevelopmentTrace.event("work-area", "built", "area", area);
+        return area;
     }
 
     String firstSummary() {

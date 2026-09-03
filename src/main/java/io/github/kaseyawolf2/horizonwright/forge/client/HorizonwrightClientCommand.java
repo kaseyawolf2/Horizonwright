@@ -1,6 +1,7 @@
 package io.github.kaseyawolf2.horizonwright.forge.client;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
@@ -14,6 +15,7 @@ import net.minecraft.util.ChunkCoordinates;
 import net.minecraft.util.EnumChatFormatting;
 import net.minecraft.util.IChatComponent;
 
+import io.github.kaseyawolf2.horizonwright.DevelopmentTrace;
 import io.github.kaseyawolf2.horizonwright.HorizonwrightRuntime;
 import io.github.kaseyawolf2.horizonwright.HorizonwrightRuntime.RuntimeSnapshot;
 import io.github.kaseyawolf2.horizonwright.core.navigation.NavigationProgress;
@@ -65,18 +67,31 @@ public final class HorizonwrightClientCommand extends CommandBase {
 
     @Override
     public String getCommandUsage(ICommandSender sender) {
-        return "/hw [panel|profile [status|enroll|recover|reassociate <id>]|status|task [id]|goto <x> <y> <z> [tolerance]|excavate cylinder <id> <radius> <bottom-y> <top-y> [<loadout> <storage> <station> <tool-slot> <work-damage>]|farm <task-id> <plot-id> [seed-reserve]|farmschedule <id> <plot-id> <minutes> [seed-reserve]|sleep <task-id> <bed-location>|sleepschedule <id> <bed-location>|pause [id]|resume [id]|cancel <id>|navcancel|dryrun [on|off]|stop|reset]";
+        return "/hw [panel|profile [status|enroll|recover|reassociate <id>]|debug [on|off|status]|status|task [id]|goto <x> <y> <z> [tolerance]|excavate cylinder <id> <radius> <bottom-y> <top-y> [<loadout> <storage> <station> <tool-slot> <work-damage>]|farm <task-id> <plot-id> [seed-reserve]|farmschedule <id> <plot-id> <minutes> [seed-reserve]|sleep <task-id> <bed-location>|sleepschedule <id> <bed-location>|pause [id]|resume [id]|cancel <id>|navcancel|dryrun [on|off]|stop|reset]";
     }
 
     @Override
     public void processCommand(ICommandSender sender, String[] arguments) {
         String subcommand = arguments.length == 0 ? "panel" : arguments[0].toLowerCase();
+        DevelopmentTrace.event(
+            "command",
+            "received",
+            "sender",
+            sender.getCommandSenderName(),
+            "subcommand",
+            subcommand,
+            "arguments",
+            Arrays.toString(arguments));
         if ("panel".equals(subcommand)) {
             ClientBootstrap.openDashboard();
             return;
         }
         if ("profile".equals(subcommand)) {
             controlProfile(sender, arguments);
+            return;
+        }
+        if ("debug".equals(subcommand)) {
+            controlDevelopmentTrace(sender, arguments);
             return;
         }
         if (!isRuntimeCommand(subcommand)) {
@@ -190,6 +205,26 @@ public final class HorizonwrightClientCommand extends CommandBase {
             || "reset".equals(subcommand);
     }
 
+    private static void controlDevelopmentTrace(ICommandSender sender, String[] arguments) {
+        if (arguments.length > 2) {
+            sender.addChatMessage(new ChatComponentText(EnumChatFormatting.RED + "Usage: /hw debug [on|off|status]"));
+            return;
+        }
+        String operation = arguments.length == 1 ? "status" : arguments[1].toLowerCase();
+        if ("on".equals(operation)) DevelopmentTrace.setEnabled(true);
+        else if ("off".equals(operation)) DevelopmentTrace.setEnabled(false);
+        else if (!"status".equals(operation)) {
+            sender.addChatMessage(new ChatComponentText(EnumChatFormatting.RED + "Usage: /hw debug [on|off|status]"));
+            return;
+        }
+        sender.addChatMessage(
+            new ChatComponentText(
+                (DevelopmentTrace.isEnabled() ? EnumChatFormatting.GREEN : EnumChatFormatting.GRAY)
+                    + "Horizonwright development tracing is "
+                    + (DevelopmentTrace.isEnabled() ? "ON" : "OFF")
+                    + ". Full events are written to latest.log."));
+    }
+
     private static void showUnavailable(ICommandSender sender, CurrentRuntimeUiResolver.Resolution resolution) {
         sender.addChatMessage(
             new ChatComponentText(
@@ -203,6 +238,7 @@ public final class HorizonwrightClientCommand extends CommandBase {
                 arguments,
                 "panel",
                 "profile",
+                "debug",
                 "status",
                 "task",
                 "goto",
@@ -218,6 +254,9 @@ public final class HorizonwrightClientCommand extends CommandBase {
                 "dryrun",
                 "stop",
                 "reset");
+        }
+        if (arguments.length == 2 && "debug".equalsIgnoreCase(arguments[0])) {
+            return getListOfStringsMatchingLastWord(arguments, "on", "off", "status");
         }
         if (arguments.length == 2 && "profile".equalsIgnoreCase(arguments[0])) {
             return getListOfStringsMatchingLastWord(arguments, "status", "enroll", "recover", "reassociate");

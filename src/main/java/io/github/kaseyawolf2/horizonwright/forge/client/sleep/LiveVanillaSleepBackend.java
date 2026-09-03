@@ -13,6 +13,7 @@ import net.minecraft.util.AxisAlignedBB;
 import net.minecraft.util.MovingObjectPosition;
 import net.minecraft.util.Vec3;
 
+import io.github.kaseyawolf2.horizonwright.DevelopmentTrace;
 import io.github.kaseyawolf2.horizonwright.core.action.ActionCapability;
 import io.github.kaseyawolf2.horizonwright.core.action.ActionLease;
 import io.github.kaseyawolf2.horizonwright.core.action.ActionSessionGuard;
@@ -71,11 +72,22 @@ public final class LiveVanillaSleepBackend implements SleepBackend {
     @Override
     public Availability availability() {
         NavigationBackend navigation = navigationSource.getNavigationBackend();
-        if (navigation == null) return Availability.unavailable("No navigation backend is configured for sleep");
+        if (navigation == null) {
+            DevelopmentTrace.event("sleep-live", "availability", "available", false, "reason", "no-navigation-backend");
+            return Availability.unavailable("No navigation backend is configured for sleep");
+        }
         BackendAvailability status = navigation.availability();
-        return status.isAvailable()
+        Availability result = status.isAvailable()
             ? Availability.available("Registered vanilla-bed sleep ready through " + status.getDiagnostic())
             : Availability.unavailable("Sleep navigation unavailable: " + status.getDiagnostic());
+        DevelopmentTrace.event(
+            "sleep-live",
+            "availability",
+            "available",
+            result.isAvailable(),
+            "diagnostic",
+            result.getDiagnostic());
+        return result;
     }
 
     @Override
@@ -83,6 +95,7 @@ public final class LiveVanillaSleepBackend implements SleepBackend {
         requireClient(request);
         NamedLocation location = configuration.resolveBed(request.getBedLocationId());
         SleepObservation observation = observeBed(location);
+        traceObservation("observed", request.getTaskId(), request.getBedLocationId(), observation);
         return new ObservationSnapshot(
             request.getTaskId(),
             request.getBedLocationId(),
@@ -93,6 +106,24 @@ public final class LiveVanillaSleepBackend implements SleepBackend {
     @Override
     public synchronized ActionHandle execute(ActionRequest request, ActionLease lease) {
         requireClient(request);
+        DevelopmentTrace.event(
+            "sleep-live",
+            "execute-request",
+            "request",
+            request.getRequestId(),
+            "task",
+            request.getTaskId(),
+            "bed",
+            request.getBedLocationId(),
+            "epoch",
+            request.getActionEpoch(),
+            "action",
+            request.getDecision()
+                .getAction(),
+            "leaseValid",
+            lease != null && lease.isValid(),
+            "capabilities",
+            lease == null ? "none" : lease.getCapabilities());
         if (lease == null || !lease.isValid()
             || lease.getEpoch() != request.getActionEpoch()
             || !lease.getCapabilities()
@@ -173,7 +204,7 @@ public final class LiveVanillaSleepBackend implements SleepBackend {
             + exactBed
             + ":"
             + reachable;
-        return new SleepObservation(
+        SleepObservation observation = new SleepObservation(
             revision,
             fingerprint,
             minecraft.theWorld.provider.dimensionId,
@@ -184,6 +215,30 @@ public final class LiveVanillaSleepBackend implements SleepBackend {
             bed,
             providerAvailable,
             reachable);
+        DevelopmentTrace.event(
+            "sleep-live",
+            "bed-scan",
+            "bed",
+            location.getId(),
+            "revision",
+            revision,
+            "position",
+            bed,
+            "worldTime",
+            time,
+            "sameDimension",
+            sameDimension,
+            "loaded",
+            loaded,
+            "exactBed",
+            exactBed,
+            "danger",
+            danger,
+            "providerAvailable",
+            providerAvailable,
+            "navigationReachable",
+            reachable);
+        return observation;
     }
 
     private boolean hasNearbyHostile(BasePosition bed) {
@@ -255,6 +310,7 @@ public final class LiveVanillaSleepBackend implements SleepBackend {
                 phase = Phase.WAITING_FOR_ACTION_SESSION;
                 state = ActionState.EXECUTING;
                 detail = "Registered bed is within confirmed reach";
+                trace("phase", "reach", true);
                 return;
             }
             navigationHandle = navigation.submit(
@@ -271,6 +327,7 @@ public final class LiveVanillaSleepBackend implements SleepBackend {
                 lease);
             state = ActionState.EXECUTING;
             detail = "Approaching registered bed";
+            trace("phase", "navigationRequest", navigationHandle.getRequestId());
         }
 
         @Override
@@ -281,6 +338,20 @@ public final class LiveVanillaSleepBackend implements SleepBackend {
         @Override
         public synchronized ActionProgress progress() {
             requireClient(request);
+            trace(
+                "progress",
+                "leaseValid",
+                lease.isValid(),
+                "guardActive",
+                guard.isActiveLease(lease),
+                "guardReady",
+                guard.isReadyForSession(),
+                "cancelRequested",
+                cancellationRequested,
+                "worldTime",
+                minecraft.theWorld.getWorldTime(),
+                "sleeping",
+                minecraft.thePlayer.isPlayerSleeping());
             if (isTerminal()) return snapshot();
             if (cancellationRequested) {
                 cancelOnClientThread();
@@ -317,6 +388,7 @@ public final class LiveVanillaSleepBackend implements SleepBackend {
 
         private void pollApproach() {
             NavigationProgress progress = navigationHandle.progress();
+            trace("approach", "navigationState", progress.getState(), "navigationDetail", progress.getDetail());
             if (progress.getState() == NavigationState.COMPLETED) {
                 navigationHandle = null;
                 phase = Phase.WAITING_FOR_ACTION_SESSION;
@@ -333,10 +405,12 @@ public final class LiveVanillaSleepBackend implements SleepBackend {
         private void interactWhenReady() {
             if (!guard.isReadyForSession()) {
                 detail = "Waiting for approach packets to drain";
+                trace("packet-drain", "blockedActions", guard.getBlockedActionCount());
                 return;
             }
             SleepObservation fresh = observeBed(location);
             SleepDecision freshDecision = planner.plan(fresh);
+            traceObservation("pre-interaction-observation", request.getTaskId(), request.getBedLocationId(), fresh);
             if (freshDecision.getAction() == SleepActionKind.SKIP_DAYTIME) {
                 state = ActionState.CONFIRMED;
                 detail = "Daytime was confirmed before bed interaction";
@@ -346,6 +420,14 @@ public final class LiveVanillaSleepBackend implements SleepBackend {
             boolean exactBed = minecraft.theWorld.blockExists(bed.getX(), bed.getY(), bed.getZ())
                 && minecraft.theWorld.getBlock(bed.getX(), bed.getY(), bed.getZ()) == Blocks.bed;
             if (freshDecision.getAction() != SleepActionKind.USE_REGISTERED_BED || !exactBed || !canReach(bed)) {
+                trace(
+                    "pre-interaction-rejected",
+                    "decision",
+                    freshDecision.getAction(),
+                    "exactBed",
+                    exactBed,
+                    "reach",
+                    canReach(bed));
                 fail("Registered bed is no longer safe, present, and reachable");
                 return;
             }
@@ -366,6 +448,7 @@ public final class LiveVanillaSleepBackend implements SleepBackend {
                 bed.getZ(),
                 hit.sideHit,
                 hit.hitVec);
+            trace("interaction", "accepted", accepted, "side", hit.sideHit, "hit", hit.hitVec);
             if (!accepted) {
                 stopActionSession();
                 fail("Minecraft rejected the registered bed interaction");
@@ -414,6 +497,14 @@ public final class LiveVanillaSleepBackend implements SleepBackend {
             }
             boolean daytime = !SleepWindow.vanilla()
                 .contains(minecraft.theWorld.getWorldTime());
+            trace(
+                "confirmation",
+                "sleepingTicks",
+                consecutiveSleepingTicks,
+                "daytime",
+                daytime,
+                "worldTime",
+                minecraft.theWorld.getWorldTime());
             if (consecutiveSleepingTicks >= REQUIRED_SLEEPING_TICKS || daytime) {
                 state = ActionState.CONFIRMED;
                 detail = consecutiveSleepingTicks >= REQUIRED_SLEEPING_TICKS ? "Stable player sleeping state confirmed"
@@ -465,7 +556,24 @@ public final class LiveVanillaSleepBackend implements SleepBackend {
             stopProducers();
             state = ActionState.FAILED;
             detail = message;
+            trace("failed", "failure", message);
             clearActive(this);
+        }
+
+        private void trace(String event, Object... extraFields) {
+            Object[] fields = new Object[10 + extraFields.length];
+            fields[0] = "request";
+            fields[1] = request.getRequestId();
+            fields[2] = "phase";
+            fields[3] = phase;
+            fields[4] = "state";
+            fields[5] = state;
+            fields[6] = "detail";
+            fields[7] = detail;
+            fields[8] = "bed";
+            fields[9] = bed;
+            System.arraycopy(extraFields, 0, fields, 10, extraFields.length);
+            DevelopmentTrace.event("sleep-live", event, fields);
         }
 
         private ActionProgress snapshot() {
@@ -475,6 +583,36 @@ public final class LiveVanillaSleepBackend implements SleepBackend {
         private boolean isTerminal() {
             return state == ActionState.CONFIRMED || state == ActionState.CANCELLED || state == ActionState.FAILED;
         }
+    }
+
+    private static void traceObservation(String event, String taskId, String bedId, SleepObservation observation) {
+        DevelopmentTrace.event(
+            "sleep-live",
+            event,
+            "task",
+            taskId,
+            "bedId",
+            bedId,
+            "revision",
+            observation.getRevision(),
+            "fingerprint",
+            observation.getObservationFingerprint(),
+            "dimension",
+            observation.getCurrentDimension(),
+            "worldTime",
+            observation.getWorldTime(),
+            "danger",
+            observation.isDanger(),
+            "sleepValidDimension",
+            observation.isSleepValidDimension(),
+            "provider",
+            observation.getProvider(),
+            "providerAvailable",
+            observation.isProviderAvailable(),
+            "reachable",
+            observation.isLoadedAndReachable(),
+            "position",
+            observation.getRegisteredBed());
     }
 
     private enum Phase {

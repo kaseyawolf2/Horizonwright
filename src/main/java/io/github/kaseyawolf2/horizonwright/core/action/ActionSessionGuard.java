@@ -2,6 +2,8 @@ package io.github.kaseyawolf2.horizonwright.core.action;
 
 import java.util.Set;
 
+import io.github.kaseyawolf2.horizonwright.DevelopmentTrace;
+
 /**
  * Linearizes an automation lease with the final outbound packet boundary.
  *
@@ -52,6 +54,14 @@ public final class ActionSessionGuard implements ActionRevocationListener {
         cleanupComplete = false;
         blockedActionCount = 0L;
         lastBlockedAction = "";
+        trace(
+            "session-begin",
+            "owner",
+            lease.getOwner(),
+            "capabilities",
+            lease.getCapabilities(),
+            "recovery",
+            lease.isSafetyRecoveryLease());
     }
 
     /** Immediately blocks action packets while the producer is being stopped. */
@@ -64,6 +74,7 @@ public final class ActionSessionGuard implements ActionRevocationListener {
             advanceTransitionGeneration();
         }
         cleanupComplete = false;
+        trace("session-quarantine", "leaseMatched", activeLease == lease);
     }
 
     /** Marks producer cleanup complete; Netty must still run the drain barrier. */
@@ -78,6 +89,7 @@ public final class ActionSessionGuard implements ActionRevocationListener {
         activeLease = null;
         cleanupComplete = true;
         releaseWithoutTransportIfSafe();
+        trace("session-end", "leaseOwner", lease.getOwner());
     }
 
     /** For disconnect teardown only; an open unguarded channel must never call this. */
@@ -86,11 +98,13 @@ public final class ActionSessionGuard implements ActionRevocationListener {
             throw new IllegalStateException("an open or safety-locked action session cannot be cleared");
         }
         resetToPlayer();
+        trace("cleared");
     }
 
     public synchronized void markFirewallInstalled() {
         firewallReady = true;
         transportClosed = false;
+        trace("firewall-installed");
     }
 
     public synchronized void markFirewallUnavailable() {
@@ -101,6 +115,7 @@ public final class ActionSessionGuard implements ActionRevocationListener {
             cleanupComplete = false;
             advanceTransitionGeneration();
         }
+        trace("firewall-unavailable");
     }
 
     public synchronized void markTransportClosed() {
@@ -112,6 +127,7 @@ public final class ActionSessionGuard implements ActionRevocationListener {
             advanceTransitionGeneration();
         }
         releaseWithoutTransportIfSafe();
+        trace("transport-closed");
     }
 
     public synchronized boolean isReadyForSession() {
@@ -156,9 +172,11 @@ public final class ActionSessionGuard implements ActionRevocationListener {
             || !firewallReady
             || mode != Mode.QUARANTINED
             || !cleanupComplete) {
+            trace("drain-rejected", "requestedGeneration", generation);
             return false;
         }
         resetToPlayer();
+        trace("drain-complete", "requestedGeneration", generation);
         return true;
     }
 
@@ -181,6 +199,7 @@ public final class ActionSessionGuard implements ActionRevocationListener {
         }
         blockedActionCount++;
         lastBlockedAction = description.trim();
+        trace("action-blocked", "description", lastBlockedAction, "blockedCount", blockedActionCount);
     }
 
     public synchronized long getBlockedActionCount() {
@@ -196,38 +215,51 @@ public final class ActionSessionGuard implements ActionRevocationListener {
             throw new IllegalArgumentException("capability must not be null");
         }
         ActionAuthorizationDecision sessionDecision = sessionDecision();
-        if (sessionDecision != null) {
-            return sessionDecision;
-        }
-        return activeLease.getCapabilities()
-            .contains(capability) ? ActionAuthorizationDecision.AUTHORIZED
-                : ActionAuthorizationDecision.BLOCKED_MISSING_CAPABILITY;
+        ActionAuthorizationDecision decision = sessionDecision != null ? sessionDecision
+            : (activeLease.getCapabilities()
+                .contains(capability) ? ActionAuthorizationDecision.AUTHORIZED
+                    : ActionAuthorizationDecision.BLOCKED_MISSING_CAPABILITY);
+        trace("authorize", "capability", capability, "decision", decision);
+        return decision;
     }
 
     public synchronized ActionAuthorizationDecision authorizeAny(Set<ActionCapability> capabilities) {
         requireCapabilities(capabilities);
         ActionAuthorizationDecision sessionDecision = sessionDecision();
         if (sessionDecision != null) {
+            trace("authorize-any", "capabilities", capabilities, "decision", sessionDecision);
             return sessionDecision;
         }
         for (ActionCapability capability : capabilities) {
             if (activeLease.getCapabilities()
                 .contains(capability)) {
+                trace(
+                    "authorize-any",
+                    "capabilities",
+                    capabilities,
+                    "decision",
+                    ActionAuthorizationDecision.AUTHORIZED);
                 return ActionAuthorizationDecision.AUTHORIZED;
             }
         }
+        trace(
+            "authorize-any",
+            "capabilities",
+            capabilities,
+            "decision",
+            ActionAuthorizationDecision.BLOCKED_MISSING_CAPABILITY);
         return ActionAuthorizationDecision.BLOCKED_MISSING_CAPABILITY;
     }
 
     public synchronized ActionAuthorizationDecision authorizeAll(Set<ActionCapability> capabilities) {
         requireCapabilities(capabilities);
         ActionAuthorizationDecision sessionDecision = sessionDecision();
-        if (sessionDecision != null) {
-            return sessionDecision;
-        }
-        return activeLease.getCapabilities()
-            .containsAll(capabilities) ? ActionAuthorizationDecision.AUTHORIZED
-                : ActionAuthorizationDecision.BLOCKED_MISSING_CAPABILITY;
+        ActionAuthorizationDecision decision = sessionDecision != null ? sessionDecision
+            : (activeLease.getCapabilities()
+                .containsAll(capabilities) ? ActionAuthorizationDecision.AUTHORIZED
+                    : ActionAuthorizationDecision.BLOCKED_MISSING_CAPABILITY);
+        trace("authorize-all", "capabilities", capabilities, "decision", decision);
+        return decision;
     }
 
     /**
@@ -235,6 +267,7 @@ public final class ActionSessionGuard implements ActionRevocationListener {
      * must always pass through without affecting action-session state.
      */
     public synchronized ActionAuthorizationDecision authorizeUnknownAction() {
+        trace("authorize-unknown", "decision", ActionAuthorizationDecision.PLAYER_PASSTHROUGH);
         return ActionAuthorizationDecision.PLAYER_PASSTHROUGH;
     }
 
@@ -247,6 +280,14 @@ public final class ActionSessionGuard implements ActionRevocationListener {
             return;
         }
         latestRevocationEpoch = revocation.getNewEpoch();
+        trace(
+            "epoch-revoked",
+            "revokedEpoch",
+            revocation.getRevokedEpoch(),
+            "newEpoch",
+            revocation.getNewEpoch(),
+            "reason",
+            revocation.getReason());
         if (revocation.getReason() == ActionRevocationReason.SAFETY_LOCKDOWN) {
             if (activeLease != null) {
                 sessionEpoch = activeLease.getEpoch();
@@ -308,6 +349,26 @@ public final class ActionSessionGuard implements ActionRevocationListener {
             throw new IllegalStateException("action session generation exhausted");
         }
         transitionGeneration++;
+    }
+
+    private void trace(String event, Object... extraFields) {
+        Object[] fields = new Object[14 + extraFields.length];
+        fields[0] = "mode";
+        fields[1] = mode;
+        fields[2] = "sessionEpoch";
+        fields[3] = sessionEpoch;
+        fields[4] = "generation";
+        fields[5] = transitionGeneration;
+        fields[6] = "firewallReady";
+        fields[7] = firewallReady;
+        fields[8] = "transportClosed";
+        fields[9] = transportClosed;
+        fields[10] = "cleanupComplete";
+        fields[11] = cleanupComplete;
+        fields[12] = "activeOwner";
+        fields[13] = activeLease == null ? "none" : activeLease.getOwner();
+        System.arraycopy(extraFields, 0, fields, 14, extraFields.length);
+        DevelopmentTrace.event("action-session", event, fields);
     }
 
     private static void requireCapabilities(Set<ActionCapability> capabilities) {

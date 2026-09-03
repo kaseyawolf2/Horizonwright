@@ -11,6 +11,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
+import io.github.kaseyawolf2.horizonwright.DevelopmentTrace;
 import io.github.kaseyawolf2.horizonwright.core.action.ActionBroker;
 import io.github.kaseyawolf2.horizonwright.core.action.ActionCapability;
 import io.github.kaseyawolf2.horizonwright.core.action.ActionLease;
@@ -66,6 +67,13 @@ public final class TaskOrchestrator implements IHorizonwrightController, ActionR
         }
         currentActionEpoch();
         actionBroker.addRevocationListener(this);
+        DevelopmentTrace.event(
+            "task-controller",
+            "created",
+            "epoch",
+            currentActionEpoch(),
+            "retryLimit",
+            retryPolicy.getMaximumRetries());
     }
 
     @Override
@@ -91,6 +99,7 @@ public final class TaskOrchestrator implements IHorizonwrightController, ActionR
                 .add(spec.getId());
             interruptForNewSafetyIfNeeded(record, now);
             enqueueRunnerBuild(record, "runner ready");
+            traceRecord("restored", record, "checkpointRevision", checkpoint.getRevision());
         }
         drainDeferredCallbacks();
         synchronized (this) {
@@ -122,6 +131,7 @@ public final class TaskOrchestrator implements IHorizonwrightController, ActionR
             record.controlVersion++;
             interruptForNewSafetyIfNeeded(record, now);
             enqueueRunnerBuild(record, "task specification updated");
+            traceRecord("updated", record, "lane", replacement.getLane());
         }
         drainDeferredCallbacks();
         synchronized (this) {
@@ -163,6 +173,7 @@ public final class TaskOrchestrator implements IHorizonwrightController, ActionR
                     throw new IllegalStateException("terminal task cannot be paused: " + taskId);
             }
             record.controlVersion++;
+            traceRecord("pause-requested", record, "reason", record.suspensionReason);
             return taskSnapshotAt(record.spec.getId(), now);
         }
     }
@@ -209,6 +220,7 @@ public final class TaskOrchestrator implements IHorizonwrightController, ActionR
             if (rebuildRunner) {
                 enqueueRunnerBuild(record, "queued after blocked condition was acknowledged");
             }
+            traceRecord("resume-requested", record, "runnerRebuild", rebuildRunner);
         }
         drainDeferredCallbacks();
         synchronized (this) {
@@ -237,6 +249,7 @@ public final class TaskOrchestrator implements IHorizonwrightController, ActionR
                 record.detail = "cancelled";
                 removeFromLane(record);
             }
+            traceRecord("cancel-requested", record, "active", isActive(record));
             return taskSnapshotAt(record.spec.getId(), now);
         }
     }
@@ -255,6 +268,7 @@ public final class TaskOrchestrator implements IHorizonwrightController, ActionR
             record.controlVersion++;
             record.buildToken = 0L;
             tasks.remove(record.spec.getId());
+            traceRecord("removed", record, "remainingTasks", tasks.size());
             return removed;
         }
     }
@@ -275,6 +289,7 @@ public final class TaskOrchestrator implements IHorizonwrightController, ActionR
             queue.remove(normalizedTaskId);
             queue.add(targetPosition, normalizedTaskId);
             record.detail = "reordered within " + record.spec.getLane() + " lane";
+            traceRecord("reordered", record, "targetPosition", targetPosition);
             return taskSnapshotAt(normalizedTaskId, now);
         }
     }
@@ -437,8 +452,28 @@ public final class TaskOrchestrator implements IHorizonwrightController, ActionR
         }
         synchronized (this) {
             long now = readNow();
+            DevelopmentTrace.event(
+                "task-controller",
+                "tick",
+                "now",
+                now,
+                "tasks",
+                tasks.size(),
+                "active",
+                activeTaskId,
+                "epoch",
+                currentActionEpoch(),
+                "safetyLocked",
+                actionBroker.isSafetyLocked());
             List<ScheduledTaskRequest> requests = scheduler
                 .evaluate(now, environment, isControllerIdle(), occupiedScheduleIds());
+            DevelopmentTrace.event(
+                "task-controller",
+                "schedule-evaluated",
+                "requests",
+                requests.size(),
+                "environment",
+                environment);
             for (ScheduledTaskRequest request : requests) {
                 enqueueScheduledTask(request, now);
             }
@@ -501,6 +536,13 @@ public final class TaskOrchestrator implements IHorizonwrightController, ActionR
                         active.state == TaskState.SUSPENDING ? active.suspensionReason : TaskSuspensionReason.NONE,
                         actions);
                     invocation = new StepInvocation(active, active.runner, context, stepToken, active.controlVersion);
+                    traceRecord(
+                        "step-invoked",
+                        active,
+                        "stepToken",
+                        stepToken,
+                        "checkpointRevision",
+                        active.checkpoint.getRevision());
                 }
             }
         }
@@ -523,6 +565,13 @@ public final class TaskOrchestrator implements IHorizonwrightController, ActionR
                     true);
             }
         } catch (RuntimeException failure) {
+            DevelopmentTrace.event(
+                "task-controller",
+                "runner-threw",
+                "task",
+                invocation.record.spec.getId(),
+                "error",
+                DevelopmentTrace.error(failure));
             result = StepResult.failed(
                 invocation.context.getActionEpoch(),
                 invocation.context.getCheckpoint(),
@@ -533,12 +582,33 @@ public final class TaskOrchestrator implements IHorizonwrightController, ActionR
         synchronized (this) {
             long now = readNow();
             TaskRecord record = invocation.record;
+            DevelopmentTrace.event(
+                "task-controller",
+                "step-returned",
+                "task",
+                record.spec.getId(),
+                "kind",
+                result.getKind(),
+                "resultEpoch",
+                result.getActionEpoch(),
+                "checkpointRevision",
+                result.getCheckpoint()
+                    .getRevision(),
+                "detail",
+                result.getDetail());
             if (record.stepToken == invocation.stepToken) {
                 record.stepInFlight = false;
             }
             if (record.stepToken != invocation.stepToken || record.controlVersion != invocation.controlVersion
                 || record.runner != invocation.runner) {
                 record.rejectedStaleResults++;
+                traceRecord(
+                    "step-rejected-stale",
+                    record,
+                    "stepToken",
+                    invocation.stepToken,
+                    "rejectedCount",
+                    record.rejectedStaleResults);
             } else {
                 applyRunnerResult(record, result, now);
             }
@@ -573,6 +643,21 @@ public final class TaskOrchestrator implements IHorizonwrightController, ActionR
     }
 
     private boolean applyRunnerResult(TaskRecord record, StepResult result, long now) {
+        DevelopmentTrace.event(
+            "task-controller",
+            "apply-result",
+            "task",
+            record.spec.getId(),
+            "state",
+            record.state,
+            "kind",
+            result.getKind(),
+            "activeEpoch",
+            record.activeEpoch,
+            "resultEpoch",
+            result.getActionEpoch(),
+            "detail",
+            result.getDetail());
         long authoritativeEpoch = currentActionEpoch();
         if (isActive(record) && record.activeEpoch != authoritativeEpoch) {
             record.rejectedStaleResults++;
@@ -721,6 +806,7 @@ public final class TaskOrchestrator implements IHorizonwrightController, ActionR
             return;
         }
         removeFromLane(record);
+        traceRecord("terminal", record, "terminalState", state);
     }
 
     private void activate(TaskRecord record) {
@@ -730,6 +816,25 @@ public final class TaskOrchestrator implements IHorizonwrightController, ActionR
         record.activeEpoch = currentActionEpoch();
         record.detail = "running";
         activeTaskId = record.spec.getId();
+        traceRecord("activated", record, "checkpointRevision", record.checkpoint.getRevision());
+    }
+
+    private static void traceRecord(String event, TaskRecord record, Object... extraFields) {
+        Object[] fields = new Object[12 + extraFields.length];
+        fields[0] = "task";
+        fields[1] = record.spec.getId();
+        fields[2] = "type";
+        fields[3] = record.spec.getType();
+        fields[4] = "lane";
+        fields[5] = record.spec.getLane();
+        fields[6] = "state";
+        fields[7] = record.state;
+        fields[8] = "epoch";
+        fields[9] = record.activeEpoch;
+        fields[10] = "controlVersion";
+        fields[11] = record.controlVersion;
+        System.arraycopy(extraFields, 0, fields, 12, extraFields.length);
+        DevelopmentTrace.event("task-controller", event, fields);
     }
 
     private void interruptForNewSafetyIfNeeded(TaskRecord candidate, long now) {

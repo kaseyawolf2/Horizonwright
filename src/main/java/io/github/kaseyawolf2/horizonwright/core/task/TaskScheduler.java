@@ -9,6 +9,8 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
+import io.github.kaseyawolf2.horizonwright.DevelopmentTrace;
+
 /**
  * Deterministic, persistence-neutral scheduler for task templates.
  *
@@ -35,6 +37,7 @@ public final class TaskScheduler {
         }
         ScheduleRecord record = new ScheduleRecord(rule, safeAdd(connectedElapsedMillis, rule.getInitialDelayMillis()));
         schedules.put(rule.getId(), record);
+        trace("submitted", record, "connectedElapsed", connectedElapsedMillis);
         return record.snapshot();
     }
 
@@ -48,6 +51,7 @@ public final class TaskScheduler {
         record.nextConnectedDueMillis = safeAdd(connectedElapsedMillis, replacement.getInitialDelayMillis());
         record.lastWorldOccurrence = ScheduleSnapshot.NO_WORLD_OCCURRENCE;
         record.idleLatched = false;
+        trace("updated", record, "connectedElapsed", connectedElapsedMillis);
         return record.snapshot();
     }
 
@@ -58,6 +62,7 @@ public final class TaskScheduler {
         }
         record.state = ScheduleState.PAUSED;
         record.idleLatched = false;
+        trace("paused", record);
         return record.snapshot();
     }
 
@@ -73,6 +78,7 @@ public final class TaskScheduler {
             }
             record.idleLatched = false;
         }
+        trace("resumed", record, "connectedElapsed", connectedElapsedMillis);
         return record.snapshot();
     }
 
@@ -80,6 +86,7 @@ public final class TaskScheduler {
         ScheduleRecord record = requireSchedule(scheduleId);
         record.state = ScheduleState.CANCELLED;
         record.idleLatched = false;
+        trace("cancelled", record);
         return record.snapshot();
     }
 
@@ -116,6 +123,7 @@ public final class TaskScheduler {
         for (ScheduleSnapshot saved : snapshot.getSchedules()) {
             ScheduleRecord record = new ScheduleRecord(saved);
             schedules.put(record.rule.getId(), record);
+            trace("restored", record, "connectedElapsed", connectedElapsedMillis, "lastWorldTime", lastWorldTimeTicks);
         }
     }
 
@@ -149,6 +157,25 @@ public final class TaskScheduler {
         boolean restoreReconnect = reconnectPendingAfterRestore && environment.isConnected();
         boolean reconnectObserved = environment.isReconnected() || restoreReconnect;
         long previousWorldTime = lastWorldTimeTicks;
+        DevelopmentTrace.event(
+            "scheduler",
+            "evaluate",
+            "now",
+            nowMillis,
+            "connectedElapsed",
+            connectedElapsedMillis,
+            "connected",
+            environment.isConnected(),
+            "reconnected",
+            reconnectObserved,
+            "worldTime",
+            environment.getWorldTimeTicks(),
+            "controllerIdle",
+            controllerIdle,
+            "occupied",
+            occupiedScheduleIds,
+            "schedules",
+            schedules.size());
         List<DueRule> due = new ArrayList<>();
         for (ScheduleRecord record : schedules.values()) {
             if (record.state != ScheduleState.ACTIVE) {
@@ -157,6 +184,17 @@ public final class TaskScheduler {
             }
             boolean conditionsMet = environment.getConditions()
                 .containsAll(record.rule.getRequiredConditions());
+            trace(
+                "considered",
+                record,
+                "conditionsMet",
+                conditionsMet,
+                "occupied",
+                occupiedScheduleIds.contains(record.rule.getId()),
+                "worldTime",
+                environment.getWorldTimeTicks(),
+                "connectedElapsed",
+                connectedElapsedMillis);
             switch (record.rule.getTrigger()) {
                 case CONNECTED_INTERVAL:
                     evaluateConnectedInterval(
@@ -220,6 +258,7 @@ public final class TaskScheduler {
             }
             String taskId = "schedule[" + record.rule.getId() + "]#" + record.sequence;
             record.lastTaskId = taskId;
+            trace("triggered", record, "task", taskId, "catchUp", candidate.catchUp);
             requests.add(
                 new ScheduledTaskRequest(
                     record.rule.getId(),
@@ -238,6 +277,27 @@ public final class TaskScheduler {
             lastWorldTimeTicks = environment.getWorldTimeTicks();
         }
         return Collections.unmodifiableList(requests);
+    }
+
+    private static void trace(String event, ScheduleRecord record, Object... extraFields) {
+        Object[] fields = new Object[14 + extraFields.length];
+        fields[0] = "schedule";
+        fields[1] = record.rule.getId();
+        fields[2] = "trigger";
+        fields[3] = record.rule.getTrigger();
+        fields[4] = "state";
+        fields[5] = record.state;
+        fields[6] = "taskType";
+        fields[7] = record.rule.getTask()
+            .getType();
+        fields[8] = "sequence";
+        fields[9] = record.sequence;
+        fields[10] = "totalRuns";
+        fields[11] = record.totalRuns;
+        fields[12] = "nextConnectedDue";
+        fields[13] = record.nextConnectedDueMillis;
+        System.arraycopy(extraFields, 0, fields, 14, extraFields.length);
+        DevelopmentTrace.event("scheduler", event, fields);
     }
 
     private void evaluateConnectedInterval(ScheduleRecord record, ScheduleEnvironment environment,

@@ -11,6 +11,8 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
+import io.github.kaseyawolf2.horizonwright.DevelopmentTrace;
+
 public final class InMemoryActionBroker implements ActionBroker {
 
     private final Map<ActionCapability, Lease> leasesByCapability = new EnumMap<>(ActionCapability.class);
@@ -29,6 +31,21 @@ public final class InMemoryActionBroker implements ActionBroker {
         EnumSet<ActionCapability> capabilities = copyCapabilities(requestedCapabilities);
 
         if (safetyLocked || automationLocked || revocationTransitionsInProgress > 0) {
+            DevelopmentTrace.event(
+                "action-broker",
+                "acquire-denied",
+                "owner",
+                normalizedOwner,
+                "capabilities",
+                capabilities,
+                "epoch",
+                epoch,
+                "safetyLocked",
+                safetyLocked,
+                "automationLocked",
+                automationLocked,
+                "revocationInProgress",
+                revocationTransitionsInProgress);
             return Optional.empty();
         }
         return acquire(normalizedOwner, capabilities, false);
@@ -38,6 +55,19 @@ public final class InMemoryActionBroker implements ActionBroker {
     public synchronized Optional<ActionLease> tryAcquireSafetyRecovery(String owner) {
         String normalizedOwner = normalizeOwner(owner);
         if (!safetyLocked || automationLocked || revocationTransitionsInProgress > 0) {
+            DevelopmentTrace.event(
+                "action-broker",
+                "recovery-acquire-denied",
+                "owner",
+                normalizedOwner,
+                "epoch",
+                epoch,
+                "safetyLocked",
+                safetyLocked,
+                "automationLocked",
+                automationLocked,
+                "revocationInProgress",
+                revocationTransitionsInProgress);
             return Optional.empty();
         }
         return acquire(normalizedOwner, EnumSet.of(ActionCapability.MOVEMENT, ActionCapability.LOOK), true);
@@ -47,6 +77,17 @@ public final class InMemoryActionBroker implements ActionBroker {
         boolean safetyRecovery) {
         for (ActionCapability capability : capabilities) {
             if (leasesByCapability.containsKey(capability)) {
+                DevelopmentTrace.event(
+                    "action-broker",
+                    "acquire-conflict",
+                    "owner",
+                    owner,
+                    "capability",
+                    capability,
+                    "currentOwner",
+                    leasesByCapability.get(capability).owner,
+                    "epoch",
+                    epoch);
                 return Optional.empty();
             }
         }
@@ -55,6 +96,19 @@ public final class InMemoryActionBroker implements ActionBroker {
         for (ActionCapability capability : capabilities) {
             leasesByCapability.put(capability, lease);
         }
+        DevelopmentTrace.event(
+            "action-broker",
+            "lease-acquired",
+            "lease",
+            lease.leaseId,
+            "owner",
+            owner,
+            "epoch",
+            epoch,
+            "capabilities",
+            capabilities,
+            "safetyRecovery",
+            safetyRecovery);
         return Optional.of(lease);
     }
 
@@ -213,6 +267,17 @@ public final class InMemoryActionBroker implements ActionBroker {
             }
         }
         lease.closed = true;
+        DevelopmentTrace.event(
+            "action-broker",
+            "lease-released",
+            "lease",
+            lease.leaseId,
+            "owner",
+            lease.owner,
+            "epoch",
+            lease.epoch,
+            "capabilities",
+            lease.capabilities);
     }
 
     private RevocationDispatch beginRevocation(ActionRevocationReason reason) {
@@ -231,6 +296,17 @@ public final class InMemoryActionBroker implements ActionBroker {
         }
         leasesByCapability.clear();
         epoch++;
+        DevelopmentTrace.event(
+            "action-broker",
+            "epoch-revoked",
+            "revokedEpoch",
+            revokedEpoch,
+            "replacementEpoch",
+            epoch,
+            "reason",
+            reason,
+            "listeners",
+            revocationListeners.size());
         return new ActionRevocation(revokedEpoch, epoch, reason);
     }
 
@@ -243,6 +319,17 @@ public final class InMemoryActionBroker implements ActionBroker {
     }
 
     private void notifyRevocation(RevocationDispatch dispatch) {
+        DevelopmentTrace.event(
+            "action-broker",
+            "revocation-dispatch",
+            "revokedEpoch",
+            dispatch.revocation.getRevokedEpoch(),
+            "replacementEpoch",
+            dispatch.revocation.getNewEpoch(),
+            "reason",
+            dispatch.revocation.getReason(),
+            "listeners",
+            dispatch.listeners.size());
         Throwable firstFailure = null;
         try {
             for (ActionRevocationListener listener : dispatch.listeners) {

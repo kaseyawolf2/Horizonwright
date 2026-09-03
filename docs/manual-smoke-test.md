@@ -3,6 +3,11 @@
 Human-driven testing is the default because GTNH startup and GUI control are
 slow. Automated GUI control is reserved for infrequent release checkpoints.
 
+Development snapshot tracing is enabled by default. Before reproducing a problem, run
+`/hw debug status` and leave it on. After the test, close the Horizonwright instance normally so
+the complete `[HWTRACE]` sequence is flushed to `.minecraft/logs/latest.log`. Baritone's
+`chatDebug` setting is separate and may be enabled at the same time.
+
 ## Milestone 0 navigation checkpoint
 
 1. Build and install the production Horizonwright JAR plus the exact separate

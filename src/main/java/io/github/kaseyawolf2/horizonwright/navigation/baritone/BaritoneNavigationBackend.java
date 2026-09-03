@@ -19,6 +19,7 @@ import baritone.api.process.PathingCommandType;
 import baritone.compat.BlockPos;
 import baritone.pathing.movement.CalculationContext;
 import baritone.utils.PathingCommandContext;
+import io.github.kaseyawolf2.horizonwright.DevelopmentTrace;
 import io.github.kaseyawolf2.horizonwright.HorizonwrightMod;
 import io.github.kaseyawolf2.horizonwright.core.action.ActionCapability;
 import io.github.kaseyawolf2.horizonwright.core.action.ActionLease;
@@ -57,10 +58,20 @@ public final class BaritoneNavigationBackend implements NavigationBackend, Actio
         this.process = new HorizonwrightBaritoneProcess(this, baritone);
         baritone.getPathingControlManager()
             .registerProcess(process);
+        DevelopmentTrace.event("navigation", "backend-created", "availability", availability.getDiagnostic());
     }
 
     @Override
     public synchronized BackendAvailability availability() {
+        DevelopmentTrace.event(
+            "navigation",
+            "availability",
+            "available",
+            availability.isAvailable(),
+            "diagnostic",
+            availability.getDiagnostic(),
+            "active",
+            active == null ? "none" : active.request.getRequestId());
         return availability;
     }
 
@@ -93,6 +104,29 @@ public final class BaritoneNavigationBackend implements NavigationBackend, Actio
         }
         requireClientThread();
         requireRequestWorld(request);
+        DevelopmentTrace.event(
+            "navigation",
+            "submit",
+            "request",
+            request.getRequestId(),
+            "epoch",
+            request.getActionEpoch(),
+            "dimension",
+            request.getDimensionId(),
+            "goalKind",
+            request.getGoalKind(),
+            "x",
+            request.getX(),
+            "y",
+            request.getY(),
+            "z",
+            request.getZ(),
+            "tolerance",
+            request.getTolerance(),
+            "leaseOwner",
+            movementLease.getOwner(),
+            "safetyRecovery",
+            movementLease.isSafetyRecoveryLease());
 
         BlockPos target = new BlockPos(request.getX(), request.getY(), request.getZ());
         Goal goal = request.getGoalKind() == NavigationGoalKind.ADJACENT ? new GoalGetToBlock(target)
@@ -103,11 +137,29 @@ public final class BaritoneNavigationBackend implements NavigationBackend, Actio
         actionSessionGuard.begin(movementLease);
         active = handle;
         process.activate(handle);
+        DevelopmentTrace.event(
+            "navigation",
+            "activated",
+            "request",
+            request.getRequestId(),
+            "goal",
+            goal,
+            "deadlineNanos",
+            request.getDeadlineNanos());
         return handle;
     }
 
     @Override
     public void onActionEpochRevoked(ActionRevocation revocation) {
+        DevelopmentTrace.event(
+            "navigation",
+            "epoch-revoked",
+            "revokedEpoch",
+            revocation.getRevokedEpoch(),
+            "replacementEpoch",
+            revocation.getNewEpoch(),
+            "reason",
+            revocation.getReason());
         Runnable cancellation = () -> cancelRevokedEpoch(revocation);
         Minecraft minecraft = Minecraft.getMinecraft();
         if (minecraft.func_152345_ab()) {
@@ -134,6 +186,15 @@ public final class BaritoneNavigationBackend implements NavigationBackend, Actio
 
     synchronized boolean validateActive(Handle handle) {
         if (active != handle || handle.isTerminal()) {
+            DevelopmentTrace.event(
+                "navigation",
+                "validation-rejected",
+                "request",
+                handle.request.getRequestId(),
+                "state",
+                handle.state,
+                "isActiveHandle",
+                active == handle);
             return false;
         }
         if (!handle.movementLease.isValid() || !actionSessionGuard.isActiveLease(handle.movementLease)) {
@@ -170,6 +231,16 @@ public final class BaritoneNavigationBackend implements NavigationBackend, Actio
         if (active == handle && !handle.isTerminal()) {
             handle.state = NavigationState.MOVING;
             handle.detail = detail;
+            DevelopmentTrace.event(
+                "navigation",
+                "moving",
+                "request",
+                handle.request.getRequestId(),
+                "detail",
+                detail,
+                "player",
+                baritone.getPlayerContext()
+                    .playerFeet());
         }
     }
 
@@ -206,6 +277,17 @@ public final class BaritoneNavigationBackend implements NavigationBackend, Actio
             active = null;
             process.deactivate(handle);
             pendingCleanup = new PendingCleanup(handle);
+            DevelopmentTrace.event(
+                "navigation",
+                "terminal",
+                "request",
+                handle.request.getRequestId(),
+                "state",
+                state,
+                "detail",
+                detail,
+                "blockedActions",
+                actionSessionGuard.getBlockedActionCount());
             return true;
         }
     }

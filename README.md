@@ -199,6 +199,20 @@ named unload and repair bindings. Both paths validate geometry and profile
 references before the controller accepts the task.
 Unattended operation remains disabled.
 
+## Development tracing
+
+Snapshot builds enable high-volume structured tracing by default. Every record starts with
+`[HWTRACE]` and includes a monotonic sequence number, component, event, and correlation fields.
+The trace covers runtime/world-session lifecycle, persistence, schedules, task transitions,
+runner results, action leases, outbound action authorization, Baritone navigation, and the live
+farm, excavation, and sleep phase machines. Full output is written to Minecraft's `latest.log`;
+it is intentionally verbose while the live integrations are still being physically tested.
+
+Use `/hw debug status`, `/hw debug on`, or `/hw debug off` to inspect or change tracing for the
+current process. It can also be disabled before startup with the
+`-Dhorizonwright.developmentTrace=false` Java property. Disabling this trace does not change
+Baritone's separate `chatDebug` setting.
+
 ## Pinned target
 
 - GT New Horizons: `2.9.0-beta-2`

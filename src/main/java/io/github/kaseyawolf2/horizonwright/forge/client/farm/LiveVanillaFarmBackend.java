@@ -10,6 +10,7 @@ import net.minecraft.item.ItemStack;
 import net.minecraft.util.MovingObjectPosition;
 import net.minecraft.util.Vec3;
 
+import io.github.kaseyawolf2.horizonwright.DevelopmentTrace;
 import io.github.kaseyawolf2.horizonwright.core.action.ActionCapability;
 import io.github.kaseyawolf2.horizonwright.core.action.ActionLease;
 import io.github.kaseyawolf2.horizonwright.core.action.ActionSessionGuard;
@@ -64,11 +65,22 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
     @Override
     public Availability availability() {
         NavigationBackend navigation = navigationSource.getNavigationBackend();
-        if (navigation == null) return Availability.unavailable("No navigation backend is configured for farming");
+        if (navigation == null) {
+            DevelopmentTrace.event("farm-live", "availability", "available", false, "reason", "no-navigation-backend");
+            return Availability.unavailable("No navigation backend is configured for farming");
+        }
         BackendAvailability status = navigation.availability();
-        return status.isAvailable()
+        Availability result = status.isAvailable()
             ? Availability.available("Exact vanilla farm actions ready through " + status.getDiagnostic())
             : Availability.unavailable("Farm navigation unavailable: " + status.getDiagnostic());
+        DevelopmentTrace.event(
+            "farm-live",
+            "availability",
+            "available",
+            result.isAvailable(),
+            "diagnostic",
+            result.getDiagnostic());
+        return result;
     }
 
     @Override
@@ -76,6 +88,22 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
         requireClient(request);
         NamedArea plot = observer.resolvePlot(request.getPlotId());
         List<CropObservation> observations = observer.scan(plot);
+        DevelopmentTrace.event(
+            "farm-live",
+            "scan",
+            "task",
+            request.getTaskId(),
+            "plot",
+            request.getPlotId(),
+            "epoch",
+            request.getActionEpoch(),
+            "observations",
+            observations.size(),
+            "bounds",
+            plot);
+        for (int index = 0; index < observations.size(); index++) {
+            traceCrop("scan-crop", request.getTaskId(), index, observations.get(index));
+        }
         return new PassSnapshot(request.getTaskId(), request.getActionEpoch(), plot, observations);
     }
 
@@ -85,6 +113,24 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
         CropObservation crop = observer.observeRequired(request.getPosition());
         SeedReserveEvidence reserve = observer
             .reserve(request.getPassRevision(), crop.getRequiredSeedFingerprint(), request.getMinimumSeedReserve());
+        traceCrop("target-observed", request.getTaskId(), request.getObservationIndex(), crop);
+        DevelopmentTrace.event(
+            "farm-live",
+            "seed-reserve",
+            "task",
+            request.getTaskId(),
+            "passRevision",
+            request.getPassRevision(),
+            "inventoryRevision",
+            reserve.getInventoryRevision(),
+            "available",
+            reserve.getAvailableSeeds(),
+            "minimum",
+            reserve.getMinimumReserve(),
+            "seed",
+            reserve.getSeedFingerprint(),
+            "inventory",
+            reserve.getInventoryFingerprint());
         return new TargetSnapshot(
             request.getTaskId(),
             request.getPassRevision(),
@@ -97,6 +143,32 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
     @Override
     public synchronized ActionHandle execute(ActionRequest request, ActionLease lease) {
         requireClient(request);
+        DevelopmentTrace.event(
+            "farm-live",
+            "execute-request",
+            "request",
+            request.getRequestId(),
+            "task",
+            request.getTaskId(),
+            "epoch",
+            request.getActionEpoch(),
+            "passRevision",
+            request.getPassRevision(),
+            "index",
+            request.getObservationIndex(),
+            "action",
+            request.getDecision()
+                .getAction(),
+            "target",
+            request.getDecision()
+                .getTarget(),
+            "plannedFingerprint",
+            request.getDecision()
+                .getObservationFingerprint(),
+            "leaseValid",
+            lease != null && lease.isValid(),
+            "leaseCapabilities",
+            lease == null ? "none" : lease.getCapabilities());
         if (request.getDecision()
             .getAction() != FarmActionKind.BREAK_AND_REPLANT) {
             throw new IllegalArgumentException("live vanilla backend supports only break-and-replant mutations");
@@ -143,6 +215,21 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
         Availability available = availability();
         if (navigation == null || !available.isAvailable()) throw new IllegalStateException(available.getDiagnostic());
         LiveHandle handle = new LiveHandle(request, lease, navigation, seedSlot, current, System.nanoTime());
+        DevelopmentTrace.event(
+            "farm-live",
+            "execute-validated",
+            "request",
+            request.getRequestId(),
+            "seedSlot",
+            seedSlot,
+            "priorSlot",
+            minecraft.thePlayer.inventory.currentItem,
+            "playerX",
+            minecraft.thePlayer.posX,
+            "playerY",
+            minecraft.thePlayer.posY,
+            "playerZ",
+            minecraft.thePlayer.posZ);
         active = handle;
         try {
             handle.start();
@@ -202,6 +289,7 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
                 phase = Phase.WAITING_FOR_ACTION_SESSION;
                 state = ActionState.EXECUTING;
                 detail = "Crop is within confirmed reach";
+                trace("phase", "reach", true);
                 return;
             }
             BasePosition target = request.getDecision()
@@ -219,6 +307,7 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
                 lease);
             state = ActionState.EXECUTING;
             detail = "Approaching exact farm target";
+            trace("phase", "navigationRequest", navigationHandle.getRequestId());
         }
 
         @Override
@@ -229,6 +318,22 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
         @Override
         public synchronized ActionProgress progress() {
             requireClient(request);
+            trace(
+                "progress",
+                "leaseValid",
+                lease.isValid(),
+                "guardActive",
+                guard.isActiveLease(lease),
+                "guardReady",
+                guard.isReadyForSession(),
+                "cancelRequested",
+                cancellationRequested,
+                "playerX",
+                minecraft.thePlayer.posX,
+                "playerY",
+                minecraft.thePlayer.posY,
+                "playerZ",
+                minecraft.thePlayer.posZ);
             if (isTerminal()) return snapshot();
             if (cancellationRequested) {
                 cancelOnClientThread();
@@ -267,6 +372,7 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
 
         private void pollApproach() {
             NavigationProgress progress = navigationHandle.progress();
+            trace("approach", "navigationState", progress.getState(), "navigationDetail", progress.getDetail());
             if (progress.getState() == NavigationState.COMPLETED) {
                 navigationHandle = null;
                 phase = Phase.WAITING_FOR_ACTION_SESSION;
@@ -285,12 +391,32 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
         private void beginActionWhenReady() {
             if (!guard.isReadyForSession()) {
                 detail = "Waiting for approach packets to drain";
+                trace("packet-drain", "blockedActions", guard.getBlockedActionCount());
                 return;
             }
             CropObservation current = observer.observeSupported(
                 request.getDecision()
                     .getTarget());
-            if (!samePlannedCrop(current) || !current.isMature() || !canReachCrop()) {
+            boolean sameCrop = samePlannedCrop(current);
+            boolean mature = current != null && current.isMature();
+            boolean reachable = canReachCrop();
+            DevelopmentTrace.event(
+                "farm-live",
+                "post-approach-check",
+                "request",
+                request.getRequestId(),
+                "sameCrop",
+                sameCrop,
+                "mature",
+                mature,
+                "reachable",
+                reachable,
+                "currentFingerprint",
+                current == null ? "missing" : current.getObservationFingerprint(),
+                "plannedFingerprint",
+                request.getDecision()
+                    .getObservationFingerprint());
+            if (!sameCrop || !mature || !reachable) {
                 fail("Farm target changed or lost reach after approach");
                 return;
             }
@@ -329,6 +455,7 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
             BasePosition target = request.getDecision()
                 .getTarget();
             minecraft.playerController.clickBlock(target.getX(), target.getY(), target.getZ(), targetSide());
+            trace("break-start", "target", target);
         }
 
         private void breakOneTick() {
@@ -339,6 +466,7 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
             BasePosition target = request.getDecision()
                 .getTarget();
             CropObservation current = observer.observeSupported(target);
+            traceCrop("break-observation", request.getTaskId(), request.getObservationIndex(), current);
             if (current == null) {
                 phase = Phase.PLANTING;
                 detail = "Mature crop removed; preparing exact replant";
@@ -390,6 +518,7 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
                 1,
                 Vec3.createVectorHelper(target.getX() + 0.5D, target.getY(), target.getZ() + 0.5D));
             restoreSlot();
+            trace("replant-result", "accepted", used, "seedSlot", seedSlot, "target", target);
             if (!used) {
                 stopActionSession();
                 fail("Server interaction did not accept the exact replant attempt");
@@ -425,8 +554,10 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
                     .getTarget());
             if (after == null) {
                 detail = "Waiting for replacement crop synchronization";
+                trace("confirm-wait", "observation", "missing");
                 return;
             }
+            traceCrop("confirm-observation", request.getTaskId(), request.getObservationIndex(), after);
             try {
                 verifier.requireReplacement(request.getDecision(), plannedBefore, after);
             } catch (RuntimeException mismatch) {
@@ -454,17 +585,50 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
                 .getTarget();
             if (minecraft.thePlayer == null || minecraft.playerController == null
                 || minecraft.theWorld == null
-                || minecraft.theWorld.provider.dimensionId != target.getDimensionId()) return false;
+                || minecraft.theWorld.provider.dimensionId != target.getDimensionId()) {
+                trace("reach", "reachable", false, "reason", "client-or-dimension-unavailable");
+                return false;
+            }
             EntityPlayer player = minecraft.thePlayer;
             Vec3 eyes = Vec3.createVectorHelper(player.posX, player.posY + player.getEyeHeight(), player.posZ);
             Vec3 center = Vec3.createVectorHelper(target.getX() + 0.5D, target.getY() + 0.5D, target.getZ() + 0.5D);
             double reach = minecraft.playerController.getBlockReachDistance() + 0.5D;
-            if (eyes.squareDistanceTo(center) > reach * reach) return false;
+            double distanceSquared = eyes.squareDistanceTo(center);
+            if (distanceSquared > reach * reach) {
+                trace(
+                    "reach",
+                    "reachable",
+                    false,
+                    "reason",
+                    "distance",
+                    "distanceSquared",
+                    distanceSquared,
+                    "reachSquared",
+                    reach * reach,
+                    "eyes",
+                    eyes,
+                    "center",
+                    center);
+                return false;
+            }
             MovingObjectPosition hit = minecraft.theWorld.rayTraceBlocks(eyes, center, false);
-            return hit != null && hit.typeOfHit == MovingObjectPosition.MovingObjectType.BLOCK
+            boolean reachable = hit != null && hit.typeOfHit == MovingObjectPosition.MovingObjectType.BLOCK
                 && hit.blockX == target.getX()
                 && hit.blockY == target.getY()
                 && hit.blockZ == target.getZ();
+            trace(
+                "reach",
+                "reachable",
+                reachable,
+                "reason",
+                reachable ? "target-hit" : "raytrace-mismatch",
+                "distanceSquared",
+                distanceSquared,
+                "reachSquared",
+                reach * reach,
+                "hit",
+                hit == null ? "none" : hit.typeOfHit + ":" + hit.blockX + "," + hit.blockY + "," + hit.blockZ);
+            return reachable;
         }
 
         private void aimAt(BasePosition target) {
@@ -517,7 +681,25 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
             stopProducers();
             state = ActionState.FAILED;
             detail = failure;
+            trace("failed", "failure", failure);
             clearActive(this);
+        }
+
+        private void trace(String event, Object... extraFields) {
+            Object[] fields = new Object[10 + extraFields.length];
+            fields[0] = "request";
+            fields[1] = request.getRequestId();
+            fields[2] = "phase";
+            fields[3] = phase;
+            fields[4] = "state";
+            fields[5] = state;
+            fields[6] = "detail";
+            fields[7] = detail;
+            fields[8] = "target";
+            fields[9] = request.getDecision()
+                .getTarget();
+            System.arraycopy(extraFields, 0, fields, 10, extraFields.length);
+            DevelopmentTrace.event("farm-live", event, fields);
         }
 
         private ActionProgress snapshot() {
@@ -527,6 +709,30 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
         private boolean isTerminal() {
             return state == ActionState.CONFIRMED || state == ActionState.CANCELLED || state == ActionState.FAILED;
         }
+    }
+
+    private static void traceCrop(String event, String taskId, int index, CropObservation crop) {
+        DevelopmentTrace.event(
+            "farm-live",
+            event,
+            "task",
+            taskId,
+            "index",
+            index,
+            "position",
+            crop == null ? "missing" : crop.getPosition(),
+            "family",
+            crop == null ? "missing" : crop.getFamily(),
+            "fingerprint",
+            crop == null ? "missing" : crop.getObservationFingerprint(),
+            "seed",
+            crop == null ? "missing" : crop.getRequiredSeedFingerprint(),
+            "maturityKnown",
+            crop != null && crop.isMaturityKnown(),
+            "mature",
+            crop != null && crop.isMature(),
+            "protected",
+            crop != null && crop.isProtectedBlock());
     }
 
     private enum Phase {

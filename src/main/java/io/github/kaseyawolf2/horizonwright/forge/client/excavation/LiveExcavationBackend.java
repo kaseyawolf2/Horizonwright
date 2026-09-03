@@ -10,6 +10,7 @@ import net.minecraft.item.ItemStack;
 import net.minecraft.util.MovingObjectPosition;
 import net.minecraft.util.Vec3;
 
+import io.github.kaseyawolf2.horizonwright.DevelopmentTrace;
 import io.github.kaseyawolf2.horizonwright.core.action.ActionCapability;
 import io.github.kaseyawolf2.horizonwright.core.action.ActionLease;
 import io.github.kaseyawolf2.horizonwright.core.action.ActionSessionGuard;
@@ -75,14 +76,24 @@ public final class LiveExcavationBackend implements ExcavationBackend {
     public synchronized ExcavationBackendAvailability availability() {
         NavigationBackend navigation = navigationSource.getNavigationBackend();
         if (navigation == null) {
+            DevelopmentTrace
+                .event("excavation-live", "availability", "available", false, "reason", "no-navigation-backend");
             return ExcavationBackendAvailability.unavailable("No navigation backend is configured for excavation");
         }
         BackendAvailability available = navigation.availability();
-        return available.isAvailable()
+        ExcavationBackendAvailability result = available.isAvailable()
             ? ExcavationBackendAvailability
                 .available("Exact vanilla block excavation ready through " + available.getDiagnostic())
             : ExcavationBackendAvailability
                 .unavailable("Excavation navigation unavailable: " + available.getDiagnostic());
+        DevelopmentTrace.event(
+            "excavation-live",
+            "availability",
+            "available",
+            result.isAvailable(),
+            "diagnostic",
+            result.getDiagnostic());
+        return result;
     }
 
     @Override
@@ -95,13 +106,37 @@ public final class LiveExcavationBackend implements ExcavationBackend {
                     minecraft.thePlayer.inventory.getStackInSlot(requirements.getReservedToolSlot()),
                     requirements.getReservedToolSlot())
                 : null;
-        return new ExcavationObservationResult(
+        ExcavationObservationResult result = new ExcavationObservationResult(
             request.getTaskRevision(),
             request.getActionEpoch(),
             request.getGeometryKey(),
             request.getStartFrontier(),
             observation,
             serviceTriggers.evaluate(observation.getClassification(), requirements, emptyMainInventorySlots(), tool));
+        DevelopmentTrace.event(
+            "excavation-live",
+            "observed",
+            "taskRevision",
+            request.getTaskRevision(),
+            "epoch",
+            request.getActionEpoch(),
+            "geometry",
+            request.getGeometryKey(),
+            "frontier",
+            request.getStartFrontier(),
+            "position",
+            observation.getPosition(),
+            "classification",
+            observation.getClassification(),
+            "fingerprint",
+            observation.getBlockFingerprint(),
+            "suspension",
+            result.getSuspensionReason(),
+            "emptySlots",
+            emptyMainInventorySlots(),
+            "toolPresent",
+            tool != null);
+        return result;
     }
 
     private int emptyMainInventorySlots() {
@@ -114,6 +149,29 @@ public final class LiveExcavationBackend implements ExcavationBackend {
 
     @Override
     public synchronized ExcavationActionHandle execute(ExcavationActionRequest request, ActionLease lease) {
+        DevelopmentTrace.event(
+            "excavation-live",
+            "execute-request",
+            "request",
+            request == null ? "null" : request.getRequestId(),
+            "task",
+            request == null ? "null" : request.getTaskId(),
+            "epoch",
+            request == null ? -1L : request.getActionEpoch(),
+            "intent",
+            request == null ? "null"
+                : request.getIntent()
+                    .getKind(),
+            "position",
+            request == null ? "null"
+                : request.getIntent()
+                    .getPosition(),
+            "preferredToolSlot",
+            request == null ? -1 : request.getPreferredToolSlot(),
+            "leaseValid",
+            lease != null && lease.isValid(),
+            "leaseCapabilities",
+            lease == null ? "none" : lease.getCapabilities());
         if (request == null || lease == null) throw new IllegalArgumentException("request and lease are required");
         if (active != null && !active.isTerminal()) throw new IllegalStateException("an excavation action is active");
         if (!lease.isValid() || lease.getEpoch() != request.getActionEpoch()
@@ -134,7 +192,11 @@ public final class LiveExcavationBackend implements ExcavationBackend {
         ExcavationTargetOutcome immediate = immediateOutcome(
             request.getIntent()
                 .getKind());
-        if (immediate != null) return new ImmediateHandle(request, immediate);
+        if (immediate != null) {
+            DevelopmentTrace
+                .event("excavation-live", "immediate", "request", request.getRequestId(), "outcome", immediate);
+            return new ImmediateHandle(request, immediate);
+        }
         if (request.getIntent()
             .getKind() != ExcavationIntentKind.BREAK_BLOCK) {
             throw new IllegalArgumentException(
@@ -228,6 +290,7 @@ public final class LiveExcavationBackend implements ExcavationBackend {
                 phase = Phase.WAITING_FOR_DIG_SESSION;
                 state = ExcavationActionState.EXECUTING;
                 detail = "Target is within confirmed reach";
+                trace("phase", "reach", true);
                 return;
             }
             BlockPosition position = request.getIntent()
@@ -244,6 +307,7 @@ public final class LiveExcavationBackend implements ExcavationBackend {
             navigationHandle = navigation.submit(approach, lease);
             state = ExcavationActionState.EXECUTING;
             detail = "Approaching exact excavation target";
+            trace("phase", "navigationRequest", navigationHandle.getRequestId());
         }
 
         @Override
@@ -254,6 +318,24 @@ public final class LiveExcavationBackend implements ExcavationBackend {
         @Override
         public synchronized ExcavationActionProgress progress() {
             requireClientThread();
+            trace(
+                "progress",
+                "leaseValid",
+                lease.isValid(),
+                "guardActive",
+                guard.isActiveLease(lease),
+                "guardReady",
+                guard.isReadyForSession(),
+                "cancelRequested",
+                cancellationRequested,
+                "playerX",
+                minecraft.thePlayer == null ? "missing" : minecraft.thePlayer.posX,
+                "playerY",
+                minecraft.thePlayer == null ? "missing" : minecraft.thePlayer.posY,
+                "playerZ",
+                minecraft.thePlayer == null ? "missing" : minecraft.thePlayer.posZ,
+                "selectedSlot",
+                minecraft.thePlayer == null ? "missing" : minecraft.thePlayer.inventory.currentItem);
             if (state == ExcavationActionState.CONFIRMED || state == ExcavationActionState.FAILED
                 || state == ExcavationActionState.CANCELLED) return snapshot();
             if (cancellationRequested) {
@@ -290,6 +372,7 @@ public final class LiveExcavationBackend implements ExcavationBackend {
 
         private synchronized void pollApproach() {
             NavigationProgress progress = navigationHandle.progress();
+            trace("approach", "navigationState", progress.getState(), "navigationDetail", progress.getDetail());
             if (progress.getState() == NavigationState.COMPLETED) {
                 navigationHandle = null;
                 phase = Phase.WAITING_FOR_DIG_SESSION;
@@ -308,9 +391,11 @@ public final class LiveExcavationBackend implements ExcavationBackend {
         private synchronized void beginDigWhenReady() {
             if (!guard.isReadyForSession()) {
                 detail = "Waiting for approach packets to drain";
+                trace("packet-drain", "blockedActions", guard.getBlockedActionCount());
                 return;
             }
             ExcavationObservation current = currentObservation();
+            traceObservation("post-approach", current);
             if (isAir(current)) {
                 confirm(ExcavationTargetOutcome.COMPLETED, "Target became air before digging");
                 return;
@@ -336,6 +421,7 @@ public final class LiveExcavationBackend implements ExcavationBackend {
             BlockPosition position = request.getIntent()
                 .getPosition();
             minecraft.playerController.clickBlock(position.getX(), position.getY(), position.getZ(), targetSide());
+            trace("dig-start", "selectedSlot", minecraft.thePlayer.inventory.currentItem, "side", targetSide());
         }
 
         private synchronized void digOneTick() {
@@ -345,6 +431,7 @@ public final class LiveExcavationBackend implements ExcavationBackend {
                 return;
             }
             ExcavationObservation current = currentObservation();
+            traceObservation("dig-observation", current);
             if (isAir(current)) {
                 finishConfirmedDig();
                 return;
@@ -424,6 +511,19 @@ public final class LiveExcavationBackend implements ExcavationBackend {
             float bestStrength = Float.NEGATIVE_INFINITY;
             for (int slot = 0; slot < 9; slot++) {
                 float candidateStrength = strength(minecraft.thePlayer.inventory.mainInventory[slot], target);
+                DevelopmentTrace.event(
+                    "excavation-live",
+                    "tool-candidate",
+                    "request",
+                    request.getRequestId(),
+                    "slot",
+                    slot,
+                    "item",
+                    describeStack(minecraft.thePlayer.inventory.mainInventory[slot]),
+                    "strength",
+                    candidateStrength,
+                    "preferred",
+                    slot == preferred);
                 if (candidateStrength > bestStrength || candidateStrength == bestStrength && slot == preferred) {
                     bestStrength = candidateStrength;
                     selected = slot;
@@ -435,6 +535,18 @@ public final class LiveExcavationBackend implements ExcavationBackend {
                 minecraft.playerController.updateController();
                 toolSlotChanged = true;
             }
+            trace(
+                "tool-selected",
+                "selected",
+                selected,
+                "previous",
+                priorHotbarSlot,
+                "preferred",
+                preferred,
+                "strength",
+                bestStrength,
+                "changed",
+                toolSlotChanged);
         }
 
         private float strength(ItemStack stack, Block target) {
@@ -460,12 +572,14 @@ public final class LiveExcavationBackend implements ExcavationBackend {
             confirmed = confirmation(request, outcome);
             state = ExcavationActionState.CONFIRMED;
             detail = confirmationDetail;
+            trace("confirmed", "outcome", outcome);
             clearActive(this);
         }
 
         private void fail(String failureDetail) {
             state = ExcavationActionState.FAILED;
             detail = failureDetail;
+            trace("failed", "failure", failureDetail);
             clearActive(this);
         }
 
@@ -490,7 +604,10 @@ public final class LiveExcavationBackend implements ExcavationBackend {
             if (minecraft.thePlayer == null || minecraft.theWorld == null
                 || minecraft.playerController == null
                 || minecraft.theWorld.provider == null
-                || minecraft.theWorld.provider.dimensionId != request.getDimensionId()) return false;
+                || minecraft.theWorld.provider.dimensionId != request.getDimensionId()) {
+                trace("reach", "reachable", false, "reason", "client-or-dimension-unavailable");
+                return false;
+            }
             BlockPosition position = request.getIntent()
                 .getPosition();
             EntityPlayer player = minecraft.thePlayer;
@@ -498,12 +615,78 @@ public final class LiveExcavationBackend implements ExcavationBackend {
             Vec3 center = Vec3
                 .createVectorHelper(position.getX() + 0.5D, position.getY() + 0.5D, position.getZ() + 0.5D);
             double reach = minecraft.playerController.getBlockReachDistance() + 0.5D;
-            if (eyes.squareDistanceTo(center) > reach * reach) return false;
+            double distanceSquared = eyes.squareDistanceTo(center);
+            if (distanceSquared > reach * reach) {
+                trace(
+                    "reach",
+                    "reachable",
+                    false,
+                    "reason",
+                    "distance",
+                    "distanceSquared",
+                    distanceSquared,
+                    "reachSquared",
+                    reach * reach,
+                    "eyes",
+                    eyes,
+                    "center",
+                    center);
+                return false;
+            }
             MovingObjectPosition hit = minecraft.theWorld.rayTraceBlocks(eyes, center, false);
-            return hit != null && hit.typeOfHit == MovingObjectPosition.MovingObjectType.BLOCK
+            boolean reachable = hit != null && hit.typeOfHit == MovingObjectPosition.MovingObjectType.BLOCK
                 && hit.blockX == position.getX()
                 && hit.blockY == position.getY()
                 && hit.blockZ == position.getZ();
+            trace(
+                "reach",
+                "reachable",
+                reachable,
+                "reason",
+                reachable ? "target-hit" : "raytrace-mismatch",
+                "distanceSquared",
+                distanceSquared,
+                "reachSquared",
+                reach * reach,
+                "hit",
+                hit == null ? "none" : hit.typeOfHit + ":" + hit.blockX + "," + hit.blockY + "," + hit.blockZ);
+            return reachable;
+        }
+
+        private void traceObservation(String event, ExcavationObservation observation) {
+            DevelopmentTrace.event(
+                "excavation-live",
+                event,
+                "request",
+                request.getRequestId(),
+                "phase",
+                phase,
+                "position",
+                observation.getPosition(),
+                "classification",
+                observation.getClassification(),
+                "fingerprint",
+                observation.getBlockFingerprint(),
+                "plannedFingerprint",
+                request.getIntent()
+                    .getObservedFingerprint());
+        }
+
+        private void trace(String event, Object... extraFields) {
+            Object[] fields = new Object[10 + extraFields.length];
+            fields[0] = "request";
+            fields[1] = request.getRequestId();
+            fields[2] = "phase";
+            fields[3] = phase;
+            fields[4] = "state";
+            fields[5] = state;
+            fields[6] = "detail";
+            fields[7] = detail;
+            fields[8] = "target";
+            fields[9] = request.getIntent()
+                .getPosition();
+            System.arraycopy(extraFields, 0, fields, 10, extraFields.length);
+            DevelopmentTrace.event("excavation-live", event, fields);
         }
 
         private void aimAtTarget() {
@@ -541,6 +724,13 @@ public final class LiveExcavationBackend implements ExcavationBackend {
             return state == ExcavationActionState.CONFIRMED || state == ExcavationActionState.CANCELLED
                 || state == ExcavationActionState.FAILED;
         }
+    }
+
+    private static String describeStack(ItemStack stack) {
+        if (stack == null) return "empty";
+        Object itemName = ItemStack.class.cast(stack)
+            .getItem();
+        return itemName + ":meta=" + stack.getItemDamage() + ":count=" + stack.stackSize;
     }
 
     private static final class ImmediateHandle implements ExcavationActionHandle {

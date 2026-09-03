@@ -79,4 +79,9 @@ public final class NamedArea {
     public int hashCode() {
         return Objects.hash(id, displayName, minimum, maximum);
     }
+
+    @Override
+    public String toString() {
+        return "NamedArea{" + id + ':' + minimum + ".." + maximum + '}';
+    }
 }

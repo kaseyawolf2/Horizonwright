@@ -1,5 +1,6 @@
 package io.github.kaseyawolf2.horizonwright.runtime.persistence;
 
+import io.github.kaseyawolf2.horizonwright.DevelopmentTrace;
 import io.github.kaseyawolf2.horizonwright.core.persistence.HorizonwrightPersistenceStore;
 import io.github.kaseyawolf2.horizonwright.core.persistence.PersistenceException;
 import io.github.kaseyawolf2.horizonwright.core.persistence.PersistenceLoadResult;
@@ -43,13 +44,40 @@ public final class TaskControllerPersistenceCoordinator {
 
     /** Loads validated state without mutating a controller. */
     public RuntimeEnvelope load() throws TaskControllerPersistenceException {
+        DevelopmentTrace
+            .event("persistence", "load-start", "profile", expectedIdentity, "runtimeFile", paths.getRuntimeFile());
         requireExpectedProfile();
         PersistenceLoadResult<RuntimeEnvelope> runtime = store.loadRuntime(paths);
         if (runtime.getStatus() == PersistenceLoadStatus.MISSING) {
-            return emptyRuntime();
+            RuntimeEnvelope empty = emptyRuntime();
+            DevelopmentTrace
+                .event("persistence", "load-missing", "profile", expectedIdentity, "status", runtime.getStatus());
+            return empty;
         }
         RuntimeEnvelope loaded = requireLoaded(runtime, "runtime");
         requireRuntimeBinding(loaded);
+        DevelopmentTrace.event(
+            "persistence",
+            "load-complete",
+            "profile",
+            expectedIdentity,
+            "status",
+            runtime.getStatus(),
+            "writtenAt",
+            loaded.getWrittenAtEpochMillis(),
+            "connectionEpoch",
+            loaded.getLastConnectionEpoch(),
+            "tasks",
+            loaded.getTaskControllerState()
+                .getTasks()
+                .size(),
+            "schedules",
+            loaded.getTaskControllerState()
+                .getScheduler()
+                .getSchedules()
+                .size(),
+            "unresolvedDeath",
+            loaded.getUnresolvedDeathState() != null);
         return loaded;
     }
 
@@ -104,6 +132,28 @@ public final class TaskControllerPersistenceCoordinator {
         }
 
         TaskControllerState controllerState = controller.exportState();
+        DevelopmentTrace.event(
+            "persistence",
+            "save-start",
+            "profile",
+            expectedIdentity,
+            "writtenAt",
+            writtenAtEpochMillis,
+            "requestedConnectionEpoch",
+            lastConnectionEpoch,
+            "effectiveConnectionEpoch",
+            effectiveConnectionEpoch,
+            "tasks",
+            controllerState.getTasks()
+                .size(),
+            "schedules",
+            controllerState.getScheduler()
+                .getSchedules()
+                .size(),
+            "unresolvedDeath",
+            unresolvedDeathState != null,
+            "runtimeFile",
+            paths.getRuntimeFile());
         RuntimeEnvelope replacement = new RuntimeEnvelope(
             writtenAtEpochMillis,
             expectedIdentity.getProfileId(),
@@ -119,6 +169,16 @@ public final class TaskControllerPersistenceCoordinator {
                 "Could not atomically save controller runtime for profile '" + expectedIdentity.getProfileId() + "'",
                 failure);
         }
+        DevelopmentTrace.event(
+            "persistence",
+            "save-complete",
+            "profile",
+            expectedIdentity,
+            "connectionEpoch",
+            effectiveConnectionEpoch,
+            "tasks",
+            controllerState.getTasks()
+                .size());
         return replacement;
     }
 

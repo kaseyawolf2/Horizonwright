@@ -66,4 +66,9 @@ public final class BasePosition implements Comparable<BasePosition> {
     public int hashCode() {
         return Objects.hash(dimensionId, x, y, z);
     }
+
+    @Override
+    public String toString() {
+        return "BasePosition{" + dimensionId + ':' + x + ',' + y + ',' + z + '}';
+    }
 }

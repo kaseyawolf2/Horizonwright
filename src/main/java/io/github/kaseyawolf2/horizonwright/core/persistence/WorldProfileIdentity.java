@@ -75,4 +75,9 @@ public final class WorldProfileIdentity {
     public int hashCode() {
         return Objects.hash(profileId, displayName, serverAddress, worldFingerprint, createdAtEpochMillis);
     }
+
+    @Override
+    public String toString() {
+        return "WorldProfileIdentity{" + profileId + ":" + displayName + ":" + worldFingerprint + '}';
+    }
 }

@@ -4,6 +4,7 @@ import java.util.LinkedHashSet;
 import java.util.Optional;
 import java.util.Set;
 
+import io.github.kaseyawolf2.horizonwright.DevelopmentTrace;
 import io.github.kaseyawolf2.horizonwright.HorizonwrightRuntime;
 import io.github.kaseyawolf2.horizonwright.core.persistence.WorldProfileIdentity;
 import io.github.kaseyawolf2.horizonwright.core.task.IHorizonwrightController;
@@ -37,6 +38,7 @@ public final class ClientRuntimeSessionManager implements CurrentRuntimeProvider
         this.runtimeFactory = runtimeFactory;
         this.persistenceFactory = persistenceFactory;
         this.clock = clock;
+        DevelopmentTrace.event("runtime-session", "manager-created");
     }
 
     /** Selects a profile; returns false when the same durable binding is already selected. */
@@ -46,6 +48,8 @@ public final class ClientRuntimeSessionManager implements CurrentRuntimeProvider
             throw new IllegalArgumentException("identity must not be null");
         }
         if (ProfileRuntimeSession.hasSameDurableBinding(selectedIdentity, identity)) {
+            DevelopmentTrace
+                .event("runtime-session", "bind-ignored", "identity", identity, "reason", "same-durable-binding");
             return false;
         }
 
@@ -53,6 +57,8 @@ public final class ClientRuntimeSessionManager implements CurrentRuntimeProvider
         selectedIdentity = identity;
         retiredTokens.clear();
         installWaitingSession();
+        DevelopmentTrace
+            .event("runtime-session", "profile-bound", "identity", identity, "state", currentSession.getState());
         return true;
     }
 
@@ -66,6 +72,17 @@ public final class ClientRuntimeSessionManager implements CurrentRuntimeProvider
             throw new IllegalArgumentException("observedIdentity and token must not be null");
         }
         if (!ProfileRuntimeSession.hasSameDurableBinding(selectedIdentity, observedIdentity)) {
+            DevelopmentTrace.event(
+                "runtime-session",
+                "world-ready-rejected",
+                "observed",
+                observedIdentity,
+                "selected",
+                selectedIdentity,
+                "token",
+                token,
+                "reason",
+                "binding-mismatch");
             return false;
         }
         if (currentSession == null || currentSession.getState() == RuntimeSessionState.FAILED) {
@@ -90,6 +107,15 @@ public final class ClientRuntimeSessionManager implements CurrentRuntimeProvider
 
         currentSession.connect(token);
         ownershipFailure = null;
+        DevelopmentTrace.event(
+            "runtime-session",
+            "world-ready",
+            "identity",
+            observedIdentity,
+            "token",
+            token,
+            "state",
+            currentSession.getState());
         return true;
     }
 
@@ -113,6 +139,17 @@ public final class ClientRuntimeSessionManager implements CurrentRuntimeProvider
         currentSession.disconnect(token);
         retiredTokens.add(token);
         installWaitingSession();
+        DevelopmentTrace.event(
+            "runtime-session",
+            "world-unavailable",
+            "identity",
+            observedIdentity,
+            "token",
+            token,
+            "retiredTokens",
+            retiredTokens.size(),
+            "newState",
+            currentSession.getState());
         return true;
     }
 
@@ -126,7 +163,19 @@ public final class ClientRuntimeSessionManager implements CurrentRuntimeProvider
             || currentSession == null) {
             return false;
         }
-        return currentSession.clientTick(token);
+        boolean delivered = currentSession.clientTick(token);
+        DevelopmentTrace.event(
+            "runtime-session",
+            "client-tick",
+            "identity",
+            observedIdentity,
+            "token",
+            token,
+            "delivered",
+            delivered,
+            "state",
+            currentSession.getState());
+        return delivered;
     }
 
     /** Clears the selected profile only after its current session has retired safely. */
@@ -139,6 +188,7 @@ public final class ClientRuntimeSessionManager implements CurrentRuntimeProvider
         selectedIdentity = null;
         retiredTokens.clear();
         ownershipFailure = null;
+        DevelopmentTrace.event("runtime-session", "profile-unbound");
         return true;
     }
 
@@ -207,6 +257,7 @@ public final class ClientRuntimeSessionManager implements CurrentRuntimeProvider
         selectedIdentity = null;
         retiredTokens.clear();
         closed = true;
+        DevelopmentTrace.event("runtime-session", "manager-closed");
     }
 
     private Optional<RuntimeSessionRuntime> activeRuntime() {
@@ -224,10 +275,24 @@ public final class ClientRuntimeSessionManager implements CurrentRuntimeProvider
                 throw new IllegalStateException("persistence factory returned null");
             }
             next.bind(selectedIdentity, persistence);
+            DevelopmentTrace.event(
+                "runtime-session",
+                "waiting-session-installed",
+                "identity",
+                selectedIdentity,
+                "state",
+                next.getState());
         } catch (RuntimeException failure) {
             ownershipFailure = failure instanceof RuntimeSessionException ? (RuntimeSessionException) failure
                 : new RuntimeSessionException("Could not create a waiting runtime session", failure);
             currentSession = next.getState() == RuntimeSessionState.FAILED ? next : null;
+            DevelopmentTrace.event(
+                "runtime-session",
+                "waiting-session-failed",
+                "identity",
+                selectedIdentity,
+                "error",
+                DevelopmentTrace.error(failure));
             throw ownershipFailure;
         }
         currentSession = next;
@@ -239,12 +304,15 @@ public final class ClientRuntimeSessionManager implements CurrentRuntimeProvider
             return;
         }
         try {
+            DevelopmentTrace
+                .event("runtime-session", "retiring", "identity", selectedIdentity, "state", currentSession.getState());
             currentSession.close();
         } catch (RuntimeSessionException failure) {
             ownershipFailure = failure;
             throw failure;
         }
         currentSession = null;
+        DevelopmentTrace.event("runtime-session", "retired", "identity", selectedIdentity);
     }
 
     private void ensureOpen() {

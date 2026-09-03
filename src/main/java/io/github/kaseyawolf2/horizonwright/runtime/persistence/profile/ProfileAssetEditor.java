@@ -3,6 +3,7 @@ package io.github.kaseyawolf2.horizonwright.runtime.persistence.profile;
 import java.util.ArrayList;
 import java.util.List;
 
+import io.github.kaseyawolf2.horizonwright.DevelopmentTrace;
 import io.github.kaseyawolf2.horizonwright.core.base.NamedArea;
 import io.github.kaseyawolf2.horizonwright.core.logistics.NamedLoadout;
 import io.github.kaseyawolf2.horizonwright.core.persistence.HorizonwrightPersistenceStore;
@@ -39,7 +40,28 @@ public final class ProfileAssetEditor {
     }
 
     public synchronized ProfileEnvelope load() {
-        return requireExactProfile();
+        ProfileEnvelope profile = requireExactProfile();
+        DevelopmentTrace.event(
+            "profile-assets",
+            "loaded",
+            "identity",
+            identity,
+            "locations",
+            profile.getNamedLocations()
+                .size(),
+            "loadouts",
+            profile.getNamedLoadouts()
+                .size(),
+            "storage",
+            profile.getNamedStorageEndpoints()
+                .size(),
+            "stations",
+            profile.getNamedRepairStations()
+                .size(),
+            "areas",
+            profile.getNamedAreas()
+                .size());
+        return profile;
     }
 
     /** Loads, merges, validates, and atomically saves one update without exposing a partially valid profile. */
@@ -59,6 +81,28 @@ public final class ProfileAssetEditor {
             mergeStorage(previous.getNamedStorageEndpoints(), update.getStorageEndpoints()),
             mergeStations(previous.getNamedRepairStations(), update.getRepairStations()),
             mergeAreas(previous.getNamedAreas(), update.getAreas()));
+        DevelopmentTrace.event(
+            "profile-assets",
+            "apply",
+            "identity",
+            identity,
+            "locationUpdates",
+            update.getLocations()
+                .size(),
+            "loadoutUpdates",
+            update.getLoadouts()
+                .size(),
+            "storageUpdates",
+            update.getStorageEndpoints()
+                .size(),
+            "stationUpdates",
+            update.getRepairStations()
+                .size(),
+            "areaUpdates",
+            update.getAreas()
+                .size(),
+            "writtenAt",
+            writtenAt);
         try {
             store.saveProfile(paths, replacement);
         } catch (PersistenceException failure) {
@@ -96,6 +140,15 @@ public final class ProfileAssetEditor {
         } catch (PersistenceException failure) {
             throw new ProfileAssetEditingException("could not atomically delete the named work area", failure);
         }
+        DevelopmentTrace.event(
+            "profile-assets",
+            "area-deleted",
+            "identity",
+            identity,
+            "area",
+            areaId.trim(),
+            "remainingAreas",
+            remaining.size());
         return replacement;
     }
 
