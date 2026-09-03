@@ -5,6 +5,8 @@ import net.minecraft.network.play.client.C09PacketHeldItemChange;
 import net.minecraft.network.play.client.C0BPacketEntityAction;
 import net.minecraft.network.play.client.C0EPacketClickWindow;
 import net.minecraft.network.play.server.S06PacketUpdateHealth;
+import net.minecraft.network.play.server.S2FPacketSetSlot;
+import net.minecraft.network.play.server.S30PacketWindowItems;
 import net.minecraft.network.play.server.S32PacketConfirmTransaction;
 
 import io.github.kaseyawolf2.horizonwright.HorizonwrightMod;
@@ -69,6 +71,20 @@ final class OutboundPacketFirewall extends ChannelDuplexHandler {
         if (containerTransactionBridge != null && message instanceof S32PacketConfirmTransaction) {
             try {
                 containerTransactionBridge.beforeConfirmationRead((S32PacketConfirmTransaction) message);
+            } catch (RuntimeException failure) {
+                failContainerObservation(context, failure);
+            }
+        }
+        if (containerTransactionBridge != null && message instanceof S30PacketWindowItems) {
+            try {
+                containerTransactionBridge.beforeWindowItemsRead((S30PacketWindowItems) message);
+            } catch (RuntimeException failure) {
+                failContainerObservation(context, failure);
+            }
+        }
+        if (containerTransactionBridge != null && message instanceof S2FPacketSetSlot) {
+            try {
+                containerTransactionBridge.beforeSetSlotRead((S2FPacketSetSlot) message);
             } catch (RuntimeException failure) {
                 failContainerObservation(context, failure);
             }

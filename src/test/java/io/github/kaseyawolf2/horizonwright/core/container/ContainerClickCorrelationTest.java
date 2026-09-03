@@ -37,7 +37,7 @@ public class ContainerClickCorrelationTest {
     }
 
     @Test
-    public void rejectionIsTerminalAndCannotExposeTheClickAgain() {
+    public void rejectedAcknowledgementRequiresAuthoritativeExactSnapshotAndNeverReplays() {
         ContainerSnapshot before = snapshot(10L, ORE, null);
         ContainerSnapshot after = snapshot(11L, null, ORE);
         ContainerClickCorrelation correlation = correlation(before, after);
@@ -45,12 +45,37 @@ public class ContainerClickCorrelationTest {
         correlation.prepare(before, 41L, 100L, 50L);
         correlation.observeWrite(7, 0, 0, 1, (short) 23, 101L);
         assertEquals(
-            ContainerClickCorrelation.ConfirmationObservation.REJECTED,
+            ContainerClickCorrelation.ConfirmationObservation.REJECTED_AWAITING_SYNC,
             correlation.observeConfirmation(7, (short) 23, false, 102L));
 
-        assertEquals(ContainerClickCorrelation.State.ABORTED, correlation.getState());
+        assertEquals(ContainerClickCorrelation.State.SERVER_REJECTED_AWAITING_SYNC, correlation.getState());
         assertFalse(
             correlation.prepare(before, 41L, 103L, 50L)
+                .isPresent());
+        assertFalse(correlation.observeSynchronizedSnapshot(after, 41L, 104L));
+        correlation.observeAuthoritativeResync(7, 105L);
+        assertFalse(correlation.observeSynchronizedSnapshot(after, 41L, 106L));
+        correlation.observeAuthoritativeCursorResync(107L);
+        assertTrue(correlation.observeSynchronizedSnapshot(after, 41L, 108L));
+        assertEquals(ContainerClickCorrelation.State.COMPLETED, correlation.getState());
+    }
+
+    @Test
+    public void rejectedAcknowledgementWithWrongAuthoritativeStateTimesOutWithoutReplay() {
+        ContainerSnapshot before = snapshot(10L, ORE, null);
+        ContainerSnapshot after = snapshot(11L, null, ORE);
+        ContainerClickCorrelation correlation = correlation(before, after);
+
+        correlation.prepare(before, 41L, 100L, 50L);
+        correlation.observeWrite(7, 0, 0, 1, (short) 23, 101L);
+        correlation.observeConfirmation(7, (short) 23, false, 102L);
+        correlation.observeAuthoritativeResync(7, 103L);
+        correlation.observeAuthoritativeCursorResync(104L);
+        assertFalse(correlation.observeSynchronizedSnapshot(before, 41L, 105L));
+        assertTrue(correlation.expire(150L));
+        assertEquals(ContainerClickCorrelation.State.ABORTED, correlation.getState());
+        assertFalse(
+            correlation.prepare(before, 41L, 151L, 50L)
                 .isPresent());
     }
 

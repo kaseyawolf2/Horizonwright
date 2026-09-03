@@ -2,6 +2,8 @@ package io.github.kaseyawolf2.horizonwright.forge.client.network;
 
 import net.minecraft.network.NetworkManager;
 import net.minecraft.network.play.client.C0EPacketClickWindow;
+import net.minecraft.network.play.server.S2FPacketSetSlot;
+import net.minecraft.network.play.server.S30PacketWindowItems;
 import net.minecraft.network.play.server.S32PacketConfirmTransaction;
 
 import io.github.kaseyawolf2.horizonwright.core.container.ContainerClickCorrelation;
@@ -101,7 +103,29 @@ public final class ContainerTransactionPacketCoordinator implements ContainerTra
             packet.func_148890_d(),
             packet.func_148888_e(),
             clock.nanoTime());
-        if (observation == ConfirmationObservation.REJECTED || active.isTerminal()) {
+        if (active.isTerminal()) {
+            active = null;
+        }
+    }
+
+    private synchronized void observeWindowItems(Boundary source, S30PacketWindowItems packet) {
+        if (boundary != source || source.retired || active == null) {
+            return;
+        }
+        active.observeAuthoritativeResync(packet.func_148911_c(), clock.nanoTime());
+        if (active.isTerminal()) {
+            active = null;
+        }
+    }
+
+    private synchronized void observeSetSlot(Boundary source, S2FPacketSetSlot packet) {
+        if (boundary != source || source.retired || active == null) {
+            return;
+        }
+        if (packet.func_149175_c() == -1 && packet.func_149173_d() == -1) {
+            active.observeAuthoritativeCursorResync(clock.nanoTime());
+        }
+        if (active.isTerminal()) {
             active = null;
         }
     }
@@ -146,6 +170,22 @@ public final class ContainerTransactionPacketCoordinator implements ContainerTra
                 throw new IllegalArgumentException("packet must not be null");
             }
             observeConfirmation(this, packet);
+        }
+
+        @Override
+        public void beforeWindowItemsRead(S30PacketWindowItems packet) {
+            if (packet == null) {
+                throw new IllegalArgumentException("packet must not be null");
+            }
+            observeWindowItems(this, packet);
+        }
+
+        @Override
+        public void beforeSetSlotRead(S2FPacketSetSlot packet) {
+            if (packet == null) {
+                throw new IllegalArgumentException("packet must not be null");
+            }
+            observeSetSlot(this, packet);
         }
 
         @Override

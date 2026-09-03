@@ -18,6 +18,7 @@ public final class ContainerClickCorrelation {
         AWAITING_WRITE,
         AWAITING_CONFIRMATION,
         SERVER_ACCEPTED,
+        SERVER_REJECTED_AWAITING_SYNC,
         COMPLETED,
         ABORTED
     }
@@ -31,7 +32,7 @@ public final class ContainerClickCorrelation {
     public enum ConfirmationObservation {
         NOT_APPLICABLE,
         ACCEPTED,
-        REJECTED
+        REJECTED_AWAITING_SYNC
     }
 
     private final ContainerTransaction transaction;
@@ -40,6 +41,8 @@ public final class ContainerClickCorrelation {
     private long deadlineNanos;
     private int windowId;
     private short actionNumber;
+    private boolean authoritativeWindowResyncObserved;
+    private boolean authoritativeCursorResyncObserved;
 
     public ContainerClickCorrelation(ContainerTransaction transaction) {
         if (transaction == null) {
@@ -71,7 +74,8 @@ public final class ContainerClickCorrelation {
     public synchronized WriteObservation observeWrite(int observedWindowId, int slot, int mouseButton, int clickMode,
         short observedActionNumber, long nowNanos) {
         expire(nowNanos);
-        if (state == State.AWAITING_CONFIRMATION || state == State.SERVER_ACCEPTED) {
+        if (state == State.AWAITING_CONFIRMATION || state == State.SERVER_ACCEPTED
+            || state == State.SERVER_REJECTED_AWAITING_SYNC) {
             cancel("another container click escaped while a server confirmation was outstanding");
             return WriteObservation.NOT_APPLICABLE;
         }
@@ -99,16 +103,32 @@ public final class ContainerClickCorrelation {
             return ConfirmationObservation.NOT_APPLICABLE;
         }
         if (!accepted) {
-            transaction.confirm(
-                outstanding.getClickId(),
-                false,
-                outstanding.getExpectedBefore(),
-                transaction.getActionEpoch());
-            state = State.ABORTED;
-            return ConfirmationObservation.REJECTED;
+            // In 1.7.10 this flag means that the client's predicted click result did not equal
+            // Container.slotClick's return value. The server-side mutation may still have happened;
+            // the server follows this response with an authoritative full-window synchronization.
+            // Never replay the click, and do not advance until that synchronization exactly matches
+            // the prepared after-snapshot.
+            authoritativeWindowResyncObserved = false;
+            authoritativeCursorResyncObserved = false;
+            state = State.SERVER_REJECTED_AWAITING_SYNC;
+            return ConfirmationObservation.REJECTED_AWAITING_SYNC;
         }
         state = State.SERVER_ACCEPTED;
         return ConfirmationObservation.ACCEPTED;
+    }
+
+    public synchronized void observeAuthoritativeResync(int observedWindowId, long nowNanos) {
+        expire(nowNanos);
+        if (state == State.SERVER_REJECTED_AWAITING_SYNC && observedWindowId == windowId) {
+            authoritativeWindowResyncObserved = true;
+        }
+    }
+
+    public synchronized void observeAuthoritativeCursorResync(long nowNanos) {
+        expire(nowNanos);
+        if (state == State.SERVER_REJECTED_AWAITING_SYNC) {
+            authoritativeCursorResyncObserved = true;
+        }
     }
 
     /**
@@ -119,7 +139,11 @@ public final class ContainerClickCorrelation {
     public synchronized boolean observeSynchronizedSnapshot(ContainerSnapshot observed, long currentEpoch,
         long nowNanos) {
         expire(nowNanos);
-        if (state != State.SERVER_ACCEPTED) {
+        if (state != State.SERVER_ACCEPTED && state != State.SERVER_REJECTED_AWAITING_SYNC) {
+            return false;
+        }
+        if (state == State.SERVER_REJECTED_AWAITING_SYNC
+            && (!authoritativeWindowResyncObserved || !authoritativeCursorResyncObserved)) {
             return false;
         }
         if (currentEpoch != transaction.getActionEpoch()) {
@@ -145,8 +169,9 @@ public final class ContainerClickCorrelation {
     }
 
     public synchronized boolean expire(long nowNanos) {
-        if ((state == State.AWAITING_WRITE || state == State.AWAITING_CONFIRMATION || state == State.SERVER_ACCEPTED)
-            && nowNanos - deadlineNanos >= 0L) {
+        if ((state == State.AWAITING_WRITE || state == State.AWAITING_CONFIRMATION
+            || state == State.SERVER_ACCEPTED
+            || state == State.SERVER_REJECTED_AWAITING_SYNC) && nowNanos - deadlineNanos >= 0L) {
             cancel("container click confirmation timed out; the click will not be resent");
             return true;
         }

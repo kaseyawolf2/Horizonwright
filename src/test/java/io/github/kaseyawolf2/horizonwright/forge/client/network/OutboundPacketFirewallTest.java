@@ -12,6 +12,8 @@ import net.minecraft.network.play.client.C03PacketPlayer;
 import net.minecraft.network.play.client.C07PacketPlayerDigging;
 import net.minecraft.network.play.client.C0EPacketClickWindow;
 import net.minecraft.network.play.client.C17PacketCustomPayload;
+import net.minecraft.network.play.server.S2FPacketSetSlot;
+import net.minecraft.network.play.server.S30PacketWindowItems;
 import net.minecraft.network.play.server.S32PacketConfirmTransaction;
 
 import org.junit.Test;
@@ -156,6 +158,7 @@ public class OutboundPacketFirewallTest {
     public void inactiveContainerObserverLeavesManualClicksAndConfirmationsUntouched() {
         ActionSessionGuard guard = new ActionSessionGuard();
         guard.markFirewallInstalled();
+        final boolean[] synchronizationObserved = { false, false };
         ContainerTransactionPacketBridge observer = new ContainerTransactionPacketBridge() {
 
             @Override
@@ -167,16 +170,36 @@ public class OutboundPacketFirewallTest {
             public void beforeConfirmationRead(S32PacketConfirmTransaction packet) {}
 
             @Override
+            public void beforeWindowItemsRead(S30PacketWindowItems packet) {
+                synchronizationObserved[0] = true;
+            }
+
+            @Override
+            public void beforeSetSlotRead(S2FPacketSetSlot packet) {
+                synchronizationObserved[1] = true;
+            }
+
+            @Override
             public void onBoundaryUnavailable(boolean transportClosed) {}
         };
         EmbeddedChannel channel = new EmbeddedChannel(new OutboundPacketFirewall(guard, null, null, observer));
         C0EPacketClickWindow click = new C0EPacketClickWindow(7, 0, 0, 1, null, (short) 3);
         S32PacketConfirmTransaction confirmation = new S32PacketConfirmTransaction(7, (short) 3, true);
+        S30PacketWindowItems windowItems = new S30PacketWindowItems(
+            7,
+            java.util.Collections.<net.minecraft.item.ItemStack>emptyList());
+        S2FPacketSetSlot cursor = new S2FPacketSetSlot(-1, -1, null);
 
         assertTrue(channel.writeOutbound(click));
         assertSame(click, channel.readOutbound());
         assertTrue(channel.writeInbound(confirmation));
         assertSame(confirmation, channel.readInbound());
+        assertTrue(channel.writeInbound(windowItems));
+        assertSame(windowItems, channel.readInbound());
+        assertTrue(synchronizationObserved[0]);
+        assertTrue(channel.writeInbound(cursor));
+        assertSame(cursor, channel.readInbound());
+        assertTrue(synchronizationObserved[1]);
         channel.finish();
     }
 

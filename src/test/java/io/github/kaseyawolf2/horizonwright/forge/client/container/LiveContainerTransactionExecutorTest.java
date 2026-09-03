@@ -8,6 +8,8 @@ import java.util.Arrays;
 
 import net.minecraft.network.NetworkManager;
 import net.minecraft.network.play.client.C0EPacketClickWindow;
+import net.minecraft.network.play.server.S2FPacketSetSlot;
+import net.minecraft.network.play.server.S30PacketWindowItems;
 import net.minecraft.network.play.server.S32PacketConfirmTransaction;
 
 import org.junit.Test;
@@ -59,6 +61,26 @@ public class LiveContainerTransactionExecutorTest {
     }
 
     @Test
+    public void rejectedAcknowledgementAdvancesOnlyAfterExactAuthoritativeResync() {
+        ContainerSnapshot before = snapshot(10L, ORE, null);
+        ContainerSnapshot after = snapshot(11L, null, ORE);
+
+        ContainerTransaction rejected = transaction(before, after);
+        Harness rejectedHarness = new Harness(before);
+        rejectedHarness.executor.begin(rejected);
+        rejectedHarness.bridge.beforeConfirmationRead(new S32PacketConfirmTransaction(7, (short) 1, false));
+        rejectedHarness.client.observed = after;
+        rejectedHarness.executor.tick();
+        assertEquals(ContainerTransactionState.AWAITING_CONFIRMATION, rejected.getState());
+        rejectedHarness.bridge.beforeWindowItemsRead(
+            new S30PacketWindowItems(7, java.util.Collections.<net.minecraft.item.ItemStack>emptyList()));
+        rejectedHarness.bridge.beforeSetSlotRead(new S2FPacketSetSlot(-1, -1, null));
+        rejectedHarness.executor.tick();
+        assertEquals(1, rejectedHarness.client.clickCount);
+        assertEquals(ContainerTransactionState.COMPLETED, rejected.getState());
+    }
+
+    @Test
     public void rejectionAndTimeoutNeverRedispatchTheUncertainClick() {
         ContainerSnapshot before = snapshot(10L, ORE, null);
         ContainerSnapshot after = snapshot(11L, null, ORE);
@@ -67,6 +89,10 @@ public class LiveContainerTransactionExecutorTest {
         Harness rejectedHarness = new Harness(before);
         rejectedHarness.executor.begin(rejected);
         rejectedHarness.bridge.beforeConfirmationRead(new S32PacketConfirmTransaction(7, (short) 1, false));
+        rejectedHarness.bridge.beforeWindowItemsRead(
+            new S30PacketWindowItems(7, java.util.Collections.<net.minecraft.item.ItemStack>emptyList()));
+        rejectedHarness.bridge.beforeSetSlotRead(new S2FPacketSetSlot(-1, -1, null));
+        rejectedHarness.clock.now = 151L;
         rejectedHarness.executor.tick();
         rejectedHarness.executor.tick();
         assertEquals(1, rejectedHarness.client.clickCount);

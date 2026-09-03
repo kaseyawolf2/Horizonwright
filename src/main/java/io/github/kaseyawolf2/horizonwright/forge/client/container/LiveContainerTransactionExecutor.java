@@ -116,7 +116,8 @@ public final class LiveContainerTransactionExecutor implements ConfirmedContaine
             } else {
                 active.expire(now);
             }
-            if (active.getState() == ContainerClickCorrelation.State.SERVER_ACCEPTED) {
+            if (active.getState() == ContainerClickCorrelation.State.SERVER_ACCEPTED
+                || active.getState() == ContainerClickCorrelation.State.SERVER_REJECTED_AWAITING_SYNC) {
                 VerifiedContainerClick click = active.getOutstandingClick()
                     .orElseThrow(() -> new IllegalStateException("accepted transaction has no outstanding click"));
                 ContainerSnapshot observed = client.capture(
