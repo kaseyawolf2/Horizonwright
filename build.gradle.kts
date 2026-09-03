@@ -167,9 +167,9 @@ val pinnedBaritoneHashes = linkedMapOf(
     "LICENSE-Part-2.jpg" to "e3ba782078d7a75fa36f57d2fb1df31d03d361f0bc2daef60612dd6098775400",
     "LICENSE-fastutil-Apache-2.0" to "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
     "baritone-v1.2.19-mc1.7.10-1-7-10-forge+fcbbd4882c-dirty-sources.jar" to
-        "b1aa8cad9ba4e05199e0e6cb58cc4cdda542d6b186bccf3321fac0a98885439f",
+        "e07fe0fbeaa81286035578c65f0cb5ccdb565283f1643db2230e92f6fe968455",
     "baritone-v1.2.19-mc1.7.10-1-7-10-forge+fcbbd4882c.jar" to
-        "bcd9d1b8ad15fb7bc5abe7e3dcf9e54018425bc7dd98c8b5d3bf9008c52e3bb3",
+        "9eeadebbabb253aae53af90d46e280c23b217f4df29d5b693eec814d7379ede1",
 )
 
 val verifyBaritoneArtifacts by tasks.registering(VerifyPinnedArtifacts::class) {

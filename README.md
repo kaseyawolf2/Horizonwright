@@ -249,7 +249,7 @@ recorded build before loading any Baritone API type. The selected clean-named
 JAR embeds build version
 `v1.2.19-mc1.7.10-1-7-10-forge+fcbbd4882c-dirty`; Forge 1.7.10 normalizes its
 loaded `ModContainer` version to `1.2.19-mc1.7.10`. Its SHA-256 is
-`bcd9d1b8ad15fb7bc5abe7e3dcf9e54018425bc7dd98c8b5d3bf9008c52e3bb3`.
+`9eeadebbabb253aae53af90d46e280c23b217f4df29d5b693eec814d7379ede1`.
 Missing, duplicate, or changed installations leave navigation unavailable with
 a diagnostic.
 Horizonwright source can still be rebuilt against an interface-compatible

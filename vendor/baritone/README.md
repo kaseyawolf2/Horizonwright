@@ -27,8 +27,8 @@ authoritative compatibility identity.
 
 | File | Purpose | SHA-256 |
 | --- | --- | --- |
-| `baritone-v1.2.19-mc1.7.10-1-7-10-forge+fcbbd4882c.jar` | Exact enhanced binary used on Horizonwright's development classpath and installed separately at runtime; applies the resolved sprint state directly and preserves active sprint across bounded, safe level turns | `bcd9d1b8ad15fb7bc5abe7e3dcf9e54018425bc7dd98c8b5d3bf9008c52e3bb3` |
-| `baritone-v1.2.19-mc1.7.10-1-7-10-forge+fcbbd4882c-dirty-sources.jar` | Corresponding Gradle sources artifact produced immediately before the selected runtime | `b1aa8cad9ba4e05199e0e6cb58cc4cdda542d6b186bccf3321fac0a98885439f` |
+| `baritone-v1.2.19-mc1.7.10-1-7-10-forge+fcbbd4882c.jar` | Exact enhanced binary used on Horizonwright's development classpath and installed separately at runtime; applies the resolved sprint state directly, preserves active sprint across bounded safe level turns, and emits transition-only sprint diagnostics when `chatDebug` is enabled | `9eeadebbabb253aae53af90d46e280c23b217f4df29d5b693eec814d7379ede1` |
+| `baritone-v1.2.19-mc1.7.10-1-7-10-forge+fcbbd4882c-dirty-sources.jar` | Corresponding Gradle sources artifact produced immediately before the selected runtime | `e07fe0fbeaa81286035578c65f0cb5ccdb565283f1643db2230e92f6fe968455` |
 | `COPYING-GPL-3.0` | Complete GPLv3 text incorporated by LGPLv3 | `3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986` |
 | `LICENSE-LGPL-3.0-or-later` | LGPL v3 license text preserved from the snapshot (canonical LF text hash) | `a5681bf9b05db14d86776930017c647ad9e6e56ff6bbcfdf21e5848288dfaf1b` |
 | `LICENSE-Part-2.jpg` | Second upstream license file preserved from the snapshot | `e3ba782078d7a75fa36f57d2fb1df31d03d361f0bc2daef60612dd6098775400` |
