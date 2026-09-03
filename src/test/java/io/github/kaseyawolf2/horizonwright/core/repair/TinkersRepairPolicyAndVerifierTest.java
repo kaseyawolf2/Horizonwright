@@ -27,6 +27,15 @@ public class TinkersRepairPolicyAndVerifierTest {
     }
 
     @Test
+    public void repairGoalStopsAtTwoPercentMissingWithoutWastingAnotherMaterial() {
+        RepairPolicy policy = RepairPolicy.planDefaults();
+
+        assertFalse(policy.isRepairGoalSatisfied(tool("pick-a", 21, 1000, 2)));
+        assertTrue(policy.isRepairGoalSatisfied(tool("pick-a", 20, 1000, 2)));
+        assertTrue(policy.isRepairGoalSatisfied(tool("pick-a", 0, 1000, 2)));
+    }
+
+    @Test
     public void acceptsOnlyRecognizedMaterialBackedDamageReductionOfSameReservedTool() {
         RepairToolSnapshot input = tool("pick-a", 700, 1000, 2);
         RepairToolSnapshot output = tool("pick-a", 500, 1000, 2);

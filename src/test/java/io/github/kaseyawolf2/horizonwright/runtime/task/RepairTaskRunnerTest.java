@@ -82,7 +82,7 @@ public class RepairTaskRunnerTest {
     }
 
     @Test
-    public void anyVerifiedDamageReductionLeavesTinkersToolUsableAgain() {
+    public void verifiedPartialRepairRepeatsUntilToolReachesNoWasteMargin() {
         harness = new Harness();
         TaskSpec spec = taskSpec("repair-partial");
         harness.controller.submit(spec);
@@ -92,7 +92,7 @@ public class RepairTaskRunnerTest {
         harness.backend.confirm(ConfirmationMode.PARTIAL);
         TaskSnapshot verified = task(harness.controller.tick(), spec.getId());
 
-        assertEquals(TaskState.COMPLETED, verified.getState());
+        assertEquals(TaskState.RUNNING, verified.getState());
         assertEquals(
             "READY",
             verified.getCheckpoint()
@@ -104,6 +104,19 @@ public class RepairTaskRunnerTest {
                 .getValues()
                 .get("completedRepairs"));
         assertEquals(1, harness.backend.submissions);
+
+        harness.controller.tick();
+        harness.controller.tick();
+        assertEquals(2, harness.backend.submissions);
+        harness.backend.confirm(ConfirmationMode.VALID);
+        TaskSnapshot completed = task(harness.controller.tick(), spec.getId());
+
+        assertEquals(TaskState.COMPLETED, completed.getState());
+        assertEquals(
+            "2",
+            completed.getCheckpoint()
+                .getValues()
+                .get("completedRepairs"));
     }
 
     @Test
@@ -404,6 +417,7 @@ public class RepairTaskRunnerTest {
     private static final class Backend implements RepairBackend {
 
         private boolean repaired;
+        private boolean partiallyRepaired;
         private boolean changedPrediction;
         private boolean noMaterial;
         private boolean unapprovedClick;
@@ -451,8 +465,9 @@ public class RepairTaskRunnerTest {
         @Override
         public RepairObservationResult observe(RepairObservationRequest request) {
             RepairToolSnapshot input = repaired ? repairedTool()
-                : previewMutatedInput ? new RepairToolSnapshot("pick-stable", 1, 1000, RESERVED_INVENTORY_SLOT)
-                    : damagedTool();
+                : partiallyRepaired ? partiallyRepairedTool()
+                    : previewMutatedInput ? new RepairToolSnapshot("pick-stable", 1, 1000, RESERVED_INVENTORY_SLOT)
+                        : damagedTool();
             if (repaired) return observation(request, input, null, 0, null);
             RepairToolSnapshot predicted = new RepairToolSnapshot(
                 "pick-stable",
@@ -530,7 +545,12 @@ public class RepairTaskRunnerTest {
                 : active.request.getTransactionFingerprint();
             active.confirmation = new RepairActionConfirmation(fingerprint, output, consumed, true);
             active.state = RepairActionState.CONFIRMED;
-            if (mode == ConfirmationMode.VALID) repaired = true;
+            if (mode == ConfirmationMode.VALID) {
+                repaired = true;
+                partiallyRepaired = false;
+            } else if (mode == ConfirmationMode.PARTIAL) {
+                partiallyRepaired = true;
+            }
         }
 
         private void reject() {
@@ -633,7 +653,11 @@ public class RepairTaskRunnerTest {
     }
 
     private static RepairToolSnapshot repairedTool() {
-        return new RepairToolSnapshot("pick-stable", 400, 1000, RESERVED_INVENTORY_SLOT);
+        return new RepairToolSnapshot("pick-stable", 20, 1000, RESERVED_INVENTORY_SLOT);
+    }
+
+    private static RepairToolSnapshot partiallyRepairedTool() {
+        return new RepairToolSnapshot("pick-stable", 850, 1000, RESERVED_INVENTORY_SLOT);
     }
 
     private static ContainerSnapshot snapshot(long revision, ItemFingerprint... slots) {

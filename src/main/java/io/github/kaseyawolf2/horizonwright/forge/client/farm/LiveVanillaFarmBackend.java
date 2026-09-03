@@ -5,7 +5,6 @@ import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.settings.KeyBinding;
 import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.item.ItemStack;
 import net.minecraft.util.MovingObjectPosition;
@@ -26,7 +25,6 @@ import io.github.kaseyawolf2.horizonwright.core.navigation.NavigationHandle;
 import io.github.kaseyawolf2.horizonwright.core.navigation.NavigationProgress;
 import io.github.kaseyawolf2.horizonwright.core.navigation.NavigationRequest;
 import io.github.kaseyawolf2.horizonwright.core.navigation.NavigationState;
-import io.github.kaseyawolf2.horizonwright.forge.client.AutomationInputHold;
 import io.github.kaseyawolf2.horizonwright.forge.client.ClientBootstrap;
 import io.github.kaseyawolf2.horizonwright.forge.client.MinecraftRuntimeAccess;
 import io.github.kaseyawolf2.horizonwright.forge.client.network.ActionPacketDispatch;
@@ -263,7 +261,6 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
         private final ActionRequest request;
         private final ActionLease lease;
         private final NavigationBackend navigation;
-        private final AutomationInputHold attackInput;
         private final int seedSlot;
         private final CropObservation plannedBefore;
         private final int priorHotbarSlot;
@@ -283,7 +280,6 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
             this.request = request;
             this.lease = lease;
             this.navigation = navigation;
-            this.attackInput = new AutomationInputHold("farm:" + request.getRequestId(), new AttackBinding());
             this.seedSlot = seedSlot;
             this.plannedBefore = plannedBefore;
             this.priorHotbarSlot = minecraft.thePlayer.inventory.currentItem;
@@ -460,7 +456,6 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
             aimAt(
                 request.getDecision()
                     .getTarget());
-            attackInput.hold();
             BasePosition target = request.getDecision()
                 .getTarget();
             minecraft.playerController.clickBlock(target.getX(), target.getY(), target.getZ(), targetSide());
@@ -487,16 +482,11 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
                 return;
             }
             aimAt(target);
-            attackInput.hold();
-            boolean directProgress = minecraft.currentScreen != null || !minecraft.inGameHasFocus;
-            if (directProgress) {
-                minecraft.playerController
-                    .onPlayerDamageBlock(target.getX(), target.getY(), target.getZ(), targetSide());
-            }
+            minecraft.playerController.onPlayerDamageBlock(target.getX(), target.getY(), target.getZ(), targetSide());
             trace(
                 "break-tick",
                 "progressDriver",
-                directProgress ? "horizonwright" : "vanilla-held-input",
+                "horizonwright-exact-target",
                 "screen",
                 minecraft.currentScreen == null ? "none"
                     : minecraft.currentScreen.getClass()
@@ -692,7 +682,6 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
             ClientBootstrap.blockDamageShield()
                 .release(request.getRequestId());
             minecraft.playerController.resetBlockRemoving();
-            attackInput.release();
         }
 
         private void stopProducers() {
@@ -734,19 +723,6 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
                 .getTarget();
             System.arraycopy(extraFields, 0, fields, 10, extraFields.length);
             DevelopmentTrace.event("farm-live", event, fields);
-        }
-
-        private final class AttackBinding implements AutomationInputHold.Binding {
-
-            @Override
-            public boolean isPressed() {
-                return minecraft.gameSettings.keyBindAttack.getIsKeyPressed();
-            }
-
-            @Override
-            public void setPressed(boolean pressed) {
-                KeyBinding.setKeyBindState(minecraft.gameSettings.keyBindAttack.getKeyCode(), pressed);
-            }
         }
 
         private ActionProgress snapshot() {

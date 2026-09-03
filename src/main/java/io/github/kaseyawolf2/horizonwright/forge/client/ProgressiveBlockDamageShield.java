@@ -8,7 +8,7 @@ import net.minecraft.item.ItemStack;
 
 import io.github.kaseyawolf2.horizonwright.DevelopmentTrace;
 
-/** Preserves one leased progressive block-damage operation across vanilla's GUI reset. */
+/** Preserves one leased progressive block-damage operation across vanilla's input processing. */
 public final class ProgressiveBlockDamageShield {
 
     private final Minecraft minecraft;
@@ -43,9 +43,12 @@ public final class ProgressiveBlockDamageShield {
         lastKnown = null;
     }
 
-    /** Runs at client-tick START, before vanilla turns an open screen into a cancel-dig. */
+    /**
+     * Runs at client-tick START and temporarily disarms the controller before vanilla can advance,
+     * retarget, or cancel the exact automation-owned block.
+     */
     public synchronized void beforeVanillaInput() {
-        if (owner == null || minecraft.currentScreen == null || minecraft.playerController == null || saved != null) {
+        if (owner == null || minecraft.playerController == null || saved != null) {
             return;
         }
         PlayerControllerMP controller = minecraft.playerController;
@@ -53,7 +56,7 @@ public final class ProgressiveBlockDamageShield {
         if (saved == null) {
             DevelopmentTrace.event(
                 "block-damage-shield",
-                "gui-reset-without-checkpoint",
+                "input-boundary-without-checkpoint",
                 "owner",
                 owner,
                 "screen",
@@ -64,7 +67,7 @@ public final class ProgressiveBlockDamageShield {
         ControllerStateAccess.setHittingBlock(controller, false);
         DevelopmentTrace.event(
             "block-damage-shield",
-            "disarmed-gui-reset",
+            "disarmed-input-boundary",
             "owner",
             owner,
             "screen",
@@ -74,7 +77,7 @@ public final class ProgressiveBlockDamageShield {
             saved.damage);
     }
 
-    /** Runs at client-tick END immediately before the owning backend adds its normal damage tick. */
+    /** Runs at client-tick END immediately before the owning backend adds its one exact damage tick. */
     public synchronized void afterVanillaInput() {
         restoreIfNeeded();
     }
@@ -100,16 +103,11 @@ public final class ProgressiveBlockDamageShield {
 
     private void restoreIfNeeded() {
         if (saved == null || minecraft.playerController == null) return;
-        if (minecraft.currentScreen == null && ControllerStateAccess.isHittingBlock(minecraft.playerController)) {
-            saved = null;
-            DevelopmentTrace.event("block-damage-shield", "vanilla-resumed-after-gui-close", "owner", owner);
-            return;
-        }
         SavedState state = saved;
         saved = null;
         state.restore(minecraft.playerController);
         DevelopmentTrace
-            .event("block-damage-shield", "restored-after-gui-reset", "owner", owner, "damage", state.damage);
+            .event("block-damage-shield", "restored-after-input-boundary", "owner", owner, "damage", state.damage);
     }
 
     private static String requireOwner(String value) {

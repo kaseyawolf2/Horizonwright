@@ -10,7 +10,6 @@ import java.util.concurrent.TimeUnit;
 import net.minecraft.block.Block;
 import net.minecraft.block.material.Material;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.settings.KeyBinding;
 import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.item.ItemStack;
 import net.minecraft.util.MovingObjectPosition;
@@ -35,7 +34,6 @@ import io.github.kaseyawolf2.horizonwright.core.navigation.NavigationRequest;
 import io.github.kaseyawolf2.horizonwright.core.navigation.NavigationState;
 import io.github.kaseyawolf2.horizonwright.core.repair.RepairPolicy;
 import io.github.kaseyawolf2.horizonwright.core.repair.RepairToolSnapshot;
-import io.github.kaseyawolf2.horizonwright.forge.client.AutomationInputHold;
 import io.github.kaseyawolf2.horizonwright.forge.client.ClientBootstrap;
 import io.github.kaseyawolf2.horizonwright.forge.client.MinecraftRuntimeAccess;
 import io.github.kaseyawolf2.horizonwright.forge.client.network.ActionPacketDispatch;
@@ -293,7 +291,6 @@ public final class LiveExcavationBackend implements ExcavationBackend {
         private final ExcavationActionRequest request;
         private final ActionLease lease;
         private final NavigationBackend navigation;
-        private final AutomationInputHold attackInput;
         private final long deadlineNanos;
         private NavigationHandle navigationHandle;
         private Phase phase = Phase.APPROACHING;
@@ -310,7 +307,6 @@ public final class LiveExcavationBackend implements ExcavationBackend {
             this.request = request;
             this.lease = lease;
             this.navigation = navigation;
-            this.attackInput = new AutomationInputHold("excavation:" + request.getRequestId(), new AttackBinding());
             this.deadlineNanos = saturatingAdd(startedAtNanos, ACTION_TIMEOUT_NANOS);
         }
 
@@ -449,7 +445,6 @@ public final class LiveExcavationBackend implements ExcavationBackend {
             phase = Phase.DIGGING;
             detail = "Digging one fingerprint-bound block";
             aimAtTarget();
-            attackInput.hold();
             BlockPosition position = request.getIntent()
                 .getPosition();
             minecraft.playerController.clickBlock(position.getX(), position.getY(), position.getZ(), targetSide());
@@ -484,20 +479,16 @@ public final class LiveExcavationBackend implements ExcavationBackend {
                 return;
             }
             aimAtTarget();
-            attackInput.hold();
             BlockPosition position = request.getIntent()
                 .getPosition();
-            boolean directProgress = minecraft.currentScreen != null || !minecraft.inGameHasFocus;
-            if (directProgress) {
-                minecraft.playerController
-                    .onPlayerDamageBlock(position.getX(), position.getY(), position.getZ(), targetSide());
-            }
+            minecraft.playerController
+                .onPlayerDamageBlock(position.getX(), position.getY(), position.getZ(), targetSide());
             ClientBootstrap.blockDamageShield()
                 .checkpoint();
             trace(
                 "dig-tick",
                 "progressDriver",
-                directProgress ? "horizonwright" : "vanilla-held-input",
+                "horizonwright-exact-target",
                 "screen",
                 minecraft.currentScreen == null ? "none"
                     : minecraft.currentScreen.getClass()
@@ -524,7 +515,6 @@ public final class LiveExcavationBackend implements ExcavationBackend {
             ClientBootstrap.blockDamageShield()
                 .release(request.getRequestId());
             minecraft.playerController.resetBlockRemoving();
-            attackInput.release();
             restoreHotbarSlot();
             guard.quarantine(lease);
             guard.end(lease);
@@ -535,7 +525,6 @@ public final class LiveExcavationBackend implements ExcavationBackend {
             ClientBootstrap.blockDamageShield()
                 .release(request.getRequestId());
             minecraft.playerController.resetBlockRemoving();
-            attackInput.release();
             restoreHotbarSlot();
             phase = Phase.FINISHING;
             detail = "Exact target is air; dispatching the final tool state";
@@ -870,19 +859,6 @@ public final class LiveExcavationBackend implements ExcavationBackend {
                 .getPosition();
             System.arraycopy(extraFields, 0, fields, 10, extraFields.length);
             DevelopmentTrace.event("excavation-live", event, fields);
-        }
-
-        private final class AttackBinding implements AutomationInputHold.Binding {
-
-            @Override
-            public boolean isPressed() {
-                return minecraft.gameSettings.keyBindAttack.getIsKeyPressed();
-            }
-
-            @Override
-            public void setPressed(boolean pressed) {
-                KeyBinding.setKeyBindState(minecraft.gameSettings.keyBindAttack.getKeyCode(), pressed);
-            }
         }
 
         private void aimAtTarget() {
