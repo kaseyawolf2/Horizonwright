@@ -30,6 +30,7 @@ public final class GuiHorizonwrightDashboard extends GuiScreen {
     private static final int PROFILE_ASSETS_TAB_BUTTON = 6;
     private static final int TASKS_BUTTON = 7;
     private static final int OVERVIEW_TAB_BUTTON = 8;
+    private static final int SCHEDULES_BUTTON = 9;
     private static final int RESUME_CHOICE_BUTTON_BASE = 100;
     private static final int RESUME_PREVIOUS_BUTTON = 200;
     private static final int RESUME_NEXT_BUTTON = 201;
@@ -92,7 +93,7 @@ public final class GuiHorizonwrightDashboard extends GuiScreen {
 
         int navigationWidth = panelWidth - 24;
         int tabGap = 4;
-        int tabWidth = (navigationWidth - tabGap * 3) / 4;
+        int tabWidth = (navigationWidth - tabGap * 4) / 5;
         int navigationY = top + 42;
         GuiButton overviewTab = new GuiButton(OVERVIEW_TAB_BUTTON, left + 12, navigationY, tabWidth, 20, "Overview");
         overviewTab.enabled = false;
@@ -100,8 +101,16 @@ public final class GuiHorizonwrightDashboard extends GuiScreen {
         buttonList.add(new GuiButton(TASKS_BUTTON, left + 12 + tabWidth + tabGap, navigationY, tabWidth, 20, "Tasks"));
         buttonList.add(
             new GuiButton(
-                PROFILE_ASSETS_TAB_BUTTON,
+                SCHEDULES_BUTTON,
                 left + 12 + (tabWidth + tabGap) * 2,
+                navigationY,
+                tabWidth,
+                20,
+                "Schedules"));
+        buttonList.add(
+            new GuiButton(
+                PROFILE_ASSETS_TAB_BUTTON,
+                left + 12 + (tabWidth + tabGap) * 3,
                 navigationY,
                 tabWidth,
                 20,
@@ -109,15 +118,15 @@ public final class GuiHorizonwrightDashboard extends GuiScreen {
         buttonList.add(
             new GuiButton(
                 BARITONE_TAB_BUTTON,
-                left + 12 + (tabWidth + tabGap) * 3,
+                left + 12 + (tabWidth + tabGap) * 4,
                 navigationY,
-                navigationWidth - (tabWidth + tabGap) * 3,
+                navigationWidth - (tabWidth + tabGap) * 4,
                 20,
                 "Baritone"));
 
         resumeChoiceButtons.clear();
         for (int index = 0; index < RESUME_CHOICES_PER_PAGE; index++) {
-            GuiButton choice = new GuiButton(
+            GuiButton choice = new GuiHorizonwrightButton(
                 RESUME_CHOICE_BUTTON_BASE + index,
                 left + 42,
                 top + 88 + index * 24,
@@ -153,6 +162,10 @@ public final class GuiHorizonwrightDashboard extends GuiScreen {
         }
         if (button.id == TASKS_BUTTON) {
             mc.displayGuiScreen(new GuiTaskManager(this, runtimeProvider));
+            return;
+        }
+        if (button.id == SCHEDULES_BUTTON) {
+            mc.displayGuiScreen(new GuiScheduleManager(this, runtimeProvider, profileEditorProvider));
             return;
         }
         CurrentRuntimeUiResolver.Resolution resolution = CurrentRuntimeUiResolver.resolve(runtimeProvider);

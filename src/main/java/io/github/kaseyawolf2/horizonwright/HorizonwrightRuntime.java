@@ -280,6 +280,35 @@ public final class HorizonwrightRuntime implements AutoCloseable {
                 0));
     }
 
+    public ScheduleSnapshot updateFarmSchedule(String scheduleId, String plotId, int minimumSeedReserve,
+        long intervalMillis) {
+        ensureOpen();
+        if (intervalMillis < 1L) throw new IllegalArgumentException("farm schedule interval must be positive");
+        return controller.updateSchedule(
+            ScheduleRule.connectedInterval(
+                scheduleId,
+                FarmTask.scheduledPass(plotId, minimumSeedReserve),
+                intervalMillis,
+                intervalMillis,
+                java.util.Collections.<String>emptySet(),
+                0));
+    }
+
+    public ScheduleSnapshot pauseSchedule(String scheduleId) {
+        ensureOpen();
+        return controller.pauseSchedule(scheduleId);
+    }
+
+    public ScheduleSnapshot resumeSchedule(String scheduleId) {
+        ensureOpen();
+        return controller.resumeSchedule(scheduleId);
+    }
+
+    public ScheduleSnapshot removeSchedule(String scheduleId) {
+        ensureOpen();
+        return controller.removeSchedule(scheduleId);
+    }
+
     /** Cancels future runs and any unfinished occurrences that reference a deleted farm plot. */
     public int cancelFarmAutomationForPlot(String plotId) {
         ensureOpen();
@@ -325,6 +354,19 @@ public final class HorizonwrightRuntime implements AutoCloseable {
         ensureOpen();
         requireAutomationAvailable("scheduling new work");
         return controller.submitSchedule(
+            ScheduleRule.worldTimeWindow(
+                scheduleId,
+                SleepTask.scheduled(bedLocationId),
+                12_542,
+                23_461,
+                java.util.Collections.<String>emptySet(),
+                0,
+                false));
+    }
+
+    public ScheduleSnapshot updateNightSleepSchedule(String scheduleId, String bedLocationId) {
+        ensureOpen();
+        return controller.updateSchedule(
             ScheduleRule.worldTimeWindow(
                 scheduleId,
                 SleepTask.scheduled(bedLocationId),

@@ -293,6 +293,48 @@ public class HorizonwrightRuntimeTest {
     }
 
     @Test
+    public void scheduledJobsCanBeEditedPausedResumedAndPermanentlyRemoved() {
+        HorizonwrightRuntime runtime = new HorizonwrightRuntime(
+            new InMemoryActionBroker(),
+            new ActionSessionGuard(),
+            new FixedClock());
+        runtime.scheduleFarm("north-farm", "north-field", 3, 1_800_000L);
+
+        ScheduleSnapshot edited = runtime.updateFarmSchedule("north-farm", "south-field", 7, 600_000L);
+        assertEquals(
+            "south-field",
+            FarmTask.plotId(
+                edited.getRule()
+                    .getTask()));
+        assertEquals(
+            7,
+            FarmTask.minimumSeedReserve(
+                edited.getRule()
+                    .getTask()));
+        assertEquals(
+            600_000L,
+            edited.getRule()
+                .getIntervalMillis());
+        assertEquals(
+            ScheduleState.PAUSED,
+            runtime.pauseSchedule("north-farm")
+                .getState());
+        assertEquals(
+            ScheduleState.ACTIVE,
+            runtime.resumeSchedule("north-farm")
+                .getState());
+
+        runtime.removeSchedule("north-farm");
+
+        assertFalse(
+            runtime.controllerSnapshot()
+                .getScheduler()
+                .findSchedule("north-farm")
+                .isPresent());
+        runtime.close();
+    }
+
+    @Test
     public void deletingAPlotCanCancelItsScheduleAndUnfinishedFarmWork() {
         HorizonwrightRuntime runtime = new HorizonwrightRuntime(
             new InMemoryActionBroker(),

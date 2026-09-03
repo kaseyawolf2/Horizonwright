@@ -345,6 +345,13 @@ public final class TaskOrchestrator implements IHorizonwrightController, ActionR
     }
 
     @Override
+    public ScheduleSnapshot removeSchedule(String scheduleId) {
+        synchronized (this) {
+            return scheduler.remove(scheduleId);
+        }
+    }
+
+    @Override
     public Optional<ScheduleSnapshot> inspectSchedule(String scheduleId) {
         synchronized (this) {
             return scheduler.inspect(scheduleId);

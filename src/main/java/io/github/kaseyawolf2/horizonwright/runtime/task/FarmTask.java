@@ -60,6 +60,19 @@ public final class FarmTask {
         return spec != null && TYPE.equals(spec.getType()) && samePlot(spec.getParameters(), plotId);
     }
 
+    public static String plotId(ScheduledTaskSpec spec) {
+        requireType(spec);
+        return required(
+            spec.getParameters()
+                .get(PLOT_ID),
+            "plot id");
+    }
+
+    public static int minimumSeedReserve(ScheduledTaskSpec spec) {
+        requireType(spec);
+        return minimumSeedReserve(spec.getParameters());
+    }
+
     private static boolean samePlot(Map<String, String> parameters, String plotId) {
         return plotId != null && plotId.trim()
             .equals(parameters.get(PLOT_ID));
@@ -68,6 +81,23 @@ public final class FarmTask {
     private static void requireType(TaskSpec spec) {
         if (spec == null || !TYPE.equals(spec.getType())) {
             throw new IllegalArgumentException("a farm-pass task specification is required");
+        }
+    }
+
+    private static void requireType(ScheduledTaskSpec spec) {
+        if (spec == null || !TYPE.equals(spec.getType())) {
+            throw new IllegalArgumentException("a scheduled farm-pass specification is required");
+        }
+    }
+
+    private static int minimumSeedReserve(Map<String, String> parameters) {
+        String value = required(parameters.get(MINIMUM_SEED_RESERVE), "minimum seed reserve");
+        try {
+            int parsed = Integer.parseInt(value);
+            if (parsed < 0) throw new IllegalArgumentException("minimum seed reserve must not be negative");
+            return parsed;
+        } catch (NumberFormatException failure) {
+            throw new IllegalArgumentException("minimum seed reserve must be a whole number", failure);
         }
     }
 

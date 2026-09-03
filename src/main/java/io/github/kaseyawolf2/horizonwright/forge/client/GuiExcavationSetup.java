@@ -73,7 +73,8 @@ public final class GuiExcavationSetup extends GuiScreen {
         workDamage = field(left + 138, top + 196, 48, "1");
         servicesButton = new GuiButton(SERVICES_BUTTON, left + 282, top + 196, 194, 20, "Services: ON");
         buttonList.add(servicesButton);
-        buttonList.add(new GuiButton(SUBMIT_BUTTON, left + 18, top + 268, panelWidth - 36, 22, "Queue excavation"));
+        buttonList.add(
+            new GuiHorizonwrightButton(SUBMIT_BUTTON, left + 18, top + 268, panelWidth - 36, 22, "Queue excavation"));
         buttonList.add(new GuiButton(BACK_BUTTON, left + panelWidth - 82, top + 296, 70, 20, "Back"));
         populateSavedNames();
     }

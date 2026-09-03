@@ -26,6 +26,15 @@ public final class SleepTask {
         return new ScheduledTaskSpec(TYPE, "Sleep at: " + bed, TaskLane.CHORE, parameters);
     }
 
+    public static String bedLocationId(ScheduledTaskSpec spec) {
+        if (spec == null || !TYPE.equals(spec.getType())) {
+            throw new IllegalArgumentException("a scheduled sleep specification is required");
+        }
+        return required(
+            spec.getParameters()
+                .get(BED_LOCATION_ID));
+    }
+
     static String bedLocationId(TaskSpec spec) {
         if (spec == null || !TYPE.equals(spec.getType())) {
             throw new IllegalArgumentException("a sleep task specification is required");

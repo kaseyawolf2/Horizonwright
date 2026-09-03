@@ -283,6 +283,25 @@ public class TaskSchedulerTest {
     }
 
     @Test
+    public void removedSchedulesDisappearWithoutChangingTheirCompletedRunHistory() {
+        TaskScheduler scheduler = new TaskScheduler();
+        scheduler.submit(interval("editable", 100L, 0L, TaskLane.CHORE, 0));
+        assertEquals(1, evaluate(scheduler, 0L, connected(), false).size());
+
+        ScheduleSnapshot removed = scheduler.remove("editable");
+
+        assertEquals(1L, removed.getTotalRuns());
+        assertFalse(
+            scheduler.inspect("editable")
+                .isPresent());
+        assertTrue(
+            scheduler.snapshot()
+                .getSchedules()
+                .isEmpty());
+        assertTrue(evaluate(scheduler, 1_000L, connected(), false).isEmpty());
+    }
+
+    @Test
     public void rejectsInvalidEnvironmentSnapshotsAndRestoreTargets() {
         assertIllegalArgument(() -> new ScheduleEnvironment(false, false, 1L, Collections.<String>emptySet()));
         assertIllegalArgument(() -> new SchedulerSnapshot(0L, -2L, false, Collections.<ScheduleSnapshot>emptyList()));

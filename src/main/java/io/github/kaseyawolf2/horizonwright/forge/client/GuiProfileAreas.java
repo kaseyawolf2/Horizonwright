@@ -76,9 +76,10 @@ public final class GuiProfileAreas extends GuiScreen {
         restoreCaptureDraft();
         buttonList.add(new GuiButton(FIRST_BUTTON, left + 18, top + 110, 190, 20, "Capture corner 1 here"));
         buttonList.add(new GuiButton(SECOND_BUTTON, left + 232, top + 110, 190, 20, "Capture corner 2 here"));
-        buttonList.add(new GuiButton(SAVE_BUTTON, left + 18, top + 188, panelWidth - 36, 22, "Save work area"));
+        buttonList
+            .add(new GuiHorizonwrightButton(SAVE_BUTTON, left + 18, top + 188, panelWidth - 36, 22, "Save work area"));
         buttonList.add(
-            new GuiButton(
+            new GuiHorizonwrightButton(
                 QUEUE_FARM_BUTTON,
                 left + 18,
                 top + 216,
@@ -86,7 +87,7 @@ public final class GuiProfileAreas extends GuiScreen {
                 22,
                 "Queue one farm pass for this area"));
         buttonList.add(
-            new GuiButton(
+            new GuiHorizonwrightButton(
                 SCHEDULE_FARM_BUTTON,
                 left + 18,
                 top + 244,

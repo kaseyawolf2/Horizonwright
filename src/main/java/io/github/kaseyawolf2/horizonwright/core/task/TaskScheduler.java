@@ -90,6 +90,14 @@ public final class TaskScheduler {
         return record.snapshot();
     }
 
+    public ScheduleSnapshot remove(String scheduleId) {
+        ScheduleRecord record = requireSchedule(scheduleId);
+        ScheduleSnapshot removed = record.snapshot();
+        schedules.remove(record.rule.getId());
+        trace("removed", record);
+        return removed;
+    }
+
     public Optional<ScheduleSnapshot> inspect(String scheduleId) {
         if (scheduleId == null || scheduleId.trim()
             .isEmpty()) {

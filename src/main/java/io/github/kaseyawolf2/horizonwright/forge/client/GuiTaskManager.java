@@ -59,7 +59,7 @@ public final class GuiTaskManager extends GuiScreen {
 
         taskButtons.clear();
         for (int index = 0; index < TASKS_PER_PAGE; index++) {
-            GuiButton button = new GuiButton(
+            GuiButton button = new GuiHorizonwrightButton(
                 TASK_BUTTON_BASE + index,
                 left + 16,
                 top + 42 + index * 24,

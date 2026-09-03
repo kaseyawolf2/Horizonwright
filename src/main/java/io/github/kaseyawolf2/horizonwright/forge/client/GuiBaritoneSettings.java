@@ -83,8 +83,14 @@ public final class GuiBaritoneSettings extends GuiScreen {
         searchField.setFocused(true);
 
         for (int index = 0; index < settingsPerPage; index++) {
-            buttonList
-                .add(new GuiButton(SETTING_BUTTON_BASE + index, left + 12, contentTop + index * 22, listWidth, 20, ""));
+            buttonList.add(
+                new GuiHorizonwrightButton(
+                    SETTING_BUTTON_BASE + index,
+                    left + 12,
+                    contentTop + index * 22,
+                    listWidth,
+                    20,
+                    ""));
         }
 
         int pagerY = contentTop + settingsPerPage * 22 + 4;

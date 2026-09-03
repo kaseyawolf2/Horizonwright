@@ -20,6 +20,7 @@ public final class GuiSavedAreas extends GuiScreen {
     private static final int PREVIOUS_BUTTON = 3;
     private static final int NEXT_BUTTON = 4;
     private static final int DELETE_BUTTON = 5;
+    private static final int EDIT_BUTTON = 6;
     private static final int AREA_BUTTON_BASE = 100;
     private static final int AREAS_PER_PAGE = 6;
 
@@ -30,6 +31,7 @@ public final class GuiSavedAreas extends GuiScreen {
     private GuiButton previousButton;
     private GuiButton nextButton;
     private GuiButton deleteButton;
+    private GuiButton editButton;
     private List<NamedArea> areas = Collections.emptyList();
     private int left;
     private int top;
@@ -58,7 +60,7 @@ public final class GuiSavedAreas extends GuiScreen {
         reload();
         areaButtons.clear();
         for (int index = 0; index < AREAS_PER_PAGE; index++) {
-            GuiButton button = new GuiButton(
+            GuiButton button = new GuiHorizonwrightButton(
                 AREA_BUTTON_BASE + index,
                 left + 18,
                 top + 44 + index * 25,
@@ -72,7 +74,9 @@ public final class GuiSavedAreas extends GuiScreen {
         nextButton = new GuiButton(NEXT_BUTTON, left + 100, top + 202, 76, 20, "Next");
         buttonList.add(previousButton);
         buttonList.add(nextButton);
-        deleteButton = new GuiButton(DELETE_BUTTON, left + 182, top + 202, 120, 20, "Delete selected");
+        editButton = new GuiButton(EDIT_BUTTON, left + 182, top + 202, 88, 20, "Edit selected");
+        buttonList.add(editButton);
+        deleteButton = new GuiButton(DELETE_BUTTON, left + 276, top + 202, 120, 20, "Delete selected");
         buttonList.add(deleteButton);
         buttonList.add(new GuiButton(CLOSE_BUTTON, left + 18, top + 270, 70, 20, "Close"));
         buttonList.add(new GuiButton(BACK_BUTTON, left + panelWidth - 88, top + 270, 70, 20, "Back"));
@@ -90,6 +94,9 @@ public final class GuiSavedAreas extends GuiScreen {
             page++;
         } else if (button.id == DELETE_BUTTON) {
             deleteSelectedArea();
+        } else if (button.id == EDIT_BUTTON) {
+            NamedArea selected = selectedArea();
+            if (selected != null) mc.displayGuiScreen(new GuiSavedAreaEditor(this, editorProvider, selected));
         } else if (button.id >= AREA_BUTTON_BASE && button.id < AREA_BUTTON_BASE + AREAS_PER_PAGE) {
             int index = page * AREAS_PER_PAGE + button.id - AREA_BUTTON_BASE;
             if (index < areas.size()) {
@@ -145,6 +152,7 @@ public final class GuiSavedAreas extends GuiScreen {
         previousButton.enabled = page > 0;
         nextButton.enabled = page + 1 < pages;
         deleteButton.enabled = selectedAreaId != null;
+        editButton.enabled = selectedAreaId != null;
         deleteButton.displayString = selectedAreaId != null && selectedAreaId.equals(pendingDeleteAreaId)
             ? "Confirm delete"
             : "Delete selected";
@@ -177,6 +185,13 @@ public final class GuiSavedAreas extends GuiScreen {
             detail = "Area was not deleted: " + (failure.getMessage() == null ? failure.getClass()
                 .getSimpleName() : failure.getMessage());
         }
+    }
+
+    private NamedArea selectedArea() {
+        if (selectedAreaId == null) return null;
+        for (NamedArea area : areas) if (area.getId()
+            .equals(selectedAreaId)) return area;
+        return null;
     }
 
     private static String shortBounds(NamedArea area) {

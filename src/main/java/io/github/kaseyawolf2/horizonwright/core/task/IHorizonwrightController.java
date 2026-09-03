@@ -34,6 +34,9 @@ public interface IHorizonwrightController {
 
     ScheduleSnapshot cancelSchedule(String scheduleId);
 
+    /** Permanently removes a schedule while leaving already-created task history intact. */
+    ScheduleSnapshot removeSchedule(String scheduleId);
+
     Optional<ScheduleSnapshot> inspectSchedule(String scheduleId);
 
     TaskControllerState exportState();
