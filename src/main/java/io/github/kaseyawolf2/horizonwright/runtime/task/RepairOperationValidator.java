@@ -19,8 +19,9 @@ final class RepairOperationValidator {
             throw new IllegalArgumentException("a predicted repair transaction is required");
         }
         if (!observation.isRecognizedLayout()
-            || (observation.getStationSlotCount() != 4 && observation.getStationSlotCount() != 5)) {
-            throw new IllegalArgumentException("repair prediction is not from a pinned Tool Station or Tool Forge");
+            || (observation.getStationSlotCount() != 4 && observation.getStationSlotCount() != 5
+                && observation.getStationSlotCount() != 10)) {
+            throw new IllegalArgumentException("repair prediction is not from a pinned Tinkers repair container");
         }
         if (observation.getInputTool()
             .getReservedInventorySlot() != reservedInventorySlot

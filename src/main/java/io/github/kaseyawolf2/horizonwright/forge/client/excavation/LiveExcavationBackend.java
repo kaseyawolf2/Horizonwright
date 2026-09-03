@@ -492,6 +492,8 @@ public final class LiveExcavationBackend implements ExcavationBackend {
                 minecraft.playerController
                     .onPlayerDamageBlock(position.getX(), position.getY(), position.getZ(), targetSide());
             }
+            ClientBootstrap.blockDamageShield()
+                .checkpoint();
             trace(
                 "dig-tick",
                 "progressDriver",

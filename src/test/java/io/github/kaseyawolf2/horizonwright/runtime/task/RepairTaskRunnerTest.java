@@ -210,6 +210,31 @@ public class RepairTaskRunnerTest {
     }
 
     @Test
+    public void exactRepairPreviewWinsWhenStationMutatesItsInputDamage() {
+        harness = new Harness();
+        harness.backend.previewMutatedInput = true;
+        TaskSpec spec = taskSpec("repair-mutated-preview-input");
+        harness.controller.submit(spec);
+
+        TaskSnapshot prepared = task(harness.controller.tick(), spec.getId());
+        assertEquals(TaskState.RUNNING, prepared.getState());
+        assertEquals(
+            "PREPARED",
+            prepared.getCheckpoint()
+                .getValues()
+                .get("phase"));
+
+        TaskSnapshot submitted = task(harness.controller.tick(), spec.getId());
+        assertEquals(TaskState.RUNNING, submitted.getState());
+        assertEquals(
+            "AWAITING_CONFIRMATION",
+            submitted.getCheckpoint()
+                .getValues()
+                .get("phase"));
+        assertEquals(1, harness.backend.submissions);
+    }
+
+    @Test
     public void rejectionAndMissingMaterialNeverReachAutomaticReplay() {
         harness = new Harness();
         TaskSpec rejected = taskSpec("repair-rejected");
@@ -334,6 +359,7 @@ public class RepairTaskRunnerTest {
         private boolean stationOpen = true;
         private boolean automatedStationAccess;
         private boolean automatedInputStaging;
+        private boolean previewMutatedInput;
         private int submissions;
         private int stationAccessSubmissions;
         private int inputStagingSubmissions;
@@ -372,11 +398,13 @@ public class RepairTaskRunnerTest {
 
         @Override
         public RepairObservationResult observe(RepairObservationRequest request) {
-            RepairToolSnapshot input = repaired ? repairedTool() : damagedTool();
+            RepairToolSnapshot input = repaired ? repairedTool()
+                : previewMutatedInput ? new RepairToolSnapshot("pick-stable", 1, 1000, RESERVED_INVENTORY_SLOT)
+                    : damagedTool();
             if (repaired) return observation(request, input, null, 0, null);
             RepairToolSnapshot predicted = new RepairToolSnapshot(
                 "pick-stable",
-                changedPrediction ? 450 : 400,
+                changedPrediction ? 450 : previewMutatedInput ? 0 : 400,
                 1000,
                 RESERVED_INVENTORY_SLOT);
             ContainerSnapshot before = snapshot(10L, TOOL, MATERIAL, null, null, null, null);

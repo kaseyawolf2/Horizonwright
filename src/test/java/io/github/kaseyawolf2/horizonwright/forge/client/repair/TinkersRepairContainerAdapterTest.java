@@ -28,6 +28,12 @@ public class TinkersRepairContainerAdapterTest {
         assertEquals(4, station.getStationSlotCount());
         assertEquals(TinkersStationKind.TOOL_FORGE, forge.getKind());
         assertEquals(5, forge.getStationSlotCount());
+        TinkersRepairContainerAdapter.Layout table = TinkersRepairContainerAdapter
+            .layoutFor("tconstruct.tools.inventory.CraftingStationContainer");
+        assertEquals(TinkersStationKind.TINKER_TABLE, table.getKind());
+        assertEquals(10, table.getStationSlotCount());
+        assertEquals(5, table.getInputSlot());
+        assertEquals(46, table.getChestSlotStart());
         assertNull(TinkersRepairContainerAdapter.layoutFor("addon.SubclassedToolStationContainer"));
     }
 
@@ -42,6 +48,8 @@ public class TinkersRepairContainerAdapterTest {
         assertEquals(31, TinkersRepairContainerAdapter.containerSlotForPlayerInventory(5, 35));
         assertEquals(32, TinkersRepairContainerAdapter.containerSlotForPlayerInventory(5, 0));
         assertEquals(40, TinkersRepairContainerAdapter.containerSlotForPlayerInventory(5, 8));
+        assertEquals(10, TinkersRepairContainerAdapter.containerSlotForPlayerInventory(10, 9));
+        assertEquals(37, TinkersRepairContainerAdapter.containerSlotForPlayerInventory(10, 0));
     }
 
     @Test

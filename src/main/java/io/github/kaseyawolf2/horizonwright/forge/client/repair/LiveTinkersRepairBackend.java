@@ -142,10 +142,10 @@ public final class LiveTinkersRepairBackend implements RepairBackend {
         if (isRepairPreviewReady(inspection)) return null;
 
         int toolSource = -1;
-        ItemStack stationTool = slot(container, 1).getStack();
+        ItemStack stationTool = slot(container, layout.getInputSlot()).getStack();
         if (stationTool == null) {
             toolSource = TinkersRepairContainerAdapter
-                .containerSlotForPlayerInventory(layout.getStationSlotCount(), request.getReservedInventorySlot());
+                .containerSlotForPlayerInventory(layout, request.getReservedInventorySlot());
             if (slot(container, toolSource).getStack() == null) {
                 throw new IllegalStateException("reserved inventory slot has no damaged tool to stage");
             }
@@ -154,19 +154,15 @@ public final class LiveTinkersRepairBackend implements RepairBackend {
             adapter.readTool(stationTool, request.getReservedInventorySlot());
         }
 
-        int materialTarget = approvedStationMaterialSlot(container, layout.getStationSlotCount(), loadout);
+        int materialTarget = approvedStationMaterialSlot(container, layout, loadout);
         int materialSource = -1;
         if (materialTarget < 0) {
-            materialTarget = firstEmptyMaterialSlot(container, layout.getStationSlotCount());
+            materialTarget = firstEmptyMaterialSlot(container, layout);
             if (materialTarget < 0) {
                 throw new IllegalStateException(
                     "repair station has no empty material slot and no valid repair preview");
             }
-            materialSource = approvedMaterialSource(
-                container,
-                layout.getStationSlotCount(),
-                request.getReservedInventorySlot(),
-                loadout);
+            materialSource = approvedMaterialSource(container, layout, request.getReservedInventorySlot(), loadout);
             if (materialSource < 0) {
                 throw new IllegalStateException(
                     "no inventory stack matches the registered REPAIR_MATERIAL reservation; inventory was not changed");
@@ -249,7 +245,7 @@ public final class LiveTinkersRepairBackend implements RepairBackend {
         if (minecraft.thePlayer.inventory.getItemStack() != null) {
             throw new IllegalStateException("repair observation requires an empty cursor");
         }
-        if (((net.minecraft.inventory.Slot) container.inventorySlots.get(1)).getStack() == null) {
+        if (slot(container, layout.getInputSlot()).getStack() == null) {
             return observeReturnedTool(request, container, loadout, layout);
         }
         String transactionId = request.getTaskId() + "-repair-r" + request.getCheckpointRevision();
@@ -282,7 +278,7 @@ public final class LiveTinkersRepairBackend implements RepairBackend {
 
     private RepairObservationResult observeReturnedTool(RepairObservationRequest request, Container container,
         NamedLoadout loadout, TinkersRepairContainerAdapter.Layout layout) {
-        if (((net.minecraft.inventory.Slot) container.inventorySlots.get(0)).getStack() != null) {
+        if (slot(container, layout.getOutputSlot()).getStack() != null) {
             throw new IllegalStateException("station output exists without a corresponding input tool");
         }
         ItemStack tool = minecraft.thePlayer.inventory.getStackInSlot(request.getReservedInventorySlot());
@@ -297,8 +293,7 @@ public final class LiveTinkersRepairBackend implements RepairBackend {
             request.getStationId(),
             container.windowId,
             layout.getStationSlotCount(),
-            TinkersRepairContainerAdapter
-                .containerSlotForPlayerInventory(layout.getStationSlotCount(), request.getReservedInventorySlot()),
+            TinkersRepairContainerAdapter.containerSlotForPlayerInventory(layout, request.getReservedInventorySlot()),
             java.util.Collections.<Integer>emptyList(),
             true,
             toolEvidence,
@@ -392,12 +387,20 @@ public final class LiveTinkersRepairBackend implements RepairBackend {
         return evidence.getPredictedOutput() != null && evidence.getPredictedMaterialConsumed() > 0;
     }
 
-    private int approvedMaterialSource(Container container, int stationSlots, int reservedInventorySlot,
-        NamedLoadout loadout) {
+    private int approvedMaterialSource(Container container, TinkersRepairContainerAdapter.Layout layout,
+        int reservedInventorySlot, NamedLoadout loadout) {
+        if (layout.getChestSlotStart() >= 0) {
+            int chestSource = approvedMaterialInRange(
+                container,
+                layout.getChestSlotStart(),
+                container.inventorySlots.size(),
+                loadout,
+                "attached-chest");
+            if (chestSource >= 0) return chestSource;
+        }
         for (int inventorySlot = 0; inventorySlot < 36; inventorySlot++) {
             if (inventorySlot == reservedInventorySlot) continue;
-            int containerSlot = TinkersRepairContainerAdapter
-                .containerSlotForPlayerInventory(stationSlots, inventorySlot);
+            int containerSlot = TinkersRepairContainerAdapter.containerSlotForPlayerInventory(layout, inventorySlot);
             ItemStack stack = slot(container, containerSlot).getStack();
             ItemFingerprint fingerprint = snapshots.fingerprint(stack);
             if (fingerprint == null) continue;
@@ -421,8 +424,33 @@ public final class LiveTinkersRepairBackend implements RepairBackend {
         return -1;
     }
 
-    private int approvedStationMaterialSlot(Container container, int stationSlots, NamedLoadout loadout) {
-        for (int containerSlot = 2; containerSlot < stationSlots; containerSlot++) {
+    private int approvedMaterialInRange(Container container, int start, int end, NamedLoadout loadout, String source) {
+        for (int containerSlot = start; containerSlot < end; containerSlot++) {
+            ItemFingerprint fingerprint = snapshots.fingerprint(slot(container, containerSlot).getStack());
+            if (fingerprint == null) continue;
+            for (LoadoutReservation reservation : loadout.getReservations()) {
+                if (reservation.getRole() == LoadoutRole.REPAIR_MATERIAL && reservation.matches(fingerprint)) {
+                    DevelopmentTrace.event(
+                        "repair-input-staging",
+                        "material-selected",
+                        "source",
+                        source,
+                        "containerSlot",
+                        containerSlot,
+                        "item",
+                        fingerprint,
+                        "reservation",
+                        reservation.getId());
+                    return containerSlot;
+                }
+            }
+        }
+        return -1;
+    }
+
+    private int approvedStationMaterialSlot(Container container, TinkersRepairContainerAdapter.Layout layout,
+        NamedLoadout loadout) {
+        for (int containerSlot : layout.getMaterialSlots()) {
             ItemFingerprint fingerprint = snapshots.fingerprint(slot(container, containerSlot).getStack());
             if (fingerprint == null) continue;
             for (LoadoutReservation reservation : loadout.getReservations()) {
@@ -443,9 +471,9 @@ public final class LiveTinkersRepairBackend implements RepairBackend {
         return -1;
     }
 
-    private static int firstEmptyMaterialSlot(Container container, int stationSlots) {
-        for (int slot = 2; slot < stationSlots; slot++) {
-            if (slot(container, slot).getStack() == null) return slot;
+    private static int firstEmptyMaterialSlot(Container container, TinkersRepairContainerAdapter.Layout layout) {
+        for (int materialSlot : layout.getMaterialSlots()) {
+            if (slot(container, materialSlot).getStack() == null) return materialSlot;
         }
         return -1;
     }
@@ -551,7 +579,7 @@ public final class LiveTinkersRepairBackend implements RepairBackend {
             this.materialTarget = materialTarget;
             Container container = minecraft.thePlayer.openContainer;
             windowId = container.windowId;
-            ItemStack toolStack = toolSource < 0 ? slot(container, 1).getStack()
+            ItemStack toolStack = toolSource < 0 ? slot(container, layout.getInputSlot()).getStack()
                 : slot(container, toolSource).getStack();
             tool = snapshots.fingerprint(toolStack);
             material = snapshots
@@ -648,9 +676,9 @@ public final class LiveTinkersRepairBackend implements RepairBackend {
                     break;
                 case PLACE_TOOL:
                     if (!clickSubmitted) {
-                        dispatch(1, "Placing the damaged tool in the Tool Station input");
+                        dispatch(layout.getInputSlot(), "Placing the damaged tool in the Tinkers repair input");
                     } else if (settled() && minecraft.thePlayer.inventory.getItemStack() == null
-                        && tool.equals(snapshots.fingerprint(slot(container, 1).getStack()))) {
+                        && tool.equals(snapshots.fingerprint(slot(container, layout.getInputSlot()).getStack()))) {
                             next(
                                 materialSource < 0 ? Phase.WAIT_FOR_PREVIEW : Phase.PICK_UP_MATERIAL,
                                 materialSource < 0 ? "Damaged tool staged; waiting for repair preview"
@@ -1116,12 +1144,12 @@ public final class LiveTinkersRepairBackend implements RepairBackend {
             ItemStack output = minecraft.thePlayer.inventory.getStackInSlot(reserved);
             if (output == null) throw new IllegalStateException("reserved inventory slot has no repaired tool");
             RepairToolSnapshot outputTool = adapter.readTool(output, reserved);
-            int stationSlots = stationSlotCount(expected.getContainerType());
+            TinkersRepairContainerAdapter.Layout layout = stationLayout(expected.getContainerType());
             int consumed = consumedMaterials(
                 clicks.get(0)
                     .getExpectedBefore(),
                 expected,
-                stationSlots);
+                layout);
             RepairActionConfirmation confirmation = new RepairActionConfirmation(
                 request.getTransactionFingerprint(),
                 outputTool,
@@ -1149,15 +1177,16 @@ public final class LiveTinkersRepairBackend implements RepairBackend {
             return confirmation;
         }
 
-        private static int stationSlotCount(String containerType) {
+        private static TinkersRepairContainerAdapter.Layout stationLayout(String containerType) {
             TinkersRepairContainerAdapter.Layout layout = TinkersRepairContainerAdapter.layoutFor(containerType);
             if (layout == null) throw new IllegalStateException("repair container type is no longer recognized");
-            return layout.getStationSlotCount();
+            return layout;
         }
 
-        private static int consumedMaterials(ContainerSnapshot before, ContainerSnapshot after, int stationSlots) {
+        private static int consumedMaterials(ContainerSnapshot before, ContainerSnapshot after,
+            TinkersRepairContainerAdapter.Layout layout) {
             int consumed = 0;
-            for (int slot = 2; slot < stationSlots; slot++) {
+            for (int slot : layout.getMaterialSlots()) {
                 int beforeCount = count(
                     before.getSlots()
                         .get(slot));

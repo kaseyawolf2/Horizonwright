@@ -14,6 +14,7 @@ public final class ProgressiveBlockDamageShield {
     private final Minecraft minecraft;
     private String owner;
     private SavedState saved;
+    private SavedState lastKnown;
 
     public ProgressiveBlockDamageShield(Minecraft minecraft) {
         if (minecraft == null) throw new IllegalArgumentException("minecraft must not be null");
@@ -26,6 +27,7 @@ public final class ProgressiveBlockDamageShield {
             throw new IllegalStateException("progressive block damage is already owned by " + owner);
         }
         owner = normalized;
+        lastKnown = null;
         DevelopmentTrace.event("block-damage-shield", "acquired", "owner", owner);
     }
 
@@ -38,6 +40,7 @@ public final class ProgressiveBlockDamageShield {
         restoreIfNeeded();
         DevelopmentTrace.event("block-damage-shield", "released", "owner", owner);
         owner = null;
+        lastKnown = null;
     }
 
     /** Runs at client-tick START, before vanilla turns an open screen into a cancel-dig. */
@@ -46,8 +49,18 @@ public final class ProgressiveBlockDamageShield {
             return;
         }
         PlayerControllerMP controller = minecraft.playerController;
-        if (!ControllerStateAccess.isHittingBlock(controller)) return;
-        saved = new SavedState(controller);
+        saved = ControllerStateAccess.isHittingBlock(controller) ? new SavedState(controller) : lastKnown;
+        if (saved == null) {
+            DevelopmentTrace.event(
+                "block-damage-shield",
+                "gui-reset-without-checkpoint",
+                "owner",
+                owner,
+                "screen",
+                minecraft.currentScreen.getClass()
+                    .getSimpleName());
+            return;
+        }
         ControllerStateAccess.setHittingBlock(controller, false);
         DevelopmentTrace.event(
             "block-damage-shield",
@@ -64,6 +77,25 @@ public final class ProgressiveBlockDamageShield {
     /** Runs at client-tick END immediately before the owning backend adds its normal damage tick. */
     public synchronized void afterVanillaInput() {
         restoreIfNeeded();
+    }
+
+    /** Records the active controller state after Horizonwright advances block damage. */
+    public synchronized void checkpoint() {
+        if (owner == null || minecraft.playerController == null) return;
+        if (ControllerStateAccess.isHittingBlock(minecraft.playerController)) {
+            lastKnown = new SavedState(minecraft.playerController);
+            DevelopmentTrace.event(
+                "block-damage-shield",
+                "checkpoint",
+                "owner",
+                owner,
+                "damage",
+                lastKnown.damage,
+                "screen",
+                minecraft.currentScreen == null ? "none"
+                    : minecraft.currentScreen.getClass()
+                        .getSimpleName());
+        }
     }
 
     private void restoreIfNeeded() {

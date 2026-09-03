@@ -44,6 +44,9 @@ final class TinkersRepairTransactionPredictor {
         }
         TinkersRepairContainerEvidence evidence = inspection.getEvidence()
             .get();
+        TinkersRepairContainerAdapter.Layout layout = TinkersRepairContainerAdapter.layoutFor(
+            container.getClass()
+                .getName());
         return predictRecognized(
             container,
             playerInventory,
@@ -51,14 +54,30 @@ final class TinkersRepairTransactionPredictor {
             loadout,
             transactionId,
             actionEpoch,
-            evidence);
+            evidence,
+            layout);
     }
 
     Prediction predictRecognized(Container container, InventoryPlayer playerInventory, int reservedInventorySlot,
         NamedLoadout loadout, String transactionId, long actionEpoch, TinkersRepairContainerEvidence evidence) {
+        return predictRecognized(
+            container,
+            playerInventory,
+            reservedInventorySlot,
+            loadout,
+            transactionId,
+            actionEpoch,
+            evidence,
+            TinkersRepairContainerAdapter.layoutForStationSlotCount(evidence.getStationSlotCount()));
+    }
+
+    private Prediction predictRecognized(Container container, InventoryPlayer playerInventory,
+        int reservedInventorySlot, NamedLoadout loadout, String transactionId, long actionEpoch,
+        TinkersRepairContainerEvidence evidence, TinkersRepairContainerAdapter.Layout layout) {
         if (container == null || playerInventory == null
             || loadout == null
             || evidence == null
+            || layout == null
             || evidence.getInputTool()
                 .getReservedInventorySlot() != reservedInventorySlot) {
             throw new IllegalArgumentException("recognized repair evidence does not match the prediction request");
@@ -79,13 +98,13 @@ final class TinkersRepairTransactionPredictor {
             return Prediction.noOperation(evidence);
         }
 
-        List<ItemStack> materials = materialStacks(container, evidence.getStationSlotCount());
+        List<ItemStack> materials = materialStacks(container, layout);
         List<Integer> removals = TinkersRepairContainerAdapter
-            .predictedMaterialRemovals(slot(container, 0).getStack(), materials);
+            .predictedMaterialRemovals(slot(container, layout.getOutputSlot()).getStack(), materials);
         List<Integer> approvedMaterialSlots = new ArrayList<>();
         for (int index = 0; index < materials.size(); index++) {
             if (removals.get(index) == 0) continue;
-            int containerSlot = index + 2;
+            int containerSlot = layout.getMaterialSlots()[index];
             requireReservation(
                 loadout,
                 LoadoutRole.REPAIR_MATERIAL,
@@ -95,15 +114,16 @@ final class TinkersRepairTransactionPredictor {
             approvedMaterialSlots.add(containerSlot);
         }
 
-        ItemStack output = TinkersRepairContainerAdapter.finalizedOutput(slot(container, 0).getStack(), materials);
+        ItemStack output = TinkersRepairContainerAdapter
+            .finalizedOutput(slot(container, layout.getOutputSlot()).getStack(), materials);
         ItemFingerprint outputItem = snapshots.fingerprint(output);
         List<ItemFingerprint> afterTakeSlots = new ArrayList<>(initial.getSlots());
-        afterTakeSlots.set(0, null);
-        afterTakeSlots.set(1, null);
+        afterTakeSlots.set(layout.getOutputSlot(), null);
+        afterTakeSlots.set(layout.getInputSlot(), null);
         for (int index = 0; index < removals.size(); index++) {
             int amount = removals.get(index);
             if (amount == 0) continue;
-            int containerSlot = index + 2;
+            int containerSlot = layout.getMaterialSlots()[index];
             afterTakeSlots.set(containerSlot, reduced(afterTakeSlots.get(containerSlot), amount));
         }
         ContainerSnapshot afterTake = snapshot(initial, 1L, afterTakeSlots, outputItem);
@@ -111,7 +131,14 @@ final class TinkersRepairTransactionPredictor {
         afterReturnSlots.set(evidence.getReservedContainerSlot(), outputItem);
         ContainerSnapshot afterReturn = snapshot(initial, 2L, afterReturnSlots, null);
         List<VerifiedContainerClick> clicks = new ArrayList<>();
-        clicks.add(new VerifiedContainerClick(transactionId + "-take-output", 0, 0, 0, initial, afterTake));
+        clicks.add(
+            new VerifiedContainerClick(
+                transactionId + "-take-output",
+                layout.getOutputSlot(),
+                0,
+                0,
+                initial,
+                afterTake));
         clicks.add(
             new VerifiedContainerClick(
                 transactionId + "-return-tool",
@@ -126,10 +153,10 @@ final class TinkersRepairTransactionPredictor {
             new ContainerTransaction(transactionId, actionEpoch, clicks));
     }
 
-    private static List<ItemStack> materialStacks(Container container, int stationSlotCount) {
+    private static List<ItemStack> materialStacks(Container container, TinkersRepairContainerAdapter.Layout layout) {
         List<ItemStack> result = new ArrayList<>();
-        for (int slot = 2; slot < stationSlotCount; slot++) {
-            ItemStack stack = slot(container, slot).getStack();
+        for (int materialSlot : layout.getMaterialSlots()) {
+            ItemStack stack = slot(container, materialSlot).getStack();
             result.add(stack == null ? null : stack.copy());
         }
         return result;

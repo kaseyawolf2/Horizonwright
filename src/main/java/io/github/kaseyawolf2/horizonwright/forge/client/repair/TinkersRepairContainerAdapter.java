@@ -1,5 +1,6 @@
 package io.github.kaseyawolf2.horizonwright.forge.client.repair;
 
+import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
@@ -18,16 +19,18 @@ import net.minecraft.item.ItemStack;
 import net.minecraft.nbt.NBTBase;
 import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.nbt.NBTTagList;
+import net.minecraft.tileentity.TileEntity;
 
 import io.github.kaseyawolf2.horizonwright.core.container.ItemFingerprint;
 import io.github.kaseyawolf2.horizonwright.core.repair.RepairToolSnapshot;
 import io.github.kaseyawolf2.horizonwright.forge.client.repair.TinkersRepairContainerInspection.Status;
 
-/** Reflection-isolated adapter for TConstruct 1.14.93-GTNH Tool Station and Tool Forge layouts. */
+/** Reflection-isolated adapter for the pinned TConstruct repair-capable layouts. */
 public final class TinkersRepairContainerAdapter {
 
     static final String TOOL_STATION_CONTAINER = "tconstruct.tools.inventory.ToolStationContainer";
     static final String TOOL_FORGE_CONTAINER = "tconstruct.tools.inventory.ToolForgeContainer";
+    static final String CRAFTING_STATION_CONTAINER = "tconstruct.tools.inventory.CraftingStationContainer";
     private static final int PLAYER_SLOT_COUNT = 36;
 
     public TinkersRepairContainerInspection inspect(Container container, InventoryPlayer playerInventory,
@@ -43,28 +46,28 @@ public final class TinkersRepairContainerAdapter {
         if (layout == null) {
             return TinkersRepairContainerInspection.rejected(
                 Status.NOT_TINKERS_REPAIR_CONTAINER,
-                "open container is not the pinned TConstruct Tool Station or Tool Forge");
+                "open container is not a pinned TConstruct repair container");
         }
         try {
             validateLayout(container, playerInventory, layout);
-            ItemStack input = slot(container, 1).getStack();
+            ItemStack input = slot(container, layout.inputSlot).getStack();
             if (input == null) {
                 throw new IllegalStateException("recognized repair container has no input tool in semantic slot 1");
             }
             RepairToolSnapshot toolEvidence = readTool(input, reservedInventorySlot);
             List<ItemFingerprint> materials = new ArrayList<>();
             List<ItemStack> materialStacks = new ArrayList<>();
-            for (int index = 2; index < layout.stationSlotCount; index++) {
+            for (int index : layout.materialSlots) {
                 ItemStack material = slot(container, index).getStack();
                 materials.add(material == null ? null : fingerprint(material));
                 materialStacks.add(material);
             }
-            ItemStack finalizedOutput = finalizedOutput(slot(container, 0).getStack(), materialStacks);
+            ItemStack finalizedOutput = finalizedOutput(slot(container, layout.outputSlot).getStack(), materialStacks);
             RepairToolSnapshot predictedOutput = finalizedOutput == null ? null
                 : readTool(finalizedOutput, reservedInventorySlot);
             int predictedMaterialConsumed = finalizedOutput == null ? 0
-                : predictedMaterialConsumed(slot(container, 0).getStack(), materialStacks);
-            int reservedContainerSlot = containerSlotForPlayerInventory(layout.stationSlotCount, reservedInventorySlot);
+                : predictedMaterialConsumed(slot(container, layout.outputSlot).getStack(), materialStacks);
+            int reservedContainerSlot = containerSlotForPlayerInventory(layout, reservedInventorySlot);
             return TinkersRepairContainerInspection.recognized(
                 new TinkersRepairContainerEvidence(
                     layout.kind,
@@ -86,21 +89,57 @@ public final class TinkersRepairContainerAdapter {
 
     static Layout layoutFor(String className) {
         if (TOOL_STATION_CONTAINER.equals(className)) {
-            return new Layout(TinkersStationKind.TOOL_STATION, 4);
+            return Layout.station(TinkersStationKind.TOOL_STATION, 4);
         }
         if (TOOL_FORGE_CONTAINER.equals(className)) {
-            return new Layout(TinkersStationKind.TOOL_FORGE, 5);
+            return Layout.station(TinkersStationKind.TOOL_FORGE, 5);
+        }
+        if (CRAFTING_STATION_CONTAINER.equals(className)) {
+            return new Layout(TinkersStationKind.TINKER_TABLE, 10, 0, 5, new int[] { 1, 2, 3, 4, 6, 7, 8, 9 }, 10, 46);
         }
         return null;
     }
 
+    static Layout layoutForStationSlotCount(int stationSlotCount) {
+        if (stationSlotCount == 4) return Layout.station(TinkersStationKind.TOOL_STATION, 4);
+        if (stationSlotCount == 5) return Layout.station(TinkersStationKind.TOOL_FORGE, 5);
+        if (stationSlotCount == 10) return layoutFor(CRAFTING_STATION_CONTAINER);
+        return null;
+    }
+
+    static boolean belongsToTile(Container container, TileEntity tile) {
+        if (container == null || tile == null) return false;
+        Layout layout = layoutFor(
+            container.getClass()
+                .getName());
+        if (layout == null) return false;
+        if (layout.kind != TinkersStationKind.TINKER_TABLE) {
+            return !container.inventorySlots.isEmpty() && slot(container, 0).inventory == tile;
+        }
+        try {
+            Field logic = container.getClass()
+                .getField("logic");
+            return logic.get(container) == tile;
+        } catch (NoSuchFieldException | IllegalAccessException failure) {
+            throw new IllegalStateException("could not bind the open Tinker Table to its saved block", failure);
+        }
+    }
+
     static int containerSlotForPlayerInventory(int stationSlotCount, int playerInventorySlot) {
-        if ((stationSlotCount != 4 && stationSlotCount != 5) || playerInventorySlot < 0
+        if ((stationSlotCount != 4 && stationSlotCount != 5 && stationSlotCount != 10) || playerInventorySlot < 0
             || playerInventorySlot >= PLAYER_SLOT_COUNT) {
             throw new IllegalArgumentException("unsupported station slot count or player inventory slot");
         }
         return playerInventorySlot < 9 ? stationSlotCount + 27 + playerInventorySlot
             : stationSlotCount + playerInventorySlot - 9;
+    }
+
+    static int containerSlotForPlayerInventory(Layout layout, int playerInventorySlot) {
+        if (layout == null || playerInventorySlot < 0 || playerInventorySlot >= PLAYER_SLOT_COUNT) {
+            throw new IllegalArgumentException("layout and player inventory slot are required");
+        }
+        return playerInventorySlot < 9 ? layout.playerSlotStart + 27 + playerInventorySlot
+            : layout.playerSlotStart + playerInventorySlot - 9;
     }
 
     static Layout requirePinnedLayout(Container container, InventoryPlayer playerInventory) {
@@ -111,7 +150,7 @@ public final class TinkersRepairContainerAdapter {
             container.getClass()
                 .getName());
         if (layout == null) {
-            throw new IllegalStateException("open container is not the pinned Tool Station or Tool Forge");
+            throw new IllegalStateException("open container is not a pinned TConstruct repair container");
         }
         validateLayout(container, playerInventory, layout);
         return layout;
@@ -210,19 +249,19 @@ public final class TinkersRepairContainerAdapter {
     }
 
     private static void validateLayout(Container container, InventoryPlayer playerInventory, Layout layout) {
-        int expected = layout.stationSlotCount + PLAYER_SLOT_COUNT;
-        if (container.inventorySlots.size() != expected) {
-            throw new IllegalStateException(
-                "pinned " + layout.kind + " layout requires " + expected + " container slots");
+        int expectedMinimum = layout.playerSlotStart + PLAYER_SLOT_COUNT;
+        if (container.inventorySlots.size() < expectedMinimum
+            || layout.chestSlotStart < 0 && container.inventorySlots.size() != expectedMinimum) {
+            throw new IllegalStateException("pinned " + layout.kind + " layout has an unexpected container slot count");
         }
-        for (int index = 0; index < expected; index++) {
+        for (int index = 0; index < container.inventorySlots.size(); index++) {
             Slot slot = slot(container, index);
             if (slot.slotNumber != index) {
                 throw new IllegalStateException("container slot numbering is not contiguous at " + index);
             }
         }
         for (int playerSlot = 0; playerSlot < PLAYER_SLOT_COUNT; playerSlot++) {
-            int containerSlot = containerSlotForPlayerInventory(layout.stationSlotCount, playerSlot);
+            int containerSlot = containerSlotForPlayerInventory(layout, playerSlot);
             if (!slot(container, containerSlot).isSlotInInventory(playerInventory, playerSlot)) {
                 throw new IllegalStateException("player inventory mapping changed at slot " + playerSlot);
             }
@@ -314,10 +353,27 @@ public final class TinkersRepairContainerAdapter {
 
         private final TinkersStationKind kind;
         private final int stationSlotCount;
+        private final int outputSlot;
+        private final int inputSlot;
+        private final int[] materialSlots;
+        private final int playerSlotStart;
+        private final int chestSlotStart;
 
-        private Layout(TinkersStationKind kind, int stationSlotCount) {
+        private Layout(TinkersStationKind kind, int stationSlotCount, int outputSlot, int inputSlot,
+            int[] materialSlots, int playerSlotStart, int chestSlotStart) {
             this.kind = kind;
             this.stationSlotCount = stationSlotCount;
+            this.outputSlot = outputSlot;
+            this.inputSlot = inputSlot;
+            this.materialSlots = materialSlots;
+            this.playerSlotStart = playerSlotStart;
+            this.chestSlotStart = chestSlotStart;
+        }
+
+        private static Layout station(TinkersStationKind kind, int stationSlotCount) {
+            int[] materials = new int[stationSlotCount - 2];
+            for (int index = 0; index < materials.length; index++) materials[index] = index + 2;
+            return new Layout(kind, stationSlotCount, 0, 1, materials, stationSlotCount, -1);
         }
 
         TinkersStationKind getKind() {
@@ -326,6 +382,22 @@ public final class TinkersRepairContainerAdapter {
 
         int getStationSlotCount() {
             return stationSlotCount;
+        }
+
+        int getOutputSlot() {
+            return outputSlot;
+        }
+
+        int getInputSlot() {
+            return inputSlot;
+        }
+
+        int[] getMaterialSlots() {
+            return materialSlots.clone();
+        }
+
+        int getChestSlotStart() {
+            return chestSlotStart;
         }
     }
 }

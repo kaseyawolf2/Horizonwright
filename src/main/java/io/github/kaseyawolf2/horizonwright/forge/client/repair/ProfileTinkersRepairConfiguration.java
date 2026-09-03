@@ -2,7 +2,6 @@ package io.github.kaseyawolf2.horizonwright.forge.client.repair;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.inventory.Container;
-import net.minecraft.inventory.Slot;
 import net.minecraft.tileentity.TileEntity;
 
 import io.github.kaseyawolf2.horizonwright.core.logistics.NamedLoadout;
@@ -55,8 +54,7 @@ public final class ProfileTinkersRepairConfiguration implements LiveTinkersRepai
         }
         TileEntity tile = MinecraftRuntimeAccess
             .tileEntity(minecraft.theWorld, location.getX(), location.getY(), location.getZ());
-        Object firstSlot = container.inventorySlots.isEmpty() ? null : container.inventorySlots.get(0);
-        if (tile == null || !(firstSlot instanceof Slot) || ((Slot) firstSlot).inventory != tile) {
+        if (!TinkersRepairContainerAdapter.belongsToTile(container, tile)) {
             throw mismatch(stationId);
         }
         for (NamedLoadout loadout : profile.getNamedLoadouts()) {

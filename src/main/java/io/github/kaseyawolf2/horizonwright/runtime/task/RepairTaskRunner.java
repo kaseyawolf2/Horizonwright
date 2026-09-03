@@ -331,7 +331,7 @@ final class RepairTaskRunner implements TaskRunner {
                 true);
         }
         RepairAssessment assessment = policy.assess(observed.getInputTool(), RepairTask.predictedWorkDamage(spec));
-        if (!assessment.isRepairRequired()) {
+        if (!assessment.isRepairRequired() && observed.getTransaction() == null) {
             return StepResult.completed(
                 context.getActionEpoch(),
                 taskCheckpoint,
@@ -386,8 +386,7 @@ final class RepairTaskRunner implements TaskRunner {
                 "Prepared repair revalidation failed: " + describe(failure),
                 true);
         }
-        RepairAssessment assessment = policy.assess(observed.getInputTool(), RepairTask.predictedWorkDamage(spec));
-        if (!assessment.isRepairRequired() || !observed.isRecognizedLayout() || observed.getTransaction() == null) {
+        if (!observed.isRecognizedLayout() || observed.getTransaction() == null) {
             clearToReady(false);
             return StepResult.progress(
                 context.getActionEpoch(),
