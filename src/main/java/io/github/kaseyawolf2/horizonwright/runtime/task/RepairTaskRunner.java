@@ -25,6 +25,8 @@ final class RepairTaskRunner implements TaskRunner {
 
     private static final Set<ActionCapability> REQUIRED_CAPABILITIES = Collections
         .unmodifiableSet(EnumSet.of(ActionCapability.CONTAINER));
+    private static final Set<ActionCapability> STATION_ACCESS_CAPABILITIES = Collections
+        .unmodifiableSet(EnumSet.of(ActionCapability.MOVEMENT, ActionCapability.LOOK, ActionCapability.USE));
     private final TaskSpec spec;
     private final RepairRuntimeAccess runtime;
     private final RepairPolicy policy;
@@ -35,6 +37,10 @@ final class RepairTaskRunner implements TaskRunner {
     private RepairActionRequest activeRequest;
     private RepairActionHandle activeHandle;
     private ActionLease activeLease;
+    private RepairBackend stationAccessBackend;
+    private RepairBackend.StationAccessRequest stationAccessRequest;
+    private RepairBackend.StationAccessHandle stationAccessHandle;
+    private ActionLease stationAccessLease;
 
     RepairTaskRunner(TaskSpec spec, TaskCheckpoint checkpoint, RepairRuntimeAccess runtime) {
         this(spec, checkpoint, runtime, RepairPolicy.planDefaults());
@@ -71,14 +77,16 @@ final class RepairTaskRunner implements TaskRunner {
                 "Disable dry-run, then resume this repair task.");
         }
         RepairBackend backend = runtime.getRepairBackend();
+        if (stationAccessHandle != null) {
+            if (stationAccessBackend != backend) {
+                return failed(context, "Repair backend changed during station access", stopActive(), false);
+            }
+            return observeStationAccess(context);
+        }
         RepairBackendAvailability availability = availability(backend);
         if (backend == null || !availability.isAvailable()) {
             if (backend != null && availability.isWaitingForOperator()) {
-                return StepResult.waitFor(
-                    context.getActionEpoch(),
-                    taskCheckpoint,
-                    0L,
-                    availability.getDiagnostic() + "; repair will continue automatically when it is open");
+                return startStationAccess(context, backend, availability);
             }
             return blocked(
                 context,
@@ -99,6 +107,107 @@ final class RepairTaskRunner implements TaskRunner {
             "Awaiting repair checkpoint has no live action and was not marked for reconciliation",
             null,
             false);
+    }
+
+    private StepResult startStationAccess(TaskStepContext context, RepairBackend backend,
+        RepairBackendAvailability availability) {
+        Optional<ActionLease> acquired = context.getActions()
+            .tryAcquire(STATION_ACCESS_CAPABILITIES);
+        if (!acquired.isPresent()) {
+            return StepResult
+                .waitFor(context.getActionEpoch(), taskCheckpoint, 0L, "waiting for MOVEMENT + LOOK + USE capability");
+        }
+        ActionLease lease = acquired.get();
+        String requestId = spec.getId() + "-station-access-r" + state.getRevision();
+        RepairBackend.StationAccessRequest request = new RepairBackend.StationAccessRequest(
+            requestId,
+            spec.getId(),
+            RepairTask.stationId(spec),
+            context.getActionEpoch());
+        RepairBackend.StationAccessHandle handle;
+        try {
+            handle = backend.accessStation(request, lease);
+        } catch (RuntimeException failure) {
+            RuntimeException cleanup = closeLease(lease);
+            if (cleanup != null) failure.addSuppressed(cleanup);
+            return blocked(
+                context,
+                "Automatic repair-station access failed: " + describe(failure),
+                "a reachable registered repair station",
+                "Inspect the registered station location and navigation route, then resume this task.");
+        }
+        if (handle == null) {
+            RuntimeException cleanup = closeLease(lease);
+            if (cleanup != null) {
+                return failed(context, "Could not release unused station-access lease", cleanup, false);
+            }
+            return StepResult.waitFor(
+                context.getActionEpoch(),
+                taskCheckpoint,
+                0L,
+                availability.getDiagnostic() + "; this backend requires the station to be opened manually");
+        }
+        if (!requestId.equals(handle.getRequestId())) {
+            try {
+                handle.cancel();
+            } catch (RuntimeException ignored) {
+                // The mismatched handle is already rejected; lease cleanup remains mandatory.
+            }
+            RuntimeException cleanup = closeLease(lease);
+            return failed(context, "Repair backend returned a mismatched station-access handle", cleanup, false);
+        }
+        stationAccessBackend = backend;
+        stationAccessRequest = request;
+        stationAccessHandle = handle;
+        stationAccessLease = lease;
+        return StepResult.progress(
+            context.getActionEpoch(),
+            taskCheckpoint,
+            "Submitted Baritone approach to the registered repair station");
+    }
+
+    private StepResult observeStationAccess(TaskStepContext context) {
+        if (stationAccessLease == null || !stationAccessLease.isValid()
+            || stationAccessLease.getEpoch() != context.getActionEpoch()) {
+            return failed(context, "Repair-station access lease is no longer authoritative", stopActive(), false);
+        }
+        RepairBackend.StationAccessProgress progress;
+        try {
+            progress = stationAccessHandle.progress();
+            if (progress == null || !stationAccessRequest.getRequestId()
+                .equals(progress.getRequestId())) {
+                throw new IllegalStateException("repair backend returned stale station-access progress");
+            }
+        } catch (RuntimeException failure) {
+            return failed(context, "Repair-station access progress failed: " + describe(failure), stopActive(), false);
+        }
+        switch (progress.getState()) {
+            case SUBMITTED:
+            case APPROACHING:
+            case INTERACTING:
+                return StepResult.waitFor(context.getActionEpoch(), taskCheckpoint, 0L, progress.getDetail());
+            case CONFIRMED:
+                RuntimeException releaseFailure = stopStationAccess(false);
+                if (releaseFailure != null) {
+                    return failed(context, "Confirmed station-access lease cleanup failed", releaseFailure, false);
+                }
+                return StepResult.progress(
+                    context.getActionEpoch(),
+                    taskCheckpoint,
+                    "Registered repair station opened automatically");
+            case CANCELLED:
+            case FAILED:
+                RuntimeException cleanup = stopStationAccess(false);
+                return blocked(
+                    context,
+                    appendCleanup(
+                        "Automatic station access " + progress.getState() + ": " + progress.getDetail(),
+                        cleanup),
+                    "a reachable registered Tool Station or Tool Forge",
+                    "Inspect the saved station and route, then resume this task.");
+            default:
+                return failed(context, "Unknown repair-station access state", stopActive(), false);
+        }
     }
 
     @Override
@@ -423,7 +532,11 @@ final class RepairTaskRunner implements TaskRunner {
         RepairActionHandle handle = activeHandle;
         ActionLease lease = activeLease;
         clearActive();
-        return cancelAndClose(handle, lease);
+        RuntimeException failure = cancelAndClose(handle, lease);
+        RuntimeException stationFailure = stopStationAccess(true);
+        if (failure == null) return stationFailure;
+        if (stationFailure != null) failure.addSuppressed(stationFailure);
+        return failure;
     }
 
     private void clearActive() {
@@ -431,6 +544,37 @@ final class RepairTaskRunner implements TaskRunner {
         activeRequest = null;
         activeHandle = null;
         activeLease = null;
+    }
+
+    private RuntimeException stopStationAccess(boolean cancel) {
+        RepairBackend.StationAccessHandle handle = stationAccessHandle;
+        ActionLease lease = stationAccessLease;
+        stationAccessBackend = null;
+        stationAccessRequest = null;
+        stationAccessHandle = null;
+        stationAccessLease = null;
+        RuntimeException failure = null;
+        if (cancel && handle != null) {
+            try {
+                handle.cancel();
+            } catch (RuntimeException current) {
+                failure = current;
+            }
+        }
+        RuntimeException closeFailure = closeLease(lease);
+        if (failure == null) return closeFailure;
+        if (closeFailure != null) failure.addSuppressed(closeFailure);
+        return failure;
+    }
+
+    private static RuntimeException closeLease(ActionLease lease) {
+        if (lease == null) return null;
+        try {
+            lease.close();
+            return null;
+        } catch (RuntimeException failure) {
+            return failure;
+        }
     }
 
     private static RuntimeException cancelAndClose(RepairActionHandle handle, ActionLease lease) {

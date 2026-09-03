@@ -348,6 +348,8 @@ public final class ClientBootstrap {
                 .bindUnloadBackend(liveUnloadBackend);
             liveRepairBackend = new LiveTinkersRepairBackend(
                 minecraft,
+                attachedRuntime.getActionSessionGuard(),
+                attachedRuntime::getNavigationBackend,
                 new ProfileTinkersRepairConfiguration(minecraft, persistenceStore, identity),
                 containerTransactionExecutor,
                 TinkersRepairCompatibilityProbe.inspect());

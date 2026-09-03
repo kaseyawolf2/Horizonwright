@@ -66,6 +66,16 @@ public final class ProfileTinkersRepairConfiguration implements LiveTinkersRepai
         throw new IllegalStateException("repair station references missing loadout '" + station.getLoadoutId() + "'");
     }
 
+    @Override
+    public NamedLocation resolveLocation(String stationId) {
+        ProfileEnvelope profile = requireProfile();
+        for (NamedRepairStation station : profile.getNamedRepairStations()) {
+            if (station.getId()
+                .equals(stationId)) return location(profile, station.getLocationId());
+        }
+        throw new IllegalStateException("profile has no named repair station '" + stationId + "'");
+    }
+
     private ProfileEnvelope requireProfile() {
         PersistenceLoadResult<ProfileEnvelope> loaded = store
             .loadProfile(store.pathsForProfile(identity.getProfileId()));

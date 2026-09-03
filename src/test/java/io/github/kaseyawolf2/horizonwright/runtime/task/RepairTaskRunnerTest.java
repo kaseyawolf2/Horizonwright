@@ -147,6 +147,41 @@ public class RepairTaskRunnerTest {
     }
 
     @Test
+    public void automaticallyApproachesAndOpensStationBeforeRepairing() {
+        harness = new Harness();
+        harness.backend.stationOpen = false;
+        harness.backend.automatedStationAccess = true;
+        TaskSpec spec = taskSpec("repair-automatic-station");
+        harness.controller.submit(spec);
+
+        TaskSnapshot submitted = task(harness.controller.tick(), spec.getId());
+        assertEquals(TaskState.RUNNING, submitted.getState());
+        assertEquals(1, harness.backend.stationAccessSubmissions);
+        assertTrue(
+            harness.backend.lastStationLease.getCapabilities()
+                .contains(ActionCapability.MOVEMENT));
+        assertTrue(
+            harness.backend.lastStationLease.getCapabilities()
+                .contains(ActionCapability.LOOK));
+        assertTrue(
+            harness.backend.lastStationLease.getCapabilities()
+                .contains(ActionCapability.USE));
+
+        assertEquals(TaskState.RUNNING, task(harness.controller.tick(), spec.getId()).getState());
+        harness.backend.confirmStationAccess();
+        assertEquals(TaskState.RUNNING, task(harness.controller.tick(), spec.getId()).getState());
+
+        TaskSnapshot prepared = task(harness.controller.tick(), spec.getId());
+        assertEquals(
+            "PREPARED",
+            prepared.getCheckpoint()
+                .getValues()
+                .get("phase"));
+        harness.controller.tick();
+        assertEquals(1, harness.backend.submissions);
+    }
+
+    @Test
     public void rejectionAndMissingMaterialNeverReachAutomaticReplay() {
         harness = new Harness();
         TaskSpec rejected = taskSpec("repair-rejected");
@@ -269,14 +304,27 @@ public class RepairTaskRunnerTest {
         private boolean noMaterial;
         private boolean unapprovedClick;
         private boolean stationOpen = true;
+        private boolean automatedStationAccess;
         private int submissions;
+        private int stationAccessSubmissions;
         private ActionLease lastLease;
+        private ActionLease lastStationLease;
         private Handle active;
+        private StationHandle stationAccess;
 
         @Override
         public RepairBackendAvailability availability() {
             return stationOpen ? RepairBackendAvailability.available("pinned test forge open")
                 : RepairBackendAvailability.waitingForOperator("waiting for pinned test forge");
+        }
+
+        @Override
+        public StationAccessHandle accessStation(StationAccessRequest request, ActionLease lease) {
+            if (!automatedStationAccess) return null;
+            stationAccessSubmissions++;
+            lastStationLease = lease;
+            stationAccess = new StationHandle(request.getRequestId());
+            return stationAccess;
         }
 
         @Override
@@ -366,6 +414,36 @@ public class RepairTaskRunnerTest {
             active.request.getTransaction()
                 .confirm(click.getClickId(), false, click.getExpectedBefore(), active.request.getActionEpoch());
             active.state = RepairActionState.REJECTED;
+        }
+
+        private void confirmStationAccess() {
+            stationOpen = true;
+            stationAccess.state = StationAccessState.CONFIRMED;
+        }
+    }
+
+    private static final class StationHandle implements RepairBackend.StationAccessHandle {
+
+        private final String requestId;
+        private RepairBackend.StationAccessState state = RepairBackend.StationAccessState.APPROACHING;
+
+        private StationHandle(String requestId) {
+            this.requestId = requestId;
+        }
+
+        @Override
+        public String getRequestId() {
+            return requestId;
+        }
+
+        @Override
+        public RepairBackend.StationAccessProgress progress() {
+            return new RepairBackend.StationAccessProgress(requestId, state, state.name());
+        }
+
+        @Override
+        public void cancel() {
+            state = RepairBackend.StationAccessState.CANCELLED;
         }
     }
 
