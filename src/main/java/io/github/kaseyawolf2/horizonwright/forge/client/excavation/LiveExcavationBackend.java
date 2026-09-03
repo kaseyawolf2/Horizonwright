@@ -396,6 +396,14 @@ public final class LiveExcavationBackend implements ExcavationBackend {
         }
 
         private synchronized void pollApproach() {
+            if (canReachTarget()) {
+                navigationHandle.cancel();
+                navigationHandle = null;
+                phase = Phase.WAITING_FOR_DIG_SESSION;
+                detail = "Exact target became reachable before the navigation goal completed";
+                trace("approach-reach", "navigationCancelled", true);
+                return;
+            }
             NavigationProgress progress = navigationHandle.progress();
             trace("approach", "navigationState", progress.getState(), "navigationDetail", progress.getDetail());
             if (progress.getState() == NavigationState.COMPLETED) {
