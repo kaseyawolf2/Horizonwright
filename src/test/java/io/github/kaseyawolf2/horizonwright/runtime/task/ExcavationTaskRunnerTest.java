@@ -154,6 +154,75 @@ public class ExcavationTaskRunnerTest {
     }
 
     @Test
+    public void emptyMaximumRadiusLayerAdvancesByTheBoundedScanWithoutSubmittingActions() {
+        harness = new Harness();
+        harness.backend.classification = ExcavationBlockClassification.AIR;
+        TaskSpec spec = ExcavationTask.cleanVolumeCylinder("empty-wide", 0, 0, 0, 250, 64, 64);
+        harness.controller.submit(spec);
+        harness.controller.tick();
+
+        TaskSnapshot advanced = task(harness.controller.tick(), spec.getId());
+
+        assertEquals(TaskState.RUNNING, advanced.getState());
+        assertEquals(4096, harness.backend.observations);
+        assertEquals(0, harness.backend.submissions);
+        assertEquals(
+            "4096",
+            advanced.getCheckpoint()
+                .getValues()
+                .get("progress.completed"));
+        assertEquals(
+            "196321",
+            advanced.getCheckpoint()
+                .getValues()
+                .get("progress.total"));
+        Map<String, String> progress = advanced.getCheckpoint()
+            .getValues();
+        assertEquals(
+            192225L,
+            Long.parseLong(progress.get("progress.total")) - Long.parseLong(progress.get("progress.completed"))
+                - Long.parseLong(progress.get("progress.protected"))
+                - Long.parseLong(progress.get("progress.unreachable"))
+                - Long.parseLong(progress.get("progress.fluidContained"))
+                - Long.parseLong(progress.get("progress.failed")));
+        assertTrue(
+            harness.broker.snapshot()
+                .getActiveOwners()
+                .isEmpty());
+    }
+
+    @Test
+    public void passivePrefixStopsBeforeBreakableTargetAndReobservesItForAction() {
+        harness = new Harness();
+        harness.backend.airObservationsBeforeBreakable = 5;
+        TaskSpec spec = ExcavationTask.cleanVolumeCylinder("air-prefix", 0, 8, 8, 2, 12, 12);
+        harness.controller.submit(spec);
+        harness.controller.tick();
+
+        TaskSnapshot skipped = task(harness.controller.tick(), spec.getId());
+
+        assertEquals(TaskState.RUNNING, skipped.getState());
+        assertEquals(6, harness.backend.observations);
+        assertEquals(0, harness.backend.submissions);
+        assertEquals(
+            "5",
+            skipped.getCheckpoint()
+                .getValues()
+                .get("progress.completed"));
+
+        TaskSnapshot submitted = task(harness.controller.tick(), spec.getId());
+
+        assertEquals(TaskState.RUNNING, submitted.getState());
+        assertEquals(7, harness.backend.observations);
+        assertEquals(1, harness.backend.submissions);
+        assertEquals(
+            "5",
+            submitted.getCheckpoint()
+                .getValues()
+                .get("progress.completed"));
+    }
+
+    @Test
     public void staleConfirmationIsRejectedWithoutAdvancingTheFrontier() {
         harness = new Harness();
         TaskSpec spec = ExcavationTask.cleanVolumeCylinder("stale", 0, 8, 8, 0, 12, 12);
@@ -482,6 +551,8 @@ public class ExcavationTaskRunnerTest {
         private long observationRevisionOffset;
         private long confirmationEpochOffset;
         private ExcavationSuspensionReason suspensionReason = ExcavationSuspensionReason.NONE;
+        private ExcavationBlockClassification classification = ExcavationBlockClassification.BREAKABLE;
+        private int airObservationsBeforeBreakable = -1;
         private ExcavationObservationRequest lastObservationRequest;
         private ExcavationActionRequest lastRequest;
         private ActionLease lastLease;
@@ -495,12 +566,15 @@ public class ExcavationTaskRunnerTest {
 
         @Override
         public ExcavationObservationResult observe(ExcavationObservationRequest request) {
-            observations++;
+            int observationIndex = observations++;
             lastObservationRequest = request;
+            ExcavationBlockClassification observedClassification = airObservationsBeforeBreakable >= 0
+                && observationIndex < airObservationsBeforeBreakable ? ExcavationBlockClassification.AIR
+                    : classification;
             ExcavationObservation observation = new ExcavationObservation(
                 request.getPosition(),
-                ExcavationBlockClassification.BREAKABLE,
-                "stone-fingerprint");
+                observedClassification,
+                observedClassification == ExcavationBlockClassification.AIR ? "minecraft:air@0" : "stone-fingerprint");
             return new ExcavationObservationResult(
                 request.getTaskRevision() + observationRevisionOffset,
                 request.getActionEpoch(),

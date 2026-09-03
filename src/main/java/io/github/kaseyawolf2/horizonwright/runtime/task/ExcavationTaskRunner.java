@@ -1,7 +1,9 @@
 package io.github.kaseyawolf2.horizonwright.runtime.task;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.EnumSet;
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 
@@ -9,6 +11,7 @@ import io.github.kaseyawolf2.horizonwright.core.action.ActionCapability;
 import io.github.kaseyawolf2.horizonwright.core.action.ActionLease;
 import io.github.kaseyawolf2.horizonwright.core.excavation.CylinderExcavationGeometry;
 import io.github.kaseyawolf2.horizonwright.core.excavation.CylinderExcavationSpec;
+import io.github.kaseyawolf2.horizonwright.core.excavation.ExcavationBlockClassification;
 import io.github.kaseyawolf2.horizonwright.core.excavation.ExcavationCheckpoint;
 import io.github.kaseyawolf2.horizonwright.core.excavation.ExcavationExecutionResult;
 import io.github.kaseyawolf2.horizonwright.core.excavation.ExcavationIntent;
@@ -22,6 +25,7 @@ import io.github.kaseyawolf2.horizonwright.core.excavation.ExcavationResultDispo
 import io.github.kaseyawolf2.horizonwright.core.excavation.ExcavationSuspensionReason;
 import io.github.kaseyawolf2.horizonwright.core.excavation.ExcavationTarget;
 import io.github.kaseyawolf2.horizonwright.core.excavation.ExcavationTargetBatch;
+import io.github.kaseyawolf2.horizonwright.core.excavation.ExcavationTargetOutcome;
 import io.github.kaseyawolf2.horizonwright.core.excavation.ExcavationTargetResult;
 import io.github.kaseyawolf2.horizonwright.core.task.BlockedReason;
 import io.github.kaseyawolf2.horizonwright.core.task.StepResult;
@@ -35,12 +39,13 @@ import io.github.kaseyawolf2.horizonwright.core.task.TaskStepContext;
  * Resumable clean-volume excavation bridge.
  *
  * <p>
- * Each plan contains exactly one target. Submission never advances persisted state; only an exact, post-action
- * confirmation accepted by {@link ExcavationReducer} advances the frontier.
+ * Non-mutating target prefixes are observed and checkpointed in bounded batches. A plan which performs gameplay
+ * actions still contains exactly one target, and only an exact post-action confirmation accepted by
+ * {@link ExcavationReducer} advances that target's frontier.
  */
 final class ExcavationTaskRunner implements TaskRunner {
 
-    private static final int TARGETS_PER_PLAN = 1;
+    private static final int TARGETS_PER_SCAN = CylinderExcavationGeometry.MAX_BATCH_SIZE;
     private static final long POLL_DELAY_MILLIS = 0L;
     private static final Set<ActionCapability> REQUIRED_CAPABILITIES = Collections.unmodifiableSet(
         EnumSet.of(ActionCapability.MOVEMENT, ActionCapability.LOOK, ActionCapability.DIG, ActionCapability.HELD_USE));
@@ -190,7 +195,7 @@ final class ExcavationTaskRunner implements TaskRunner {
 
     private StepResult observeAndSubmit(TaskStepContext context, ExcavationBackend backend) {
         ExcavationTargetBatch batch = CylinderExcavationGeometry
-            .nextBatch(cylinder, excavationCheckpoint.getFrontier(), TARGETS_PER_PLAN);
+            .nextBatch(cylinder, excavationCheckpoint.getFrontier(), TARGETS_PER_SCAN);
         if (batch.isEmpty()) {
             return StepResult.failed(
                 context.getActionEpoch(),
@@ -198,45 +203,63 @@ final class ExcavationTaskRunner implements TaskRunner {
                 "Non-complete excavation checkpoint produced no target",
                 false);
         }
-        ExcavationTarget target = batch.getTargets()
-            .get(0);
         ExcavationServicePolicy policy = ExcavationTask.servicePolicy(spec);
-        ExcavationObservationRequest observationRequest = new ExcavationObservationRequest(
-            spec.getId(),
-            cylinder.getDimensionId(),
-            excavationCheckpoint.getTaskRevision(),
-            context.getActionEpoch(),
-            cylinder.getGeometryKey(),
-            excavationCheckpoint.getFrontier(),
-            target.getPosition(),
-            serviceRequirements(policy));
-        ExcavationObservationResult observed;
-        try {
-            observed = backend.observe(observationRequest);
-            validateObservation(observationRequest, observed);
-        } catch (RuntimeException failure) {
-            return StepResult.failed(
-                context.getActionEpoch(),
-                taskCheckpoint,
-                "Excavation observation failed: " + describe(failure),
-                true);
+        ExcavationServiceRequirements requirements = serviceRequirements(policy);
+        List<ExcavationObservation> passiveObservations = new ArrayList<>(
+            batch.getTargets()
+                .size());
+        ExcavationObservationResult actionable = null;
+        for (ExcavationTarget target : batch.getTargets()) {
+            ExcavationObservationRequest observationRequest = observationRequest(context, target, requirements);
+            ExcavationObservationResult observed;
+            try {
+                observed = backend.observe(observationRequest);
+                validateObservation(observationRequest, observed);
+            } catch (RuntimeException failure) {
+                return StepResult.failed(
+                    context.getActionEpoch(),
+                    taskCheckpoint,
+                    "Excavation observation failed: " + describe(failure),
+                    true);
+            }
+            if (!isLiveAuthority(context, backend)) {
+                return StepResult.failed(
+                    context.getActionEpoch(),
+                    taskCheckpoint,
+                    "Excavation authority changed while observing its next target",
+                    false);
+            }
+            if (observed.getSuspensionReason() != ExcavationSuspensionReason.NONE || requiresGameplayAction(
+                observed.getObservation()
+                    .getClassification())) {
+                actionable = observed;
+                break;
+            }
+            passiveObservations.add(observed.getObservation());
         }
-        if (!isLiveAuthority(context, backend)) {
+
+        if (!passiveObservations.isEmpty()) {
+            return applyPassivePrefix(context, backend, passiveObservations);
+        }
+        if (actionable == null) {
             return StepResult.failed(
                 context.getActionEpoch(),
                 taskCheckpoint,
-                "Excavation authority changed while observing its next target",
+                "Excavation scan produced neither passive progress nor an actionable target",
                 false);
         }
+
+        ExcavationTargetBatch actionBatch = CylinderExcavationGeometry
+            .nextBatch(cylinder, excavationCheckpoint.getFrontier(), 1);
 
         ExcavationPlanningWindow window = new ExcavationPlanningWindow(
             excavationCheckpoint.getTaskRevision(),
             context.getActionEpoch(),
-            batch,
-            Collections.singletonList(observed.getObservation()));
+            actionBatch,
+            Collections.singletonList(actionable.getObservation()));
         ExcavationPlan plan = ExcavationPlanner.calculate(cylinder, window, null);
         if (plan.getIntents()
-            .size() != TARGETS_PER_PLAN
+            .size() != 1
             || !plan.getManagedIntents()
                 .isEmpty()) {
             return StepResult.failed(
@@ -245,8 +268,8 @@ final class ExcavationTaskRunner implements TaskRunner {
                 "Clean-volume excavation planner violated the single-target contract",
                 false);
         }
-        if (observed.getSuspensionReason() != ExcavationSuspensionReason.NONE) {
-            return suspendForSharedOperation(context, plan, observed);
+        if (actionable.getSuspensionReason() != ExcavationSuspensionReason.NONE) {
+            return suspendForSharedOperation(context, plan, actionable);
         }
 
         Optional<ActionLease> acquired = context.getActions()
@@ -308,6 +331,108 @@ final class ExcavationTaskRunner implements TaskRunner {
                 "Excavation action submission failed: " + describe(failure),
                 true);
         }
+    }
+
+    private ExcavationObservationRequest observationRequest(TaskStepContext context, ExcavationTarget target,
+        ExcavationServiceRequirements requirements) {
+        return new ExcavationObservationRequest(
+            spec.getId(),
+            cylinder.getDimensionId(),
+            excavationCheckpoint.getTaskRevision(),
+            context.getActionEpoch(),
+            cylinder.getGeometryKey(),
+            excavationCheckpoint.getFrontier(),
+            target.getPosition(),
+            requirements);
+    }
+
+    private StepResult applyPassivePrefix(TaskStepContext context, ExcavationBackend backend,
+        List<ExcavationObservation> observations) {
+        ExcavationTargetBatch passiveBatch = CylinderExcavationGeometry
+            .nextBatch(cylinder, excavationCheckpoint.getFrontier(), observations.size());
+        ExcavationPlan passivePlan = ExcavationPlanner.calculate(
+            cylinder,
+            new ExcavationPlanningWindow(
+                excavationCheckpoint.getTaskRevision(),
+                context.getActionEpoch(),
+                passiveBatch,
+                observations),
+            null);
+        if (!passivePlan.getManagedIntents()
+            .isEmpty()) {
+            return StepResult.failed(
+                context.getActionEpoch(),
+                taskCheckpoint,
+                "Clean-volume excavation produced managed intents while skipping passive targets",
+                false);
+        }
+        List<ExcavationTargetResult> results = new ArrayList<>(
+            passivePlan.getIntents()
+                .size());
+        try {
+            for (ExcavationIntent intent : passivePlan.getIntents()) {
+                results.add(passiveResult(intent));
+            }
+            if (!isLiveAuthority(context, backend)) {
+                throw new IllegalStateException("excavation authority changed before passive progress was applied");
+            }
+            ExcavationResultApplication application = ExcavationReducer.apply(
+                excavationCheckpoint,
+                new ExcavationExecutionResult(passivePlan, results, ExcavationSuspensionReason.NONE));
+            if (!application.wasApplied()) {
+                throw new IllegalStateException(
+                    "passive excavation progress was rejected as " + application.getDisposition());
+            }
+            excavationCheckpoint = application.getCheckpoint();
+            taskCheckpoint = ExcavationTaskCheckpointCodec.encode(cylinder, excavationCheckpoint);
+            if (excavationCheckpoint.isComplete()) {
+                return StepResult.completed(
+                    context.getActionEpoch(),
+                    taskCheckpoint,
+                    "Clean-volume excavation completed after skipping " + results.size() + " passive targets");
+            }
+            return StepResult.progress(
+                context.getActionEpoch(),
+                taskCheckpoint,
+                "Skipped " + results.size()
+                    + " confirmed non-mutating excavation targets; "
+                    + excavationCheckpoint.getProgress()
+                        .getRemaining()
+                    + " blocks remain");
+        } catch (RuntimeException failure) {
+            return StepResult.failed(
+                context.getActionEpoch(),
+                taskCheckpoint,
+                "Passive excavation progress rejected: " + describe(failure),
+                false);
+        }
+    }
+
+    private static boolean requiresGameplayAction(ExcavationBlockClassification classification) {
+        return classification == ExcavationBlockClassification.BREAKABLE
+            || classification == ExcavationBlockClassification.FLUID_SOURCE_REACHABLE;
+    }
+
+    private static ExcavationTargetResult passiveResult(ExcavationIntent intent) {
+        ExcavationTargetOutcome outcome;
+        switch (intent.getKind()) {
+            case ALREADY_CLEAR:
+                outcome = ExcavationTargetOutcome.COMPLETED;
+                break;
+            case PROTECT_GRAVE:
+            case PROTECT_INFRASTRUCTURE:
+                outcome = ExcavationTargetOutcome.PROTECTED;
+                break;
+            case MARK_UNREACHABLE:
+                outcome = ExcavationTargetOutcome.UNREACHABLE;
+                break;
+            case MARK_FAILED:
+                outcome = ExcavationTargetOutcome.FAILED;
+                break;
+            default:
+                throw new IllegalStateException("passive excavation prefix contained action " + intent.getKind());
+        }
+        return new ExcavationTargetResult(intent.getPosition(), outcome);
     }
 
     private static ExcavationServiceRequirements serviceRequirements(ExcavationServicePolicy policy) {
