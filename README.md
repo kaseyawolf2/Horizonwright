@@ -156,8 +156,15 @@ keeps the current frontier, and a sapling shortage blocks before felling.
 Commands and connected-time schedules are available as
 `/hw trees <task-id> <area-id> [sapling-reserve]` and
 `/hw treeschedule <id> <area-id> <minutes> [sapling-reserve]`. The runtime
-contract intentionally remains unavailable in-world until the version-tested
-Minecraft observer and mutation adapter are bound.
+binds a conservative vanilla adapter: only face-connected vanilla log trees
+wholly inside the loaded 3D area are captured; 2x2 dark-oak and oversized trees
+are skipped. Baritone owns every approach and may pillar or break only vanilla
+leaves en route. Horizonwright then digs the exact frozen logs bottom-up,
+tolerates multi-log lumber-axe results, transactionally stages an exact sapling
+from the player inventory, and confirms the clear-root and replacement-sapling
+states separately. The work-area editor links to guided tree controls, recurring
+tree schedules are editable in the schedule manager, and deleting an area also
+cancels its unfinished tree tasks and schedules. Physical validation is pending.
 Registered-bed sleep is now a finite CHORE-lane task and a once-per-world-night
 schedule, so it can safely preempt FALLBACK excavation. The task records no
 completion until daytime is freshly observed or the live backend confirms the

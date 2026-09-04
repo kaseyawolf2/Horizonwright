@@ -33,6 +33,7 @@ import io.github.kaseyawolf2.horizonwright.runtime.task.ExcavationTask;
 import io.github.kaseyawolf2.horizonwright.runtime.task.FarmTask;
 import io.github.kaseyawolf2.horizonwright.runtime.task.HusbandryTask;
 import io.github.kaseyawolf2.horizonwright.runtime.task.SleepTask;
+import io.github.kaseyawolf2.horizonwright.runtime.task.TreeTask;
 
 public class HorizonwrightRuntimeTest {
 
@@ -412,17 +413,19 @@ public class HorizonwrightRuntimeTest {
     }
 
     @Test
-    public void deletingAnAreaCancelsFarmAndHusbandryAutomationBoundToIt() {
+    public void deletingAnAreaCancelsFarmTreeAndHusbandryAutomationBoundToIt() {
         HorizonwrightRuntime runtime = new HorizonwrightRuntime(
             new InMemoryActionBroker(),
             new ActionSessionGuard(),
             new FixedClock());
         runtime.scheduleFarm("field", "shared-area", 2, 600_000L);
         runtime.scheduleHusbandry("cows", "shared-area", LivestockSpecies.COW, 2, 8, 16, 600_000L);
+        runtime.scheduleTreePass("trees", "shared-area", 2, 600_000L);
         runtime.submitFarm(FarmTask.finitePass("farm-now", "shared-area", 2));
         runtime.submitHusbandry(HusbandryTask.finitePass("cows-now", "shared-area", LivestockSpecies.COW, 2, 8, 16));
+        runtime.submitTreePass(TreeTask.finitePass("trees-now", "shared-area", 2));
 
-        assertEquals(4, runtime.cancelAreaAutomation("shared-area"));
+        assertEquals(6, runtime.cancelAreaAutomation("shared-area"));
         assertEquals(
             ScheduleState.CANCELLED,
             runtime.controllerSnapshot()
@@ -438,6 +441,13 @@ public class HorizonwrightRuntimeTest {
                 .get()
                 .getState());
         assertEquals(
+            ScheduleState.CANCELLED,
+            runtime.controllerSnapshot()
+                .getScheduler()
+                .findSchedule("trees")
+                .get()
+                .getState());
+        assertEquals(
             TaskState.CANCELLED,
             runtime.controllerSnapshot()
                 .findTask("farm-now")
@@ -447,6 +457,12 @@ public class HorizonwrightRuntimeTest {
             TaskState.CANCELLED,
             runtime.controllerSnapshot()
                 .findTask("cows-now")
+                .get()
+                .getState());
+        assertEquals(
+            TaskState.CANCELLED,
+            runtime.controllerSnapshot()
+                .findTask("trees-now")
                 .get()
                 .getState());
         runtime.close();

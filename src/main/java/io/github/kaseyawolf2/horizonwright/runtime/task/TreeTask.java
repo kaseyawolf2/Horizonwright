@@ -54,9 +54,56 @@ public final class TreeTask {
         }
     }
 
+    public static boolean isForArea(TaskSpec spec, String areaId) {
+        return spec != null && TYPE.equals(spec.getType())
+            && areaId != null
+            && areaId.trim()
+                .equals(
+                    spec.getParameters()
+                        .get(AREA_ID));
+    }
+
+    public static String areaId(ScheduledTaskSpec spec) {
+        requireType(spec);
+        return required(
+            spec.getParameters()
+                .get(AREA_ID),
+            "tree-farm area id");
+    }
+
+    public static int minimumSaplingReserve(ScheduledTaskSpec spec) {
+        requireType(spec);
+        String value = required(
+            spec.getParameters()
+                .get(MINIMUM_SAPLING_RESERVE),
+            "minimum sapling reserve");
+        try {
+            int parsed = Integer.parseInt(value);
+            if (parsed < 0) throw new IllegalArgumentException("minimum sapling reserve must not be negative");
+            return parsed;
+        } catch (NumberFormatException failure) {
+            throw new IllegalArgumentException("minimum sapling reserve must be a whole number", failure);
+        }
+    }
+
+    public static boolean isForArea(ScheduledTaskSpec spec, String areaId) {
+        return spec != null && TYPE.equals(spec.getType())
+            && areaId != null
+            && areaId.trim()
+                .equals(
+                    spec.getParameters()
+                        .get(AREA_ID));
+    }
+
     private static void requireType(TaskSpec spec) {
         if (spec == null || !TYPE.equals(spec.getType())) {
             throw new IllegalArgumentException("a tree-pass task specification is required");
+        }
+    }
+
+    private static void requireType(ScheduledTaskSpec spec) {
+        if (spec == null || !TYPE.equals(spec.getType())) {
+            throw new IllegalArgumentException("a scheduled tree-pass specification is required");
         }
     }
 

@@ -215,6 +215,29 @@ runs once, and lets the exact excavation frontier resume. Disconnect for longer
 than two minutes: offline time must not create a burst of runs after rejoin, and
 at most one occurrence for this schedule may be queued or active at once.
 
+## Pending ordinary-tree farm checkpoint
+
+Create a small saved 3D work area containing the entire trunk and branches of
+one ordinary vanilla oak, spruce, birch, jungle, or acacia tree. Leave at least
+three matching saplings anywhere in the player inventory and select **Tree
+farm > Queue one tree pass**, or run `/hw trees smoke-trees smoke-woodlot 2`.
+Confirm Baritone owns the approach, may break vanilla leaves or pillar when
+needed, and that Horizonwright fells the frozen logs from bottom to top. With a
+lumber axe, logs removed by the multi-block effect must be skipped safely. The
+task must prove every captured log is air before planting exactly one matching
+sapling at the original root, return a staged inventory sapling/displaced item,
+and complete only after the replacement is visible.
+
+Pause once while approaching or digging, and once after the clear-root frontier
+but before replant confirmation. Resume and rejoin must not repeat a confirmed
+fell or skip the pending replant. Remove the matching saplings before a fresh
+pass and confirm it blocks before digging. Draw a boundary through a trunk or
+try a 2x2 dark-oak tree; both must be skipped without mutation. Finally schedule
+`/hw treeschedule smoke-trees-recurring smoke-woodlot 5 2`, edit it in the
+scheduled-jobs page, and verify deleting the saved area cancels the unfinished
+tree occurrence and schedule. This path is automated-build green but has not
+yet been physically recorded.
+
 ## Pending registered-bed sleep checkpoint
 
 After installing the automated-test-green build, look directly at a vanilla bed

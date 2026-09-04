@@ -180,7 +180,7 @@ public final class GuiSavedAreas extends GuiScreen {
             detail = "Deleted saved work area '" + removed
                 + "' and cancelled "
                 + cancelled
-                + " unfinished or scheduled farm job(s). Existing terminal history is unchanged.";
+                + " unfinished or scheduled area job(s). Existing terminal history is unchanged.";
         } catch (RuntimeException failure) {
             pendingDeleteAreaId = null;
             detail = "Area was not deleted: " + (failure.getMessage() == null ? failure.getClass()

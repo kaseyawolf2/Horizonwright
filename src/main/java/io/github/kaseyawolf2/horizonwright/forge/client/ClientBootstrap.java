@@ -43,6 +43,7 @@ import io.github.kaseyawolf2.horizonwright.forge.client.container.ProfileVanilla
 import io.github.kaseyawolf2.horizonwright.forge.client.excavation.ExcavationTargetOverlay;
 import io.github.kaseyawolf2.horizonwright.forge.client.excavation.LiveExcavationBackend;
 import io.github.kaseyawolf2.horizonwright.forge.client.farm.LiveVanillaFarmBackend;
+import io.github.kaseyawolf2.horizonwright.forge.client.farm.LiveVanillaTreeBackend;
 import io.github.kaseyawolf2.horizonwright.forge.client.farm.ProfileFarmConfiguration;
 import io.github.kaseyawolf2.horizonwright.forge.client.network.ClientPacketFirewallInstaller;
 import io.github.kaseyawolf2.horizonwright.forge.client.network.ContainerTransactionPacketCoordinator;
@@ -94,6 +95,7 @@ public final class ClientBootstrap {
     private LiveContainerTransactionExecutor containerTransactionExecutor;
     private LiveExcavationBackend liveExcavationBackend;
     private LiveVanillaFarmBackend liveFarmBackend;
+    private LiveVanillaTreeBackend liveTreeBackend;
     private LiveVanillaChestUnloadBackend liveUnloadBackend;
     private LiveTinkersRepairBackend liveRepairBackend;
     private LiveVanillaSleepBackend liveSleepBackend;
@@ -335,6 +337,13 @@ public final class ClientBootstrap {
                 new ProfileFarmConfiguration(profileEditorProvider()));
             attachedRuntime.getTaskServices()
                 .bindFarmBackend(liveFarmBackend);
+            liveTreeBackend = new LiveVanillaTreeBackend(
+                minecraft,
+                attachedRuntime.getActionSessionGuard(),
+                attachedRuntime::getNavigationBackend,
+                new ProfileFarmConfiguration(profileEditorProvider()));
+            attachedRuntime.getTaskServices()
+                .bindTreeBackend(liveTreeBackend);
             liveSleepBackend = new LiveVanillaSleepBackend(
                 minecraft,
                 attachedRuntime.getActionSessionGuard(),
@@ -455,6 +464,10 @@ public final class ClientBootstrap {
             attachedRuntime.getTaskServices()
                 .unbindFarmBackend(liveFarmBackend);
         }
+        if (attachedRuntime != null && liveTreeBackend != null) {
+            attachedRuntime.getTaskServices()
+                .unbindTreeBackend(liveTreeBackend);
+        }
         if (attachedRuntime != null && liveUnloadBackend != null) {
             attachedRuntime.getTaskServices()
                 .unbindUnloadBackend(liveUnloadBackend);
@@ -482,6 +495,7 @@ public final class ClientBootstrap {
         containerTransactionExecutor = null;
         liveExcavationBackend = null;
         liveFarmBackend = null;
+        liveTreeBackend = null;
         liveUnloadBackend = null;
         liveRepairBackend = null;
         liveSleepBackend = null;

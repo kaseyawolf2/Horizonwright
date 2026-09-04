@@ -93,6 +93,21 @@ public final class MinecraftVanillaTreeObserver {
         return observePostFell(work);
     }
 
+    TreeObservation observeAfterMutation(TreeWorkCheckpoint work) {
+        requireClient();
+        if (work == null) throw new IllegalArgumentException("tree work checkpoint is required");
+        requireCurrentDimension(work.getTreeFarm());
+        requireLoaded(work.getReplantPosition());
+        for (BasePosition block : work.getCapturedBlocks()) requireLoaded(block);
+        return observePostFell(work);
+    }
+
+    boolean hasExpectedLog(BasePosition position, String requiredSaplingFingerprint) {
+        requireClient();
+        requireLoaded(position);
+        return logSpecies(position) == saplingSpecies(requiredSaplingFingerprint);
+    }
+
     public SaplingReserveEvidence reserve(long inventoryRevision, String requiredSaplingFingerprint,
         int minimumReserve) {
         requireClient();
@@ -121,9 +136,12 @@ public final class MinecraftVanillaTreeObserver {
             minimumReserve);
     }
 
-    public int findSaplingHotbarSlot(String requiredSaplingFingerprint) {
+    public int findSaplingSlot(String requiredSaplingFingerprint, int startInclusive, int endExclusive) {
         requireClient();
-        for (int slot = 0; slot < 9; slot++) {
+        if (startInclusive < 0 || endExclusive > 36 || startInclusive > endExclusive) {
+            throw new IllegalArgumentException("inventory slot bounds must be within 0..36");
+        }
+        for (int slot = startInclusive; slot < endExclusive; slot++) {
             ItemFingerprint fingerprint = items.fingerprint(minecraft.thePlayer.inventory.mainInventory[slot]);
             if (fingerprint != null
                 && requiredSaplingFingerprint.equals(MinecraftVanillaFarmObserver.materialIdentity(fingerprint)))

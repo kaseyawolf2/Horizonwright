@@ -21,6 +21,7 @@ import io.github.kaseyawolf2.horizonwright.runtime.persistence.session.CurrentRu
 import io.github.kaseyawolf2.horizonwright.runtime.task.FarmTask;
 import io.github.kaseyawolf2.horizonwright.runtime.task.HusbandryTask;
 import io.github.kaseyawolf2.horizonwright.runtime.task.SleepTask;
+import io.github.kaseyawolf2.horizonwright.runtime.task.TreeTask;
 
 /** Operator-facing recurring-job list and type-safe settings editor. */
 public final class GuiScheduleManager extends GuiScreen {
@@ -186,6 +187,19 @@ public final class GuiScheduleManager extends GuiScreen {
                 + "' every "
                 + minutes
                 + " connected minute(s), seed reserve "
+                + reserve
+                + ".";
+        } else if (TreeTask.TYPE.equals(type)) {
+            requireSavedArea(target);
+            int minutes = ProfileAssetInput.positiveInteger(intervalField.getText(), "interval minutes");
+            int reserve = ProfileAssetInput.nonNegativeInteger(reserveField.getText(), "sapling reserve");
+            runtime.updateTreeSchedule(selectedScheduleId, target, reserve, Math.multiplyExact(minutes, 60_000L));
+            message = "Saved '" + selectedScheduleId
+                + "': tree farm '"
+                + target
+                + "' every "
+                + minutes
+                + " connected minute(s), sapling reserve "
                 + reserve
                 + ".";
         } else if (SleepTask.TYPE.equals(type)) {
@@ -355,8 +369,8 @@ public final class GuiScheduleManager extends GuiScreen {
         ScheduleSnapshot selected = selectedSchedule();
         boolean editable = selected != null && isEditable(selected);
         targetField.setEnabled(editable);
-        intervalField.setEnabled(editable && (isFarm(selected) || isHusbandry(selected)));
-        reserveField.setEnabled(editable && (isFarm(selected) || isHusbandry(selected)));
+        intervalField.setEnabled(editable && (isFarm(selected) || isTree(selected) || isHusbandry(selected)));
+        reserveField.setEnabled(editable && (isFarm(selected) || isTree(selected) || isHusbandry(selected)));
         saveButton.enabled = editable;
         stateButton.enabled = selected != null && selected.getState() != ScheduleState.CANCELLED;
         stateButton.displayString = selected != null && selected.getState() == ScheduleState.PAUSED ? "Resume"
@@ -380,6 +394,20 @@ public final class GuiScheduleManager extends GuiScreen {
             reserveField.setText(
                 Integer.toString(
                     FarmTask.minimumSeedReserve(
+                        selected.getRule()
+                            .getTask())));
+        } else if (isTree(selected)) {
+            targetField.setText(
+                TreeTask.areaId(
+                    selected.getRule()
+                        .getTask()));
+            intervalField.setText(
+                Long.toString(
+                    selected.getRule()
+                        .getIntervalMillis() / 60_000L));
+            reserveField.setText(
+                Integer.toString(
+                    TreeTask.minimumSaplingReserve(
                         selected.getRule()
                             .getTask())));
         } else if (isSleep(selected)) {
@@ -465,7 +493,7 @@ public final class GuiScheduleManager extends GuiScreen {
     }
 
     private static boolean isEditable(ScheduleSnapshot schedule) {
-        return isFarm(schedule) || isSleep(schedule) || isHusbandry(schedule);
+        return isFarm(schedule) || isTree(schedule) || isSleep(schedule) || isHusbandry(schedule);
     }
 
     private static boolean isFarm(ScheduleSnapshot schedule) {
@@ -482,6 +510,13 @@ public final class GuiScheduleManager extends GuiScreen {
                 .getType());
     }
 
+    private static boolean isTree(ScheduleSnapshot schedule) {
+        return schedule != null && TreeTask.TYPE.equals(
+            schedule.getRule()
+                .getTask()
+                .getType());
+    }
+
     private static boolean isHusbandry(ScheduleSnapshot schedule) {
         return schedule != null && HusbandryTask.TYPE.equals(
             schedule.getRule()
@@ -491,7 +526,8 @@ public final class GuiScheduleManager extends GuiScreen {
 
     private static String targetLabel(ScheduleSnapshot schedule) {
         return isFarm(schedule) ? "Farm area"
-            : isSleep(schedule) ? "Bed" : isHusbandry(schedule) ? "Livestock pen" : "Target";
+            : isTree(schedule) ? "Tree area"
+                : isSleep(schedule) ? "Bed" : isHusbandry(schedule) ? "Livestock pen" : "Target";
     }
 
     private static String description(ScheduleSnapshot schedule) {

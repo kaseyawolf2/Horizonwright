@@ -427,11 +427,13 @@ public final class HorizonwrightRuntime implements AutoCloseable {
 
     private static boolean isForArea(io.github.kaseyawolf2.horizonwright.core.task.ScheduledTaskSpec task,
         String areaId) {
-        return FarmTask.isForPlot(task, areaId) || HusbandryTask.isForPen(task, areaId);
+        return FarmTask.isForPlot(task, areaId) || TreeTask.isForArea(task, areaId)
+            || HusbandryTask.isForPen(task, areaId);
     }
 
     private static boolean isForArea(TaskSpec task, String areaId) {
-        return FarmTask.isForPlot(task, areaId) || HusbandryTask.isForPen(task, areaId);
+        return FarmTask.isForPlot(task, areaId) || TreeTask.isForArea(task, areaId)
+            || HusbandryTask.isForPen(task, areaId);
     }
 
     public TaskSnapshot submitSleep(TaskSpec spec) {

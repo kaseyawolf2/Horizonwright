@@ -30,6 +30,7 @@ public final class GuiSavedAreaEditor extends GuiScreen {
     private static final int SCHEDULE_FARM_BUTTON = 6;
     private static final int CLOSE_BUTTON = 7;
     private static final int HUSBANDRY_BUTTON = 8;
+    private static final int TREE_FARM_BUTTON = 9;
 
     private final GuiScreen parent;
     private final ProfileAssetEditorProvider editorProvider;
@@ -142,7 +143,8 @@ public final class GuiSavedAreaEditor extends GuiScreen {
                 "Schedule farm"));
         buttonList.add(new GuiHorizonwrightButton(CLOSE_BUTTON, left + 18, top + 332, 64, 20, "Close"));
         buttonList
-            .add(new GuiHorizonwrightButton(HUSBANDRY_BUTTON, left + 94, top + 332, 168, 20, "Livestock settings"));
+            .add(new GuiHorizonwrightButton(HUSBANDRY_BUTTON, left + 94, top + 332, 136, 20, "Livestock settings"));
+        buttonList.add(new GuiHorizonwrightButton(TREE_FARM_BUTTON, left + 238, top + 332, 136, 20, "Tree farm"));
         buttonList.add(new GuiHorizonwrightButton(BACK_BUTTON, left + panelWidth - 82, top + 332, 64, 20, "Back"));
     }
 
@@ -163,6 +165,10 @@ public final class GuiSavedAreaEditor extends GuiScreen {
         }
         if (button.id == HUSBANDRY_BUTTON) {
             mc.displayGuiScreen(new GuiHusbandrySetup(this, runtimeProvider, editorProvider, original));
+            return;
+        }
+        if (button.id == TREE_FARM_BUTTON) {
+            mc.displayGuiScreen(new GuiTreeFarmSetup(this, runtimeProvider, original));
             return;
         }
         try {
