@@ -87,4 +87,7 @@ requires the runtime's exact public right-click configuration flag. It sends a
 normal server-authoritative right click and proves a same-family immature state;
 it does not copy or package HarvestCraft code and never assigns a dig action to
 a fruiting log. A different class or incompatible public flag shape is not
-guessed.
+guessed. Production availability additionally requires exactly one Forge mod
+container with the recorded ID, version, and full binary hash; development
+directories and remapped bytes are accepted only in a deobfuscated environment
+and never reported as reference bytes.

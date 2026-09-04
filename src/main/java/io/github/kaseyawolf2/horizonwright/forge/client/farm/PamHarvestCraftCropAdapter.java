@@ -17,15 +17,30 @@ final class PamHarvestCraftCropAdapter {
     private static final String BLOCK_REGISTRY_CLASS = "com.pam.harvestcraft.BlockRegistry";
     private static final String CROP_RIGHT_CLICK_FLAG = "rightclickharvestCrop";
     private static final String FRUIT_RIGHT_CLICK_FLAG = "rightclickharvestFruit";
+    private final PamHarvestCraftCompatibilityStatus compatibility;
+
+    PamHarvestCraftCropAdapter() {
+        this(PamHarvestCraftCompatibilityProbe.inspect());
+    }
+
+    PamHarvestCraftCropAdapter(PamHarvestCraftCompatibilityStatus compatibility) {
+        if (compatibility == null) throw new IllegalArgumentException("HarvestCraft compatibility status is required");
+        this.compatibility = compatibility;
+    }
 
     Optional<Descriptor> read(Block block, String blockId, int metadata) {
         if (block == null) return Optional.empty();
         String blockClass = block.getClass()
             .getName();
+        if (!isSupportedClass(blockClass) || !compatibility.isAvailable()) return Optional.empty();
         boolean cropRightClick = !CROP_CLASS.equals(blockClass) || readBooleanFlag(block, CROP_RIGHT_CLICK_FLAG);
         boolean fruitRightClick = !HANGING_FRUIT_CLASS.equals(blockClass)
             || readBooleanFlag(block, FRUIT_RIGHT_CLICK_FLAG);
         return classify(blockClass, blockId, metadata, cropRightClick, fruitRightClick);
+    }
+
+    PamHarvestCraftCompatibilityStatus compatibility() {
+        return compatibility;
     }
 
     Optional<Descriptor> classify(String blockClass, String blockId, int metadata, boolean cropRightClick,
@@ -48,6 +63,11 @@ final class PamHarvestCraftCropAdapter {
             return Optional.of(new Descriptor(CropFamily.PAM_FRUITING_LOG, canonicalId, metadata, (metadata & 3) == 3));
         }
         return Optional.empty();
+    }
+
+    private static boolean isSupportedClass(String blockClass) {
+        return CROP_CLASS.equals(blockClass) || HANGING_FRUIT_CLASS.equals(blockClass)
+            || FRUITING_LOG_CLASS.equals(blockClass);
     }
 
     private static boolean readBooleanFlag(Block block, String fieldName) {

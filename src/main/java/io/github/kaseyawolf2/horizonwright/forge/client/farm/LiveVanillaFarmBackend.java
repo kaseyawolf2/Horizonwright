@@ -83,10 +83,12 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
             return Availability.unavailable("No navigation backend is configured for farming");
         }
         BackendAvailability status = navigation.availability();
+        PamHarvestCraftCompatibilityStatus pamStatus = observer.pamCompatibility();
         Availability result = status.isAvailable()
             ? Availability.available(
-                "Exact vanilla, Pam HarvestCraft 1.3.11-GTNH, and CropsNH farm actions ready through "
-                    + status.getDiagnostic())
+                "Exact vanilla and CropsNH farm actions ready through " + status.getDiagnostic()
+                    + "; Pam HarvestCraft: "
+                    + pamStatus.getDiagnostic())
             : Availability.unavailable("Farm navigation unavailable: " + status.getDiagnostic());
         DevelopmentTrace.event(
             "farm-live",

@@ -47,6 +47,10 @@ public final class MinecraftVanillaFarmObserver {
         return plot;
     }
 
+    PamHarvestCraftCompatibilityStatus pamCompatibility() {
+        return pam.compatibility();
+    }
+
     public List<CropObservation> scan(NamedArea plot) {
         requireClient();
         requireCurrentDimension(plot);

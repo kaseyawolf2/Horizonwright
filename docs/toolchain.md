@@ -40,9 +40,12 @@ classes remain isolated from core, task, and general runtime packages.
 The optional Pam adapter recognizes only the three class names and metadata
 contracts recorded in `reuse-register.md`. It resolves the two public
 right-click configuration flags through the block's own class loader and has no
-compile-time HarvestCraft dependency. The recorded runtime hash is provenance
-for the observed behavior; the artifact remains a separately installed mod and
-is not copied into Horizonwright.
+compile-time HarvestCraft dependency. Its Forge-side probe requires exactly one
+loaded `harvestcraft` container with version `1.3.11-GTNH` and the complete
+recorded SHA-256 before production Pam actions are exposed. A missing,
+duplicate, version-different, byte-different, or unreadable artifact disables
+only Pam automation; vanilla and CropsNH farming remain available. The artifact
+remains a separately installed mod and is not copied into Horizonwright.
 
 Milestone 0A was launch-verified on 2026-08-30 with a clean GTNH
 `2.9.0-beta-2` Prism Launcher instance. The reobfuscated production JAR loaded
