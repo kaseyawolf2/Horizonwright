@@ -1,5 +1,7 @@
 package io.github.kaseyawolf2.horizonwright.forge.client.excavation;
 
+import java.util.Optional;
+
 import net.minecraft.block.Block;
 import net.minecraft.block.material.Material;
 import net.minecraft.client.Minecraft;
@@ -8,6 +10,7 @@ import net.minecraft.world.World;
 
 import cpw.mods.fml.common.registry.GameRegistry;
 import io.github.kaseyawolf2.horizonwright.core.excavation.BlockPosition;
+import io.github.kaseyawolf2.horizonwright.core.excavation.CylinderExcavationSpec;
 import io.github.kaseyawolf2.horizonwright.core.excavation.ExcavationObservation;
 import io.github.kaseyawolf2.horizonwright.runtime.task.ExcavationObservationRequest;
 
@@ -61,6 +64,35 @@ final class MinecraftExcavationObserver {
                 grave,
                 infrastructure,
                 breakable));
+    }
+
+    Optional<TreeLogRecoveryPlan> planTreeRecovery(CylinderExcavationSpec area, BlockPosition leaf) {
+        if (area == null || leaf == null) throw new IllegalArgumentException("area and leaf are required");
+        requireClientWorld(area.getDimensionId());
+        World world = minecraft.theWorld;
+        return TreeLogRecoveryPlanner.plan(area, leaf, position -> {
+            if (!world.blockExists(position.getX(), position.getY(), position.getZ())) {
+                return TreeLogRecoveryPlanner.Kind.UNAVAILABLE;
+            }
+            Block block = world.getBlock(position.getX(), position.getY(), position.getZ());
+            if (block == null || block.isAir(world, position.getX(), position.getY(), position.getZ())) {
+                return TreeLogRecoveryPlanner.Kind.OTHER;
+            }
+            if (block.isWood(world, position.getX(), position.getY(), position.getZ())) {
+                return TreeLogRecoveryPlanner.Kind.WOOD;
+            }
+            return block.isLeaves(world, position.getX(), position.getY(), position.getZ())
+                ? TreeLogRecoveryPlanner.Kind.LEAF
+                : TreeLogRecoveryPlanner.Kind.OTHER;
+        });
+    }
+
+    boolean isWoodPosition(int dimensionId, BlockPosition position) {
+        requireClientWorld(dimensionId);
+        World world = minecraft.theWorld;
+        if (!world.blockExists(position.getX(), position.getY(), position.getZ())) return false;
+        Block block = world.getBlock(position.getX(), position.getY(), position.getZ());
+        return block != null && block.isWood(world, position.getX(), position.getY(), position.getZ());
     }
 
     private void requireClientWorld(int dimensionId) {
