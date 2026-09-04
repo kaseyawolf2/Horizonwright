@@ -165,9 +165,17 @@ or drop-collection decision comes from a complete loaded-pen scan, receives only
 its exact movement/look/use/held-use or attack capabilities, and must obtain a
 backend-confirmed postcondition before the verified-action checkpoint advances.
 The next action always requires a wholly fresh pen observation; pause and
-reconnect cancel the unconfirmed action without advancement. No live Minecraft
-entity adapter is claimed yet, so configured work holds safely without touching
-animals. Operator configuration is available from **Work areas**: select a
+reconnect cancel the unconfirmed action without advancement. A read-only live
+Minecraft observer now resolves the exact identity-bound named pen and requires
+its current dimension, bounded volume, and every intersecting chunk to be
+loaded. It admits only exact vanilla cow, sheep, pig, and chicken classes;
+captures adult, named, breeding-ready/engaged, position, and item-drop state;
+and emits complete per-candidate development traces plus an opaque snapshot
+fingerprint. Areas captured as support blocks include the two-block animal
+space above them while policy positions remain normalized to the saved area.
+No live action executor is bound yet, so configured work holds safely without
+moving, feeding, collecting, or attacking. Operator configuration is available
+from **Work areas**: select a
 saved area, open **Livestock settings**, choose cow/sheep/pig/chicken, and set
 minimum adults, maximum adults, the hard per-pass action cap, and recurring
 interval. One finite pass or one species-specific recurring schedule can be
