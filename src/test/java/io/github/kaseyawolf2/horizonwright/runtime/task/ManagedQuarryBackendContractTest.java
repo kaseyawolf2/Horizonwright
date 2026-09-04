@@ -48,7 +48,8 @@ public class ManagedQuarryBackendContractTest {
             action.getGeometryKey(),
             action.getStartFrontier(),
             action.getIntent(),
-            "minecraft:cobblestone@0");
+            "minecraft:cobblestone@0",
+            "minecraft:cobblestone");
         ManagedQuarryActionProgress progress = new ManagedQuarryActionProgress(
             action.getRequestId(),
             ExcavationActionState.CONFIRMED,
@@ -79,7 +80,8 @@ public class ManagedQuarryBackendContractTest {
             spec.getGeometryKey(),
             frontier,
             intent,
-            "minecraft:cobblestone@0");
+            "minecraft:cobblestone@0",
+            "minecraft:cobblestone");
 
         assertThrows(
             IllegalArgumentException.class,

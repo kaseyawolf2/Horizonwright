@@ -1,12 +1,11 @@
 package io.github.kaseyawolf2.horizonwright.runtime.task;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
 
 import java.util.HashSet;
-import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
 
@@ -22,18 +21,17 @@ import io.github.kaseyawolf2.horizonwright.core.excavation.CylinderExcavationSpe
 import io.github.kaseyawolf2.horizonwright.core.excavation.ExcavationBlockClassification;
 import io.github.kaseyawolf2.horizonwright.core.excavation.ExcavationCheckpoint;
 import io.github.kaseyawolf2.horizonwright.core.excavation.ExcavationFrontier;
-import io.github.kaseyawolf2.horizonwright.core.excavation.ExcavationMode;
 import io.github.kaseyawolf2.horizonwright.core.excavation.ExcavationObservation;
 import io.github.kaseyawolf2.horizonwright.core.excavation.ExcavationSuspensionReason;
 import io.github.kaseyawolf2.horizonwright.core.excavation.ExcavationTargetOutcome;
 import io.github.kaseyawolf2.horizonwright.core.excavation.ExcavationTargetResult;
+import io.github.kaseyawolf2.horizonwright.core.excavation.ManagedQuarryConfiguration;
 import io.github.kaseyawolf2.horizonwright.core.navigation.NavigationBackend;
 import io.github.kaseyawolf2.horizonwright.core.navigation.NavigationProgress;
 import io.github.kaseyawolf2.horizonwright.core.task.BlockedCause;
 import io.github.kaseyawolf2.horizonwright.core.task.ControllerSnapshot;
 import io.github.kaseyawolf2.horizonwright.core.task.MonotonicClock;
 import io.github.kaseyawolf2.horizonwright.core.task.TaskCheckpoint;
-import io.github.kaseyawolf2.horizonwright.core.task.TaskLane;
 import io.github.kaseyawolf2.horizonwright.core.task.TaskOrchestrator;
 import io.github.kaseyawolf2.horizonwright.core.task.TaskSnapshot;
 import io.github.kaseyawolf2.horizonwright.core.task.TaskSpec;
@@ -570,21 +568,53 @@ public class ExcavationTaskRunnerTest {
     }
 
     @Test
-    public void managedQuarrySpecificationsAreRejectedByThisBridge() {
-        TaskSpec clean = ExcavationTask.cleanVolumeCylinder("managed", 0, 8, 8, 1, 12, 12);
-        Map<String, String> managedParameters = new LinkedHashMap<>(clean.getParameters());
-        managedParameters.put(ExcavationTask.MODE, ExcavationMode.MANAGED_QUARRY.name());
-        TaskSpec managed = new TaskSpec(
-            clean.getId(),
-            clean.getType(),
-            clean.getDisplayName(),
-            TaskLane.FALLBACK,
-            managedParameters);
+    public void managedQuarryFailsClosedWhenInfrastructureBackendIsUnavailable() {
+        harness = new Harness();
+        harness.backend.managedAvailable = false;
+        TaskSpec managed = ExcavationTask
+            .managedQuarryCylinder("managed", 0, 8, 8, 1, 12, 12, ManagedQuarryConfiguration.defaults());
+        harness.controller.submit(managed);
 
-        assertThrows(
-            IllegalArgumentException.class,
-            () -> new RuntimeTaskRunnerFactory(UnusedNavigationAccess.INSTANCE, new Access(new RecordingBackend()))
-                .create(managed, TaskCheckpoint.empty()));
+        TaskSnapshot blocked = task(harness.controller.tick(), managed.getId());
+
+        assertEquals(TaskState.BLOCKED, blocked.getState());
+        assertEquals(0, harness.backend.observations);
+        assertEquals(0, harness.backend.managedSubmissions);
+    }
+
+    @Test
+    public void managedInfrastructureIsConfirmedInOrderBeforeVolumeFrontierAdvances() {
+        harness = new Harness();
+        TaskSpec managed = ExcavationTask
+            .managedQuarryCylinder("managed", 0, 8, 8, 1, 12, 12, ManagedQuarryConfiguration.defaults());
+        harness.controller.submit(managed);
+        TaskSnapshot bound = task(harness.controller.tick(), managed.getId());
+        String initialFrontier = frontierKey(bound.getCheckpoint());
+
+        task(harness.controller.tick(), managed.getId());
+        assertEquals(1, harness.backend.managedSubmissions);
+        assertEquals(0, harness.backend.submissions);
+        assertEquals(
+            initialFrontier,
+            frontierKey(task(harness.controller.snapshot(), managed.getId()).getCheckpoint()));
+
+        harness.backend.confirmManaged();
+        harness.controller.tick();
+        harness.controller.tick();
+        assertEquals(2, harness.backend.managedSubmissions);
+        assertEquals(0, harness.backend.submissions);
+
+        harness.backend.confirmManaged();
+        harness.controller.tick();
+        harness.controller.tick();
+        assertEquals(1, harness.backend.submissions);
+        assertEquals(
+            initialFrontier,
+            frontierKey(task(harness.controller.snapshot(), managed.getId()).getCheckpoint()));
+
+        harness.backend.confirm();
+        TaskSnapshot advanced = task(harness.controller.tick(), managed.getId());
+        assertFalse(initialFrontier.equals(frontierKey(advanced.getCheckpoint())));
     }
 
     @Test
@@ -753,8 +783,11 @@ public class ExcavationTaskRunnerTest {
     private static final class RecordingBackend implements ExcavationBackend {
 
         private boolean available = true;
+        private boolean managedAvailable = true;
         private int observations;
         private int submissions;
+        private int managedObservations;
+        private int managedSubmissions;
         private long observationRevisionOffset;
         private long confirmationEpochOffset;
         private ExcavationSuspensionReason suspensionReason = ExcavationSuspensionReason.NONE;
@@ -764,12 +797,48 @@ public class ExcavationTaskRunnerTest {
         private ExcavationActionRequest lastRequest;
         private ActionLease lastLease;
         private Handle active;
+        private ManagedHandle managedActive;
         private final Set<io.github.kaseyawolf2.horizonwright.core.excavation.BlockPosition> confirmedClear = new HashSet<>();
+        private final Set<io.github.kaseyawolf2.horizonwright.core.excavation.BlockPosition> confirmedManaged = new HashSet<>();
 
         @Override
         public ExcavationBackendAvailability availability() {
             return available ? ExcavationBackendAvailability.available("recording excavation backend ready")
                 : ExcavationBackendAvailability.unavailable("recording excavation backend disabled");
+        }
+
+        @Override
+        public ExcavationBackendAvailability managedQuarryAvailability() {
+            return managedAvailable ? ExcavationBackendAvailability.available("recording managed backend ready")
+                : ExcavationBackendAvailability.unavailable("recording managed backend disabled");
+        }
+
+        @Override
+        public ManagedQuarryObservationResult observeManagedQuarry(ManagedQuarryObservationRequest request) {
+            managedObservations++;
+            boolean present = confirmedManaged.contains(
+                request.getIntent()
+                    .getPosition());
+            return new ManagedQuarryObservationResult(
+                request.getTaskRevision(),
+                request.getActionEpoch(),
+                request.getGeometryKey(),
+                request.getStartFrontier(),
+                request.getIntent()
+                    .getPosition(),
+                present ? request.getIntent()
+                    .getApprovedMaterial() + "@0" : "minecraft:air@0",
+                present);
+        }
+
+        @Override
+        public ManagedQuarryActionHandle executeManagedQuarry(ManagedQuarryActionRequest request,
+            ActionLease actionLease) {
+            assertTrue(actionLease.isValid());
+            assertEquals(request.getActionEpoch(), actionLease.getEpoch());
+            managedSubmissions++;
+            managedActive = new ManagedHandle(request);
+            return managedActive;
         }
 
         @Override
@@ -825,6 +894,25 @@ public class ExcavationTaskRunnerTest {
                     .getPosition());
         }
 
+        private void confirmManaged() {
+            assertNotNull(managedActive);
+            managedActive.confirmation = new ConfirmedManagedQuarryResult(
+                managedActive.request.getTaskRevision(),
+                managedActive.request.getActionEpoch(),
+                managedActive.request.getGeometryKey(),
+                managedActive.request.getStartFrontier(),
+                managedActive.request.getIntent(),
+                managedActive.request.getIntent()
+                    .getApprovedMaterial() + "@0",
+                managedActive.request.getIntent()
+                    .getApprovedMaterial());
+            managedActive.state = ExcavationActionState.CONFIRMED;
+            managedActive.detail = "server-confirmed managed material";
+            confirmedManaged.add(
+                managedActive.request.getIntent()
+                    .getPosition());
+        }
+
         private static final class Handle implements ExcavationActionHandle {
 
             private final ExcavationActionRequest request;
@@ -853,6 +941,35 @@ public class ExcavationTaskRunnerTest {
                     confirmation = null;
                     detail = "cancelled";
                 }
+            }
+        }
+
+        private static final class ManagedHandle implements ManagedQuarryActionHandle {
+
+            private final ManagedQuarryActionRequest request;
+            private ExcavationActionState state = ExcavationActionState.SUBMITTED;
+            private String detail = "submitted";
+            private ConfirmedManagedQuarryResult confirmation;
+
+            private ManagedHandle(ManagedQuarryActionRequest request) {
+                this.request = request;
+            }
+
+            @Override
+            public String getRequestId() {
+                return request.getRequestId();
+            }
+
+            @Override
+            public ManagedQuarryActionProgress progress() {
+                return new ManagedQuarryActionProgress(request.getRequestId(), state, detail, confirmation);
+            }
+
+            @Override
+            public void cancel() {
+                state = ExcavationActionState.CANCELLED;
+                confirmation = null;
+                detail = "cancelled";
             }
         }
     }

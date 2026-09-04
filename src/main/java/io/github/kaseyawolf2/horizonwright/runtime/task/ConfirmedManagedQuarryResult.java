@@ -14,9 +14,11 @@ public final class ConfirmedManagedQuarryResult {
     private final ExcavationFrontier startFrontier;
     private final ManagedQuarryIntent intent;
     private final String observedFingerprint;
+    private final String confirmedMaterial;
 
     public ConfirmedManagedQuarryResult(long taskRevision, long actionEpoch, String geometryKey,
-        ExcavationFrontier startFrontier, ManagedQuarryIntent intent, String observedFingerprint) {
+        ExcavationFrontier startFrontier, ManagedQuarryIntent intent, String observedFingerprint,
+        String confirmedMaterial) {
         if (taskRevision < 1L) throw new IllegalArgumentException("taskRevision must be positive");
         if (actionEpoch < 1L) throw new IllegalArgumentException("actionEpoch must be positive");
         this.taskRevision = taskRevision;
@@ -25,6 +27,11 @@ public final class ConfirmedManagedQuarryResult {
         this.startFrontier = Objects.requireNonNull(startFrontier, "startFrontier");
         this.intent = Objects.requireNonNull(intent, "intent");
         this.observedFingerprint = requireText(observedFingerprint, "observedFingerprint");
+        this.confirmedMaterial = requireText(confirmedMaterial, "confirmedMaterial");
+        if (!intent.getApprovedMaterial()
+            .equals(this.confirmedMaterial)) {
+            throw new IllegalArgumentException("confirmedMaterial must equal the intent's approved material");
+        }
     }
 
     public long getTaskRevision() {
@@ -49,6 +56,10 @@ public final class ConfirmedManagedQuarryResult {
 
     public String getObservedFingerprint() {
         return observedFingerprint;
+    }
+
+    public String getConfirmedMaterial() {
+        return confirmedMaterial;
     }
 
     private static String requireText(String value, String field) {

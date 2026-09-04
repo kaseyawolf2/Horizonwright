@@ -17,7 +17,6 @@ import io.github.kaseyawolf2.horizonwright.core.excavation.ExcavationCheckpoint;
 import io.github.kaseyawolf2.horizonwright.core.excavation.ExcavationExecutionResult;
 import io.github.kaseyawolf2.horizonwright.core.excavation.ExcavationFrontier;
 import io.github.kaseyawolf2.horizonwright.core.excavation.ExcavationIntent;
-import io.github.kaseyawolf2.horizonwright.core.excavation.ExcavationMode;
 import io.github.kaseyawolf2.horizonwright.core.excavation.ExcavationObservation;
 import io.github.kaseyawolf2.horizonwright.core.excavation.ExcavationPlan;
 import io.github.kaseyawolf2.horizonwright.core.excavation.ExcavationPlanner;
@@ -31,6 +30,8 @@ import io.github.kaseyawolf2.horizonwright.core.excavation.ExcavationTarget;
 import io.github.kaseyawolf2.horizonwright.core.excavation.ExcavationTargetBatch;
 import io.github.kaseyawolf2.horizonwright.core.excavation.ExcavationTargetOutcome;
 import io.github.kaseyawolf2.horizonwright.core.excavation.ExcavationTargetResult;
+import io.github.kaseyawolf2.horizonwright.core.excavation.ManagedQuarryConfiguration;
+import io.github.kaseyawolf2.horizonwright.core.excavation.ManagedQuarryIntent;
 import io.github.kaseyawolf2.horizonwright.core.task.BlockedReason;
 import io.github.kaseyawolf2.horizonwright.core.task.StepResult;
 import io.github.kaseyawolf2.horizonwright.core.task.TaskCheckpoint;
@@ -62,6 +63,7 @@ final class ExcavationTaskRunner implements TaskRunner {
 
     private final TaskSpec spec;
     private final CylinderExcavationSpec cylinder;
+    private final ManagedQuarryConfiguration managedConfiguration;
     private final ExcavationRuntimeAccess runtime;
 
     private TaskCheckpoint taskCheckpoint;
@@ -72,6 +74,14 @@ final class ExcavationTaskRunner implements TaskRunner {
     private ExcavationActionRequest activeRequest;
     private ExcavationActionHandle activeHandle;
     private ActionLease activeLease;
+    private ExcavationPlan pendingManagedPlan;
+    private List<ExcavationObservation> pendingPassiveObservations;
+    private ExcavationObservationResult pendingActionableObservation;
+    private int pendingManagedIndex;
+    private ManagedQuarryObservationRequest activeManagedObservationRequest;
+    private ManagedQuarryActionRequest activeManagedRequest;
+    private ManagedQuarryActionHandle activeManagedHandle;
+    private ActionLease activeManagedLease;
     private ExcavationCheckpoint completionCandidate;
     private ExcavationFrontier verificationFrontier;
     private Integer verificationLayerY;
@@ -87,10 +97,7 @@ final class ExcavationTaskRunner implements TaskRunner {
         }
         this.spec = spec;
         this.cylinder = ExcavationTask.parse(spec);
-        if (cylinder.getMode() == ExcavationMode.MANAGED_QUARRY) {
-            ExcavationTask.managedConfiguration(spec);
-            throw new IllegalArgumentException("managed-quarry live infrastructure execution is not connected yet");
-        }
+        this.managedConfiguration = ExcavationTask.managedConfiguration(spec);
         this.runtime = runtime;
         this.taskCheckpoint = checkpoint;
         this.excavationCheckpoint = ExcavationTaskCheckpointCodec.decode(cylinder, checkpoint);
@@ -148,7 +155,22 @@ final class ExcavationTaskRunner implements TaskRunner {
                     "an installed, version-tested excavation backend",
                     "Install or enable the tested excavation integration, then resume this task."));
         }
-        if (activeHandle != null && activeBackend != backend) {
+        if (managedConfiguration != null) {
+            ExcavationBackendAvailability managedAvailability = managedAvailability(backend);
+            if (!managedAvailability.isAvailable()) {
+                RuntimeException stopFailure = stopActive();
+                return StepResult.blocked(
+                    context.getActionEpoch(),
+                    taskCheckpoint,
+                    BlockedReason.missingRequirement(
+                        appendCleanup(managedAvailability.getDiagnostic(), stopFailure),
+                        spec.getId(),
+                        "a version-tested managed-quarry infrastructure backend",
+                        "Install or enable managed-quarry placement support, then resume this task."));
+            }
+        }
+        if ((activeHandle != null || activeManagedHandle != null || pendingManagedPlan != null)
+            && activeBackend != backend) {
             RuntimeException stopFailure = stopActive();
             return StepResult.failed(
                 context.getActionEpoch(),
@@ -173,6 +195,8 @@ final class ExcavationTaskRunner implements TaskRunner {
                     + " to action epoch "
                     + context.getActionEpoch());
         }
+        if (activeManagedHandle != null) return observeManagedAction(context, backend);
+        if (pendingManagedPlan != null) return advanceManagedSequence(context, backend);
         if (activeHandle != null) {
             return observeAction(context, backend);
         }
@@ -221,8 +245,9 @@ final class ExcavationTaskRunner implements TaskRunner {
     }
 
     private StepResult observeAndSubmit(TaskStepContext context, ExcavationBackend backend) {
+        int scanLimit = managedConfiguration == null ? TARGETS_PER_SCAN : 1;
         ExcavationTargetBatch batch = CylinderExcavationGeometry
-            .nextBatch(cylinder, excavationCheckpoint.getFrontier(), TARGETS_PER_SCAN);
+            .nextBatch(cylinder, excavationCheckpoint.getFrontier(), scanLimit);
         if (batch.isEmpty()) {
             return StepResult.failed(
                 context.getActionEpoch(),
@@ -290,21 +315,26 @@ final class ExcavationTaskRunner implements TaskRunner {
             context.getActionEpoch(),
             actionBatch,
             Collections.singletonList(actionable.getObservation()));
-        ExcavationPlan plan = ExcavationPlanner.calculate(cylinder, window, null);
+        ExcavationPlan plan = ExcavationPlanner.calculate(cylinder, window, managedConfiguration);
         if (plan.getIntents()
-            .size() != 1
-            || !plan.getManagedIntents()
-                .isEmpty()) {
+            .size() != 1) {
             return StepResult.failed(
                 context.getActionEpoch(),
                 taskCheckpoint,
-                "Clean-volume excavation planner violated the single-target contract",
+                "Excavation planner violated the single-target action contract",
                 false);
         }
         if (actionable.getSuspensionReason() != ExcavationSuspensionReason.NONE) {
             return suspendForSharedOperation(context, plan, actionable);
         }
+        if (!plan.getManagedIntents()
+            .isEmpty()) return beginManagedSequence(context, backend, plan, null, actionable);
 
+        return submitExcavationAction(context, backend, plan);
+    }
+
+    private StepResult submitExcavationAction(TaskStepContext context, ExcavationBackend backend, ExcavationPlan plan) {
+        ExcavationServicePolicy policy = ExcavationTask.servicePolicy(spec);
         Optional<ActionLease> acquired = context.getActions()
             .tryAcquire(REQUIRED_CAPABILITIES);
         if (!acquired.isPresent()) {
@@ -391,15 +421,14 @@ final class ExcavationTaskRunner implements TaskRunner {
                 context.getActionEpoch(),
                 passiveBatch,
                 observations),
-            null);
+            managedConfiguration);
         if (!passivePlan.getManagedIntents()
-            .isEmpty()) {
-            return StepResult.failed(
-                context.getActionEpoch(),
-                taskCheckpoint,
-                "Clean-volume excavation produced managed intents while skipping passive targets",
-                false);
-        }
+            .isEmpty()) return beginManagedSequence(context, backend, passivePlan, observations, null);
+        return applyPassivePlan(context, backend, passivePlan, observations.size());
+    }
+
+    private StepResult applyPassivePlan(TaskStepContext context, ExcavationBackend backend, ExcavationPlan passivePlan,
+        int observationCount) {
         List<ExcavationTargetResult> results = new ArrayList<>(
             passivePlan.getIntents()
                 .size());
@@ -420,7 +449,7 @@ final class ExcavationTaskRunner implements TaskRunner {
             return acceptPrimaryCheckpoint(
                 context,
                 application.getCheckpoint(),
-                "Skipped " + results.size() + " confirmed non-mutating excavation targets");
+                "Skipped " + observationCount + " confirmed non-mutating excavation targets");
         } catch (RuntimeException failure) {
             return StepResult.failed(
                 context.getActionEpoch(),
@@ -428,6 +457,222 @@ final class ExcavationTaskRunner implements TaskRunner {
                 "Passive excavation progress rejected: " + describe(failure),
                 false);
         }
+    }
+
+    private StepResult beginManagedSequence(TaskStepContext context, ExcavationBackend backend, ExcavationPlan plan,
+        List<ExcavationObservation> passiveObservations, ExcavationObservationResult actionableObservation) {
+        if (pendingManagedPlan != null || activeManagedHandle != null) {
+            return StepResult.failed(
+                context.getActionEpoch(),
+                taskCheckpoint,
+                "Managed-quarry infrastructure sequence was already active",
+                false);
+        }
+        pendingManagedPlan = plan;
+        pendingPassiveObservations = passiveObservations == null ? null
+            : Collections.unmodifiableList(new ArrayList<>(passiveObservations));
+        pendingActionableObservation = actionableObservation;
+        pendingManagedIndex = 0;
+        activeBackend = backend;
+        return advanceManagedSequence(context, backend);
+    }
+
+    private StepResult advanceManagedSequence(TaskStepContext context, ExcavationBackend backend) {
+        if (pendingManagedPlan == null || activeManagedHandle != null || activeManagedLease != null) {
+            return StepResult.failed(
+                context.getActionEpoch(),
+                taskCheckpoint,
+                "Managed-quarry infrastructure sequence state is inconsistent",
+                false);
+        }
+        if (!isLiveAuthority(context, backend) || activeBackend != backend) {
+            RuntimeException stopFailure = stopActive();
+            return StepResult.failed(
+                context.getActionEpoch(),
+                taskCheckpoint,
+                appendCleanup("Managed-quarry authority changed before infrastructure observation", stopFailure),
+                false);
+        }
+        List<ManagedQuarryIntent> intents = pendingManagedPlan.getManagedIntents();
+        if (pendingManagedIndex >= intents.size()) return continueAfterManagedSequence(context, backend);
+
+        ManagedQuarryIntent intent = intents.get(pendingManagedIndex);
+        ManagedQuarryObservationRequest observationRequest = new ManagedQuarryObservationRequest(
+            spec.getId(),
+            cylinder.getDimensionId(),
+            pendingManagedPlan.getTaskRevision(),
+            pendingManagedPlan.getActionEpoch(),
+            pendingManagedPlan.getGeometryKey(),
+            pendingManagedPlan.getStartFrontier(),
+            intent);
+        ManagedQuarryObservationResult observation;
+        try {
+            observation = backend.observeManagedQuarry(observationRequest);
+            validateManagedObservation(observationRequest, observation);
+        } catch (RuntimeException failure) {
+            RuntimeException cleanupFailure = stopActive();
+            if (cleanupFailure != null) failure.addSuppressed(cleanupFailure);
+            return StepResult.failed(
+                context.getActionEpoch(),
+                taskCheckpoint,
+                "Managed-quarry infrastructure observation failed: " + describe(failure),
+                true);
+        }
+        if (observation.isApprovedMaterialPresent()) {
+            pendingManagedIndex++;
+            return StepResult.progress(
+                context.getActionEpoch(),
+                taskCheckpoint,
+                "Confirmed existing " + intent.getApprovedMaterial() + " at " + intent.getPosition());
+        }
+
+        Optional<ActionLease> acquired = context.getActions()
+            .tryAcquire(REQUIRED_CAPABILITIES);
+        if (!acquired.isPresent()) {
+            return StepResult.waitFor(
+                context.getActionEpoch(),
+                taskCheckpoint,
+                POLL_DELAY_MILLIS,
+                "waiting for managed-quarry movement, look, placement, and held-use capabilities");
+        }
+        ActionLease lease = acquired.get();
+        String requestId = spec.getId() + "-managed-"
+            + pendingManagedPlan.getTaskRevision()
+            + '-'
+            + pendingManagedIndex;
+        ManagedQuarryActionRequest actionRequest = new ManagedQuarryActionRequest(
+            requestId,
+            observationRequest,
+            intent,
+            observation.getBlockFingerprint());
+        ManagedQuarryActionHandle handle = null;
+        try {
+            if (!lease.isValid() || lease.getEpoch() != context.getActionEpoch()
+                || !isLiveAuthority(context, backend)) {
+                throw new IllegalStateException("managed-quarry authority changed before action submission");
+            }
+            handle = backend.executeManagedQuarry(actionRequest, lease);
+            if (handle == null) throw new IllegalStateException("managed-quarry backend returned no action handle");
+            if (!requestId.equals(handle.getRequestId())) {
+                throw new IllegalStateException("managed-quarry backend returned a mismatched action handle");
+            }
+            activeManagedObservationRequest = observationRequest;
+            activeManagedRequest = actionRequest;
+            activeManagedHandle = handle;
+            activeManagedLease = lease;
+            return StepResult.progress(
+                context.getActionEpoch(),
+                taskCheckpoint,
+                "Submitted managed-quarry " + intent.getKind() + " at " + intent.getPosition());
+        } catch (RuntimeException failure) {
+            RuntimeException cleanupFailure = cancelAndClose(handle, lease);
+            if (cleanupFailure != null) failure.addSuppressed(cleanupFailure);
+            return StepResult.failed(
+                context.getActionEpoch(),
+                taskCheckpoint,
+                "Managed-quarry infrastructure submission failed: " + describe(failure),
+                true);
+        }
+    }
+
+    private StepResult observeManagedAction(TaskStepContext context, ExcavationBackend backend) {
+        if (activeManagedHandle == null || activeManagedLease == null
+            || activeManagedRequest == null
+            || activeManagedObservationRequest == null
+            || pendingManagedPlan == null
+            || !activeManagedLease.isValid()
+            || activeManagedLease.getEpoch() != context.getActionEpoch()
+            || !isLiveAuthority(context, backend)) {
+            RuntimeException stopFailure = stopActive();
+            return StepResult.failed(
+                context.getActionEpoch(),
+                taskCheckpoint,
+                appendCleanup("Managed-quarry action lease is no longer authoritative", stopFailure),
+                false);
+        }
+        ManagedQuarryActionProgress progress;
+        try {
+            progress = activeManagedHandle.progress();
+            validateManagedProgress(progress);
+        } catch (RuntimeException failure) {
+            RuntimeException cleanupFailure = stopActive();
+            if (cleanupFailure != null) failure.addSuppressed(cleanupFailure);
+            return StepResult.failed(
+                context.getActionEpoch(),
+                taskCheckpoint,
+                "Managed-quarry action progress failed: " + describe(failure),
+                true);
+        }
+        switch (progress.getState()) {
+            case SUBMITTED:
+            case EXECUTING:
+                return StepResult
+                    .waitFor(context.getActionEpoch(), taskCheckpoint, POLL_DELAY_MILLIS, progress.getDetail());
+            case CONFIRMED:
+                return applyManagedConfirmation(context, backend, progress);
+            case CANCELLED:
+            case FAILED:
+                RuntimeException stopFailure = stopActive();
+                return StepResult.failed(
+                    context.getActionEpoch(),
+                    taskCheckpoint,
+                    appendCleanup(progress.getDetail(), stopFailure),
+                    true);
+            default:
+                RuntimeException unknownFailure = stopActive();
+                return StepResult.failed(
+                    context.getActionEpoch(),
+                    taskCheckpoint,
+                    appendCleanup("Unknown managed-quarry action state: " + progress.getState(), unknownFailure),
+                    false);
+        }
+    }
+
+    private StepResult applyManagedConfirmation(TaskStepContext context, ExcavationBackend backend,
+        ManagedQuarryActionProgress progress) {
+        ConfirmedManagedQuarryResult confirmation = progress.getConfirmation()
+            .orElseThrow(() -> new IllegalStateException("confirmed managed-quarry action omitted its evidence"));
+        try {
+            validateManagedConfirmation(confirmation);
+            if (!isLiveAuthority(context, backend) || !activeManagedLease.isValid()) {
+                throw new IllegalStateException("managed-quarry authority changed before confirmation was applied");
+            }
+            RuntimeException releaseFailure = releaseManagedConfirmed();
+            if (releaseFailure != null) throw releaseFailure;
+            pendingManagedIndex++;
+            return StepResult.progress(
+                context.getActionEpoch(),
+                taskCheckpoint,
+                "Server-confirmed " + confirmation.getIntent()
+                    .getKind()
+                    + " at "
+                    + confirmation.getIntent()
+                        .getPosition());
+        } catch (RuntimeException failure) {
+            RuntimeException cleanupFailure = stopActive();
+            if (cleanupFailure != null) failure.addSuppressed(cleanupFailure);
+            return StepResult.failed(
+                context.getActionEpoch(),
+                taskCheckpoint,
+                "Managed-quarry confirmation rejected: " + describe(failure),
+                false);
+        }
+    }
+
+    private StepResult continueAfterManagedSequence(TaskStepContext context, ExcavationBackend backend) {
+        ExcavationPlan plan = pendingManagedPlan;
+        List<ExcavationObservation> passive = pendingPassiveObservations;
+        ExcavationObservationResult actionable = pendingActionableObservation;
+        clearManagedSequence(passive != null);
+        if (passive != null) return applyPassivePlan(context, backend, plan, passive.size());
+        if (actionable == null) {
+            return StepResult.failed(
+                context.getActionEpoch(),
+                taskCheckpoint,
+                "Managed-quarry sequence had no volume continuation",
+                false);
+        }
+        return submitExcavationAction(context, backend, plan);
     }
 
     private static boolean requiresGameplayAction(ExcavationBlockClassification classification) {
@@ -705,11 +950,9 @@ final class ExcavationTaskRunner implements TaskRunner {
                 context.getActionEpoch(),
                 actionBatch,
                 Collections.singletonList(observed.getObservation())),
-            null);
+            managedConfiguration);
         if (plan.getIntents()
-            .size() != 1
-            || !plan.getManagedIntents()
-                .isEmpty()) {
+            .size() != 1) {
             return StepResult.failed(
                 context.getActionEpoch(),
                 taskCheckpoint,
@@ -904,6 +1147,45 @@ final class ExcavationTaskRunner implements TaskRunner {
         }
     }
 
+    private static void validateManagedObservation(ManagedQuarryObservationRequest request,
+        ManagedQuarryObservationResult result) {
+        if (result == null) throw new IllegalStateException("managed-quarry backend returned no observation");
+        if (request.getTaskRevision() != result.getTaskRevision() || request.getActionEpoch() != result.getActionEpoch()
+            || !request.getGeometryKey()
+                .equals(result.getGeometryKey())
+            || !request.getStartFrontier()
+                .equals(result.getStartFrontier())
+            || !request.getIntent()
+                .getPosition()
+                .equals(result.getPosition())) {
+            throw new IllegalStateException("managed-quarry observation did not match its exact request");
+        }
+    }
+
+    private void validateManagedProgress(ManagedQuarryActionProgress progress) {
+        if (progress == null) throw new IllegalStateException("managed-quarry backend returned no progress");
+        if (!activeManagedRequest.getRequestId()
+            .equals(progress.getRequestId())) {
+            throw new IllegalStateException("managed-quarry progress belongs to another request");
+        }
+    }
+
+    private void validateManagedConfirmation(ConfirmedManagedQuarryResult confirmation) {
+        if (activeManagedRequest.getTaskRevision() != confirmation.getTaskRevision()
+            || activeManagedRequest.getActionEpoch() != confirmation.getActionEpoch()
+            || !activeManagedRequest.getGeometryKey()
+                .equals(confirmation.getGeometryKey())
+            || !activeManagedRequest.getStartFrontier()
+                .equals(confirmation.getStartFrontier())
+            || !activeManagedRequest.getIntent()
+                .equals(confirmation.getIntent())
+            || !activeManagedRequest.getIntent()
+                .getApprovedMaterial()
+                .equals(confirmation.getConfirmedMaterial())) {
+            throw new IllegalStateException("managed-quarry confirmation did not match its exact request");
+        }
+    }
+
     private boolean isLiveAuthority(TaskStepContext context, ExcavationBackend backend) {
         return context.getActions()
             .isAuthoritative() && context.getActionEpoch() == excavationCheckpoint.getActionEpoch()
@@ -925,11 +1207,33 @@ final class ExcavationTaskRunner implements TaskRunner {
         }
     }
 
+    private RuntimeException releaseManagedConfirmed() {
+        ActionLease lease = activeManagedLease;
+        activeManagedObservationRequest = null;
+        activeManagedRequest = null;
+        activeManagedHandle = null;
+        activeManagedLease = null;
+        if (lease == null) return null;
+        try {
+            lease.close();
+            return null;
+        } catch (RuntimeException failure) {
+            return failure;
+        }
+    }
+
     private RuntimeException stopActive() {
         ExcavationActionHandle handle = activeHandle;
         ActionLease lease = activeLease;
+        ManagedQuarryActionHandle managedHandle = activeManagedHandle;
+        ActionLease managedLease = activeManagedLease;
         clearActiveReferences();
-        return cancelAndClose(handle, lease);
+        clearManagedSequence(true);
+        RuntimeException failure = cancelAndClose(handle, lease);
+        RuntimeException managedFailure = cancelAndClose(managedHandle, managedLease);
+        if (failure == null) return managedFailure;
+        if (managedFailure != null) failure.addSuppressed(managedFailure);
+        return failure;
     }
 
     private void clearActiveReferences() {
@@ -939,6 +1243,18 @@ final class ExcavationTaskRunner implements TaskRunner {
         activeHandle = null;
         activeLease = null;
         activeVerification = false;
+    }
+
+    private void clearManagedSequence(boolean clearBackend) {
+        pendingManagedPlan = null;
+        pendingPassiveObservations = null;
+        pendingActionableObservation = null;
+        pendingManagedIndex = 0;
+        activeManagedObservationRequest = null;
+        activeManagedRequest = null;
+        activeManagedHandle = null;
+        activeManagedLease = null;
+        if (clearBackend) activeBackend = null;
     }
 
     private void clearVerification() {
@@ -1107,6 +1423,26 @@ final class ExcavationTaskRunner implements TaskRunner {
         return failure;
     }
 
+    private static RuntimeException cancelAndClose(ManagedQuarryActionHandle handle, ActionLease lease) {
+        RuntimeException failure = null;
+        if (handle != null) {
+            try {
+                handle.cancel();
+            } catch (RuntimeException cancellationFailure) {
+                failure = cancellationFailure;
+            }
+        }
+        if (lease != null) {
+            try {
+                lease.close();
+            } catch (RuntimeException closeFailure) {
+                if (failure == null) failure = closeFailure;
+                else failure.addSuppressed(closeFailure);
+            }
+        }
+        return failure;
+    }
+
     private void requireContext(TaskStepContext context) {
         if (context == null) {
             throw new IllegalArgumentException("context must not be null");
@@ -1131,6 +1467,18 @@ final class ExcavationTaskRunner implements TaskRunner {
         } catch (RuntimeException failure) {
             return ExcavationBackendAvailability
                 .unavailable("Excavation backend availability failed: " + describe(failure));
+        }
+    }
+
+    private static ExcavationBackendAvailability managedAvailability(ExcavationBackend backend) {
+        try {
+            ExcavationBackendAvailability availability = backend.managedQuarryAvailability();
+            return availability == null
+                ? ExcavationBackendAvailability.unavailable("Managed-quarry backend returned no availability status")
+                : availability;
+        } catch (RuntimeException failure) {
+            return ExcavationBackendAvailability
+                .unavailable("Managed-quarry backend availability failed: " + describe(failure));
         }
     }
 

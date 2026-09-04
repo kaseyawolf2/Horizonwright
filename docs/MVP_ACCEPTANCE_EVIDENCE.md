@@ -28,8 +28,9 @@ but cannot replace the disposable-world observation run required by the plan.
 - Managed-quarry ramp construction.
 - Managed-quarry lighting placement and reserve management.
 - The managed-quarry task now persists approved ramp/light/filler materials and
-  uses an outside descending-staircase geometry, but the live placement boundary
-  is not connected yet.
+  uses an outside descending-staircase geometry. The resumable runner observes,
+  sequences, and requires server-confirmed evidence for each infrastructure
+  action; the Minecraft placement backend is not connected yet.
 - Fluid containment/removal integration; clean-volume excavation currently
   refuses blind fluid work.
 - Ordinary tree farming/replanting as a recurring base chore. Excavation tree
