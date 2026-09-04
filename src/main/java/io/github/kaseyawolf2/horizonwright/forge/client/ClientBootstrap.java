@@ -16,6 +16,7 @@ import net.minecraft.network.NetworkManager;
 import net.minecraft.util.ChatComponentText;
 import net.minecraft.util.EnumChatFormatting;
 import net.minecraftforge.client.ClientCommandHandler;
+import net.minecraftforge.common.MinecraftForge;
 
 import org.lwjgl.input.Keyboard;
 import org.lwjgl.input.Mouse;
@@ -38,6 +39,7 @@ import io.github.kaseyawolf2.horizonwright.core.task.TaskSnapshot;
 import io.github.kaseyawolf2.horizonwright.forge.client.container.LiveContainerTransactionExecutor;
 import io.github.kaseyawolf2.horizonwright.forge.client.container.LiveVanillaChestUnloadBackend;
 import io.github.kaseyawolf2.horizonwright.forge.client.container.ProfileVanillaChestUnloadConfiguration;
+import io.github.kaseyawolf2.horizonwright.forge.client.excavation.ExcavationTargetOverlay;
 import io.github.kaseyawolf2.horizonwright.forge.client.excavation.LiveExcavationBackend;
 import io.github.kaseyawolf2.horizonwright.forge.client.farm.LiveVanillaFarmBackend;
 import io.github.kaseyawolf2.horizonwright.forge.client.farm.ProfileFarmConfiguration;
@@ -129,6 +131,7 @@ public final class ClientBootstrap {
         FMLCommonHandler.instance()
             .bus()
             .register(this);
+        MinecraftForge.EVENT_BUS.register(new ExcavationTargetOverlay());
         SingleplayerWorldMarkerRegistry.getInstance()
             .initialize();
         registerClientCommand(
@@ -192,6 +195,7 @@ public final class ClientBootstrap {
         localConnection = false;
         observedMarkerRevision = -1L;
         profileBindings.clearWorld();
+        ExcavationTargetOverlay.clear();
     }
 
     @SubscribeEvent

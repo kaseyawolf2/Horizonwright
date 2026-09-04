@@ -304,6 +304,7 @@ final class ExcavationTaskRunner implements TaskRunner {
             plan.getGeometryKey(),
             plan.getStartFrontier(),
             intent,
+            cylinder,
             policy != null && policy.hasRepair() ? policy.getReservedToolSlot() : -1);
         ExcavationActionHandle handle = null;
         try {
@@ -737,6 +738,7 @@ final class ExcavationTaskRunner implements TaskRunner {
             plan.getGeometryKey(),
             plan.getStartFrontier(),
             intent,
+            cylinder,
             -1);
         ExcavationActionHandle handle = null;
         try {

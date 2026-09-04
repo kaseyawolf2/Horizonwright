@@ -2,6 +2,7 @@ package io.github.kaseyawolf2.horizonwright.runtime.task;
 
 import java.util.Objects;
 
+import io.github.kaseyawolf2.horizonwright.core.excavation.CylinderExcavationSpec;
 import io.github.kaseyawolf2.horizonwright.core.excavation.ExcavationFrontier;
 import io.github.kaseyawolf2.horizonwright.core.excavation.ExcavationIntent;
 
@@ -16,10 +17,12 @@ public final class ExcavationActionRequest {
     private final String geometryKey;
     private final ExcavationFrontier startFrontier;
     private final ExcavationIntent intent;
+    private final CylinderExcavationSpec excavationArea;
     private final int preferredToolSlot;
 
     ExcavationActionRequest(String requestId, String taskId, int dimensionId, long taskRevision, long actionEpoch,
-        String geometryKey, ExcavationFrontier startFrontier, ExcavationIntent intent, int preferredToolSlot) {
+        String geometryKey, ExcavationFrontier startFrontier, ExcavationIntent intent,
+        CylinderExcavationSpec excavationArea, int preferredToolSlot) {
         this.requestId = requireText(requestId, "requestId");
         this.taskId = requireText(taskId, "taskId");
         this.dimensionId = dimensionId;
@@ -34,6 +37,10 @@ public final class ExcavationActionRequest {
         this.geometryKey = requireText(geometryKey, "geometryKey");
         this.startFrontier = Objects.requireNonNull(startFrontier, "startFrontier");
         this.intent = Objects.requireNonNull(intent, "intent");
+        this.excavationArea = Objects.requireNonNull(excavationArea, "excavationArea");
+        if (!this.geometryKey.equals(excavationArea.getGeometryKey())) {
+            throw new IllegalArgumentException("excavationArea must match geometryKey");
+        }
         if (preferredToolSlot < -1 || preferredToolSlot > 8) {
             throw new IllegalArgumentException("preferredToolSlot must be -1 or a hotbar slot from 0 to 8");
         }
@@ -70,6 +77,10 @@ public final class ExcavationActionRequest {
 
     public ExcavationIntent getIntent() {
         return intent;
+    }
+
+    public CylinderExcavationSpec getExcavationArea() {
+        return excavationArea;
     }
 
     public int getPreferredToolSlot() {

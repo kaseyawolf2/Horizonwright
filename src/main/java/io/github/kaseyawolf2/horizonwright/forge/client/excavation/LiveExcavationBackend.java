@@ -305,6 +305,11 @@ public final class LiveExcavationBackend implements ExcavationBackend {
         private int priorHotbarSlot = -1;
         private boolean toolSlotChanged;
         private int approachAttempt;
+        private String pendingApproachReason;
+        private BlockPosition workingPosition;
+        private String workingFingerprint;
+        private BlockPosition occludingPosition;
+        private boolean clearingObstruction;
         private TargetAim verifiedTargetAim;
         private volatile boolean cancellationRequested;
 
@@ -313,10 +318,15 @@ public final class LiveExcavationBackend implements ExcavationBackend {
             this.request = request;
             this.lease = lease;
             this.navigation = navigation;
+            this.workingPosition = request.getIntent()
+                .getPosition();
+            this.workingFingerprint = request.getIntent()
+                .getObservedFingerprint();
             this.deadlineNanos = saturatingAdd(startedAtNanos, APPROACH_TIMEOUT_NANOS);
         }
 
         private void start() {
+            ExcavationTargetOverlay.show(workingPosition);
             if (canReachTarget()) {
                 phase = Phase.WAITING_FOR_DIG_SESSION;
                 deadlineNanos = saturatingAdd(System.nanoTime(), LOCAL_ACTION_TIMEOUT_NANOS);
@@ -329,8 +339,7 @@ public final class LiveExcavationBackend implements ExcavationBackend {
         }
 
         private void submitApproach(String reason) {
-            BlockPosition position = request.getIntent()
-                .getPosition();
+            BlockPosition position = workingPosition;
             approachAttempt++;
             long startedAtNanos = System.nanoTime();
             NavigationRequest approach = approachAttempt == 1
@@ -404,6 +413,7 @@ public final class LiveExcavationBackend implements ExcavationBackend {
                 return snapshot();
             }
             if (phase == Phase.APPROACHING) pollApproach();
+            else if (phase == Phase.WAITING_FOR_APPROACH_SESSION) retryApproachWhenReady();
             else if (phase == Phase.WAITING_FOR_DIG_SESSION) beginDigWhenReady();
             else if (phase == Phase.DIGGING) digOneTick();
             return snapshot();
@@ -441,12 +451,18 @@ public final class LiveExcavationBackend implements ExcavationBackend {
             } else if (progress.getState() == NavigationState.FAILED) {
                 navigationHandle = null;
                 if (approachAttempt < MAX_APPROACH_ATTEMPTS) {
-                    submitApproach("Retrying another approach after " + progress.getDetail());
+                    pendingApproachReason = "Retrying another approach after " + progress.getDetail();
+                    phase = Phase.WAITING_FOR_APPROACH_SESSION;
+                    deadlineNanos = saturatingAdd(System.nanoTime(), LOCAL_ACTION_TIMEOUT_NANOS);
+                    detail = "Waiting for failed approach packets to drain before attempt " + (approachAttempt + 1);
+                    trace("approach-retry-wait", "nextAttempt", approachAttempt + 1);
                 } else {
-                    fail(
-                        "Could not approach excavation target after " + approachAttempt
-                            + " attempts: "
-                            + progress.getDetail());
+                    if (!prepareOccludingBlockClear()) {
+                        fail(
+                            "Could not approach excavation target after " + approachAttempt
+                                + " attempts: "
+                                + progress.getDetail());
+                    }
                 }
             } else if (progress.getState() == NavigationState.CANCELLED) {
                 state = ExcavationActionState.CANCELLED;
@@ -455,6 +471,17 @@ public final class LiveExcavationBackend implements ExcavationBackend {
             } else {
                 detail = "Approaching target: " + progress.getDetail();
             }
+        }
+
+        private synchronized void retryApproachWhenReady() {
+            if (!guard.isReadyForSession()) {
+                detail = "Waiting for failed approach packets to drain before attempt " + (approachAttempt + 1);
+                trace("approach-retry-drain", "blockedActions", guard.getBlockedActionCount());
+                return;
+            }
+            String reason = pendingApproachReason;
+            pendingApproachReason = null;
+            submitApproach(reason == null ? "Retrying another excavation approach" : reason);
         }
 
         private synchronized void beginDigWhenReady() {
@@ -466,7 +493,11 @@ public final class LiveExcavationBackend implements ExcavationBackend {
             ExcavationObservation current = currentObservation();
             traceObservation("post-approach", current);
             if (isAir(current)) {
-                confirm(ExcavationTargetOutcome.COMPLETED, "Target became air before digging");
+                if (clearingObstruction) {
+                    resumePlannedTargetAfterObstruction();
+                } else {
+                    confirm(ExcavationTargetOutcome.COMPLETED, "Target became air before digging");
+                }
                 return;
             }
             if (!sameFingerprint(current)) {
@@ -482,6 +513,7 @@ public final class LiveExcavationBackend implements ExcavationBackend {
                     submitApproach("Repositioning after the target left reach during navigation handoff");
                     return;
                 }
+                if (prepareOccludingBlockClear()) return;
                 fail("Exact target repeatedly left reach during navigation handoff");
                 return;
             }
@@ -493,8 +525,7 @@ public final class LiveExcavationBackend implements ExcavationBackend {
             phase = Phase.DIGGING;
             detail = "Digging one fingerprint-bound block";
             aimAtTarget();
-            BlockPosition position = request.getIntent()
-                .getPosition();
+            BlockPosition position = workingPosition;
             minecraft.playerController.clickBlock(position.getX(), position.getY(), position.getZ(), targetSide());
             trace("dig-start", "selectedSlot", minecraft.thePlayer.inventory.currentItem, "side", targetSide());
         }
@@ -527,8 +558,7 @@ public final class LiveExcavationBackend implements ExcavationBackend {
                 return;
             }
             aimAtTarget();
-            BlockPosition position = request.getIntent()
-                .getPosition();
+            BlockPosition position = workingPosition;
             minecraft.playerController
                 .onPlayerDamageBlock(position.getX(), position.getY(), position.getZ(), targetSide());
             ClientBootstrap.blockDamageShield()
@@ -555,6 +585,7 @@ public final class LiveExcavationBackend implements ExcavationBackend {
             stopDigSession();
             state = ExcavationActionState.CANCELLED;
             detail = "Excavation action cancelled before checkpoint advancement";
+            ExcavationTargetOverlay.clear();
             clearActive(this);
         }
 
@@ -584,7 +615,10 @@ public final class LiveExcavationBackend implements ExcavationBackend {
                             guard.end(lease);
                             ownsDigSession = false;
                         }
-                        confirm(ExcavationTargetOutcome.COMPLETED, "Exact target is confirmed air");
+                        if (clearingObstruction) resumePlannedTargetAfterObstruction();
+                        else {
+                            confirm(ExcavationTargetOutcome.COMPLETED, "Exact target is confirmed air");
+                        }
                     }
                 });
             } catch (RuntimeException failure) {
@@ -594,8 +628,7 @@ public final class LiveExcavationBackend implements ExcavationBackend {
         }
 
         private void selectBestHotbarTool() {
-            BlockPosition position = request.getIntent()
-                .getPosition();
+            BlockPosition position = workingPosition;
             Block target = MinecraftRuntimeAccess
                 .block(minecraft.theWorld, position.getX(), position.getY(), position.getZ());
             int metadata = MinecraftRuntimeAccess
@@ -792,6 +825,7 @@ public final class LiveExcavationBackend implements ExcavationBackend {
             state = ExcavationActionState.CONFIRMED;
             detail = confirmationDetail;
             trace("confirmed", "outcome", outcome);
+            ExcavationTargetOverlay.clear();
             clearActive(this);
         }
 
@@ -799,20 +833,16 @@ public final class LiveExcavationBackend implements ExcavationBackend {
             state = ExcavationActionState.FAILED;
             detail = failureDetail;
             trace("failed", "failure", failureDetail);
+            ExcavationTargetOverlay.clear();
             clearActive(this);
         }
 
         private ExcavationObservation currentObservation() {
-            return observer.observePosition(
-                request.getDimensionId(),
-                request.getIntent()
-                    .getPosition());
+            return observer.observePosition(request.getDimensionId(), workingPosition);
         }
 
         private boolean sameFingerprint(ExcavationObservation observation) {
-            return request.getIntent()
-                .getObservedFingerprint()
-                .equals(observation.getBlockFingerprint());
+            return workingFingerprint.equals(observation.getBlockFingerprint());
         }
 
         private boolean isAir(ExcavationObservation observation) {
@@ -832,8 +862,8 @@ public final class LiveExcavationBackend implements ExcavationBackend {
                 trace("reach", "reachable", false, "reason", "client-or-dimension-unavailable");
                 return null;
             }
-            BlockPosition position = request.getIntent()
-                .getPosition();
+            BlockPosition position = workingPosition;
+            occludingPosition = null;
             EntityPlayer player = minecraft.thePlayer;
             double eyeX = player.posX;
             double eyeY = player.posY + MinecraftRuntimeAccess.eyeHeight(player);
@@ -869,6 +899,7 @@ public final class LiveExcavationBackend implements ExcavationBackend {
                         if (hit.blockX != position.getX() || hit.blockY != position.getY()
                             || hit.blockZ != position.getZ()) {
                             nearestMismatch = hit;
+                            occludingPosition = new BlockPosition(hit.blockX, hit.blockY, hit.blockZ);
                             continue;
                         }
                         if (best == null || sampleDistanceSquared < best.distanceSquared) {
@@ -921,7 +952,9 @@ public final class LiveExcavationBackend implements ExcavationBackend {
                 observation.getBlockFingerprint(),
                 "plannedFingerprint",
                 request.getIntent()
-                    .getObservedFingerprint());
+                    .getObservedFingerprint(),
+                "workingFingerprint",
+                workingFingerprint);
         }
 
         private void trace(String event, Object... extraFields) {
@@ -944,8 +977,7 @@ public final class LiveExcavationBackend implements ExcavationBackend {
         private void aimAtTarget() {
             EntityPlayer player = minecraft.thePlayer;
             TargetAim aim = verifiedTargetAim;
-            BlockPosition position = request.getIntent()
-                .getPosition();
+            BlockPosition position = workingPosition;
             double targetX = aim == null ? position.getX() + 0.5D : aim.x;
             double targetY = aim == null ? position.getY() + 0.5D : aim.y;
             double targetZ = aim == null ? position.getZ() + 0.5D : aim.z;
@@ -961,8 +993,7 @@ public final class LiveExcavationBackend implements ExcavationBackend {
             TargetAim aim = verifiedTargetAim;
             if (aim != null) return aim.side;
             EntityPlayer player = minecraft.thePlayer;
-            BlockPosition position = request.getIntent()
-                .getPosition();
+            BlockPosition position = workingPosition;
             double dx = player.posX - (position.getX() + 0.5D);
             double dy = player.posY + MinecraftRuntimeAccess.eyeHeight(player) - (position.getY() + 0.5D);
             double dz = player.posZ - (position.getZ() + 0.5D);
@@ -997,6 +1028,51 @@ public final class LiveExcavationBackend implements ExcavationBackend {
 
         private ExcavationActionProgress snapshot() {
             return new ExcavationActionProgress(request.getRequestId(), state, detail, confirmed);
+        }
+
+        private boolean prepareOccludingBlockClear() {
+            BlockPosition obstruction = occludingPosition;
+            BlockPosition planned = request.getIntent()
+                .getPosition();
+            if (obstruction == null || obstruction.equals(planned)
+                || !request.getExcavationArea()
+                    .contains(obstruction)) {
+                return false;
+            }
+            ExcavationObservation observed = observer.observePosition(request.getDimensionId(), obstruction);
+            if (observed.getClassification() != ExcavationBlockClassification.BREAKABLE) return false;
+
+            workingPosition = obstruction;
+            workingFingerprint = observed.getBlockFingerprint();
+            clearingObstruction = true;
+            if (!canReachTarget()) {
+                workingPosition = planned;
+                workingFingerprint = request.getIntent()
+                    .getObservedFingerprint();
+                clearingObstruction = false;
+                return false;
+            }
+            phase = Phase.WAITING_FOR_DIG_SESSION;
+            deadlineNanos = saturatingAdd(System.nanoTime(), LOCAL_ACTION_TIMEOUT_NANOS);
+            detail = "Clearing an ordinary in-volume block obstructing the planned target";
+            ExcavationTargetOverlay.show(workingPosition);
+            trace("obstruction-selected", "position", workingPosition, "fingerprint", workingFingerprint);
+            return true;
+        }
+
+        private void resumePlannedTargetAfterObstruction() {
+            clearingObstruction = false;
+            workingPosition = request.getIntent()
+                .getPosition();
+            workingFingerprint = request.getIntent()
+                .getObservedFingerprint();
+            approachAttempt = 0;
+            pendingApproachReason = "Reapproaching after clearing an in-volume obstruction";
+            phase = Phase.WAITING_FOR_APPROACH_SESSION;
+            deadlineNanos = saturatingAdd(System.nanoTime(), LOCAL_ACTION_TIMEOUT_NANOS);
+            detail = "Obstruction cleared; waiting to reapproach the planned target";
+            ExcavationTargetOverlay.show(workingPosition);
+            trace("obstruction-cleared", "position", workingPosition);
         }
 
         private boolean isTerminal() {
@@ -1042,6 +1118,7 @@ public final class LiveExcavationBackend implements ExcavationBackend {
 
     private enum Phase {
         APPROACHING,
+        WAITING_FOR_APPROACH_SESSION,
         WAITING_FOR_DIG_SESSION,
         DIGGING,
         FINISHING
