@@ -51,6 +51,7 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
     private static final String CROPS_NH_SPADE = "com.gtnewhorizon.cropsnh.items.tools.ItemSpade";
     private static final String CROPS_NH_REINFORCED_SPADE = "com.gtnewhorizon.cropsnh.items.tools.ItemReinforcedSpade";
     private static final long ACTION_TIMEOUT_NANOS = TimeUnit.SECONDS.toNanos(30L);
+    private static final long APPROACH_TIMEOUT_NANOS = NavigationRequest.MAX_RUNTIME_NANOS;
 
     private final Minecraft minecraft;
     private final ActionSessionGuard guard;
@@ -370,7 +371,7 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
         private final boolean requiresEmptyHand;
         private final CropObservation plannedBefore;
         private final int priorHotbarSlot;
-        private final long deadlineNanos;
+        private final FarmDeadline deadline;
         private NavigationHandle navigationHandle;
         private Phase phase = Phase.APPROACHING;
         private ActionState state = ActionState.SUBMITTED;
@@ -399,11 +400,12 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
             this.requiresEmptyHand = requiresEmptyHand;
             this.plannedBefore = plannedBefore;
             this.priorHotbarSlot = minecraft.thePlayer.inventory.currentItem;
-            this.deadlineNanos = saturatingAdd(startedAtNanos, ACTION_TIMEOUT_NANOS);
+            this.deadline = new FarmDeadline(startedAtNanos);
         }
 
         private void start() {
             if (canReachCrop()) {
+                deadline.beginAction(System.nanoTime());
                 phase = Phase.WAITING_FOR_ACTION_SESSION;
                 state = ActionState.EXECUTING;
                 detail = "Crop is within confirmed reach";
@@ -421,7 +423,7 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
                     target.getY(),
                     target.getZ(),
                     System.nanoTime(),
-                    ACTION_TIMEOUT_NANOS),
+                    APPROACH_TIMEOUT_NANOS),
                 lease);
             state = ActionState.EXECUTING;
             detail = "Approaching exact farm target";
@@ -476,9 +478,10 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
                 fail("Farm action lease was revoked");
                 return snapshot();
             }
-            if (System.nanoTime() - deadlineNanos >= 0L) {
+            long now = System.nanoTime();
+            if (phase == Phase.APPROACHING ? deadline.approachExpired(now) : deadline.actionExpired(now)) {
                 stopProducers();
-                fail("Farm action deadline exceeded");
+                fail(phase == Phase.APPROACHING ? "Farm approach deadline exceeded" : "Farm action deadline exceeded");
                 return snapshot();
             }
             if (phase == Phase.APPROACHING) pollApproach();
@@ -512,6 +515,7 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
             trace("approach", "navigationState", progress.getState(), "navigationDetail", progress.getDetail());
             if (progress.getState() == NavigationState.COMPLETED) {
                 navigationHandle = null;
+                deadline.beginAction(System.nanoTime());
                 phase = Phase.WAITING_FOR_ACTION_SESSION;
                 detail = "Approach complete; waiting for packet drain";
             } else if (progress.getState() == NavigationState.FAILED) {
@@ -932,7 +936,7 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
             // rendered/eye-height position reported by EntityPlayer.posY.
             int playerY = target.getY();
             long now = System.nanoTime();
-            long remaining = deadlineNanos - now;
+            long remaining = deadline.remainingAction(now);
             if (remaining <= 0L) {
                 fail("Farm drop collection deadline exceeded");
                 return;
@@ -1201,6 +1205,34 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
         WAITING_FOR_COLLECTION_SESSION,
         COLLECTING,
         SETTLING_COLLECTION
+    }
+
+    static final class FarmDeadline {
+
+        private final long approachDeadlineNanos;
+        private long actionDeadlineNanos = Long.MAX_VALUE;
+
+        FarmDeadline(long startedAtNanos) {
+            approachDeadlineNanos = saturatingAdd(startedAtNanos, APPROACH_TIMEOUT_NANOS);
+        }
+
+        void beginAction(long nowNanos) {
+            if (actionDeadlineNanos == Long.MAX_VALUE) {
+                actionDeadlineNanos = saturatingAdd(nowNanos, ACTION_TIMEOUT_NANOS);
+            }
+        }
+
+        boolean approachExpired(long nowNanos) {
+            return nowNanos - approachDeadlineNanos >= 0L;
+        }
+
+        boolean actionExpired(long nowNanos) {
+            return nowNanos - actionDeadlineNanos >= 0L;
+        }
+
+        long remainingAction(long nowNanos) {
+            return actionDeadlineNanos - nowNanos;
+        }
     }
 
     private static long saturatingAdd(long left, long right) {
