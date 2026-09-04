@@ -16,4 +16,18 @@ public interface ExcavationBackend {
     ExcavationObservationResult observe(ExcavationObservationRequest request);
 
     ExcavationActionHandle execute(ExcavationActionRequest request, ActionLease actionLease);
+
+    /** Reports whether this backend can observe and place managed-quarry infrastructure. */
+    default ExcavationBackendAvailability managedQuarryAvailability() {
+        return ExcavationBackendAvailability.unavailable("Managed-quarry infrastructure is not supported");
+    }
+
+    default ManagedQuarryObservationResult observeManagedQuarry(ManagedQuarryObservationRequest request) {
+        throw new UnsupportedOperationException("Managed-quarry infrastructure observation is not supported");
+    }
+
+    default ManagedQuarryActionHandle executeManagedQuarry(ManagedQuarryActionRequest request,
+        ActionLease actionLease) {
+        throw new UnsupportedOperationException("Managed-quarry infrastructure execution is not supported");
+    }
 }
