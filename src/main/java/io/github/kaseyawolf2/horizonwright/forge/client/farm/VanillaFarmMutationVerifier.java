@@ -8,6 +8,13 @@ import io.github.kaseyawolf2.horizonwright.core.base.SeedReserveEvidence;
 /** Minecraft-independent last-moment and post-action proof checks for vanilla harvesting. */
 final class VanillaFarmMutationVerifier {
 
+    boolean isUnchanged(CropObservation before, CropObservation after) {
+        if (before == null || after == null) {
+            throw new IllegalArgumentException("complete crop synchronization evidence is required");
+        }
+        return before.equals(after);
+    }
+
     void requireCurrent(FarmDecision decision, CropObservation current, SeedReserveEvidence reserve,
         String hotbarSeedFingerprint) {
         if (decision == null || current == null || reserve == null) {

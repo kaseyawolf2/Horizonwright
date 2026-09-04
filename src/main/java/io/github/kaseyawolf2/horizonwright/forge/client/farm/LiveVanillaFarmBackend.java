@@ -883,6 +883,11 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
                 return;
             }
             traceCrop("confirm-observation", request.getTaskId(), request.getObservationIndex(), after);
+            if (verifier.isUnchanged(plannedBefore, after)) {
+                detail = "Waiting for the server's harvested crop state";
+                trace("confirm-wait", "observation", "unchanged-server-state");
+                return;
+            }
             try {
                 verifier.requireReplacement(request.getDecision(), plannedBefore, after);
             } catch (RuntimeException mismatch) {

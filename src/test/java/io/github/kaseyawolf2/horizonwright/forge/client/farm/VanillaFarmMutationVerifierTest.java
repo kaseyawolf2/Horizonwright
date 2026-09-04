@@ -1,6 +1,8 @@
 package io.github.kaseyawolf2.horizonwright.forge.client.farm;
 
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertThrows;
+import static org.junit.Assert.assertTrue;
 
 import java.util.Collections;
 
@@ -33,7 +35,10 @@ public class VanillaFarmMutationVerifierTest {
     @Test
     public void exactCurrentEvidenceAndImmatureReplacementAreAccepted() {
         verifier.requireCurrent(DECISION, MATURE, RESERVE, null);
-        verifier.requireReplacement(DECISION, MATURE, crop(CropFamily.VANILLA, "wheat-0", false, false));
+        CropObservation replacement = crop(CropFamily.VANILLA, "wheat-0", false, false);
+        assertTrue(verifier.isUnchanged(MATURE, MATURE));
+        assertFalse(verifier.isUnchanged(MATURE, replacement));
+        verifier.requireReplacement(DECISION, MATURE, replacement);
     }
 
     @Test
