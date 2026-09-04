@@ -16,53 +16,42 @@ public class ExcavationBlockClassifierTest {
     public void graveAndInfrastructureAlwaysOutrankBreakability() {
         assertClassification(
             ExcavationBlockClassification.PROTECTED_GRAVE,
-            evidence(true, false, false, false, true, false, false, true));
+            evidence(true, false, false, false, true, false, true));
         assertClassification(
             ExcavationBlockClassification.PROTECTED_INFRASTRUCTURE,
-            evidence(true, false, false, false, false, true, false, true));
+            evidence(true, false, false, false, false, true, true));
     }
 
     @Test
     public void fluidsAreNeverTreatedAsBlindDiggingTargets() {
         assertClassification(
             ExcavationBlockClassification.FLUID_SOURCE_UNREACHABLE,
-            evidence(true, false, true, true, false, false, false, false));
+            evidence(true, false, true, true, false, false, false));
         assertClassification(
             ExcavationBlockClassification.FLUID_FLOWING,
-            evidence(true, false, true, false, false, false, false, false));
-    }
-
-    @Test
-    public void foliageIsIgnoredEvenThoughMinecraftLeavesAreNormallyBreakable() {
-        assertClassification(
-            ExcavationBlockClassification.IGNORED_FOLIAGE,
-            evidence(true, false, false, false, false, false, true, false));
+            evidence(true, false, true, false, false, false, false));
     }
 
     @Test
     public void onlyLoadedOrdinaryBreakableBlocksBecomeDigIntents() {
         assertClassification(
             ExcavationBlockClassification.BREAKABLE,
-            evidence(true, false, false, false, false, false, false, true));
+            evidence(true, false, false, false, false, false, true));
         assertClassification(
             ExcavationBlockClassification.AIR,
-            evidence(true, true, false, false, false, false, false, false));
+            evidence(true, true, false, false, false, false, false));
         assertClassification(
             ExcavationBlockClassification.UNREACHABLE,
-            evidence(false, false, false, false, false, false, false, false));
+            evidence(false, false, false, false, false, false, false));
         assertClassification(
             ExcavationBlockClassification.UNREACHABLE,
-            evidence(true, false, false, false, false, false, false, false));
+            evidence(true, false, false, false, false, false, false));
     }
 
     @Test
     public void contradictoryEvidenceIsRejectedBeforePlanning() {
-        assertThrows(
-            IllegalArgumentException.class,
-            () -> evidence(true, true, false, false, false, false, false, true));
-        assertThrows(
-            IllegalArgumentException.class,
-            () -> evidence(false, false, false, false, false, false, false, true));
+        assertThrows(IllegalArgumentException.class, () -> evidence(true, true, false, false, false, false, true));
+        assertThrows(IllegalArgumentException.class, () -> evidence(false, false, false, false, false, false, true));
     }
 
     private static void assertClassification(ExcavationBlockClassification expected, ExcavationBlockEvidence evidence) {
@@ -73,7 +62,7 @@ public class ExcavationBlockClassifierTest {
     }
 
     private static ExcavationBlockEvidence evidence(boolean loaded, boolean air, boolean fluid, boolean source,
-        boolean grave, boolean infrastructure, boolean foliage, boolean breakable) {
+        boolean grave, boolean infrastructure, boolean breakable) {
         return new ExcavationBlockEvidence(
             POSITION,
             loaded ? "minecraft:stone@0" : "unloaded",
@@ -83,7 +72,6 @@ public class ExcavationBlockClassifierTest {
             source,
             grave,
             infrastructure,
-            foliage,
             breakable);
     }
 }

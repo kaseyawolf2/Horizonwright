@@ -21,6 +21,7 @@ import io.github.kaseyawolf2.horizonwright.core.excavation.ExcavationObservation
 import io.github.kaseyawolf2.horizonwright.core.excavation.ExcavationPlan;
 import io.github.kaseyawolf2.horizonwright.core.excavation.ExcavationPlanner;
 import io.github.kaseyawolf2.horizonwright.core.excavation.ExcavationPlanningWindow;
+import io.github.kaseyawolf2.horizonwright.core.excavation.ExcavationProgress;
 import io.github.kaseyawolf2.horizonwright.core.excavation.ExcavationReducer;
 import io.github.kaseyawolf2.horizonwright.core.excavation.ExcavationResultApplication;
 import io.github.kaseyawolf2.horizonwright.core.excavation.ExcavationResultDisposition;
@@ -72,11 +73,8 @@ final class ExcavationTaskRunner implements TaskRunner {
     private ActionLease activeLease;
     private ExcavationCheckpoint completionCandidate;
     private ExcavationFrontier verificationFrontier;
-    private ExcavationFrontier verificationStartFrontier;
-    private ExcavationFrontier verificationEndFrontier;
     private Integer verificationLayerY;
     private boolean verificationChanged;
-    private boolean rediscoveredRangeVerification;
     private boolean activeVerification;
     private boolean cacheAuditPending;
     private ExcavationFrontier cacheAuditFrontier;
@@ -440,7 +438,6 @@ final class ExcavationTaskRunner implements TaskRunner {
                 break;
             case PROTECT_GRAVE:
             case PROTECT_INFRASTRUCTURE:
-            case IGNORE_FOLIAGE:
                 outcome = ExcavationTargetOutcome.PROTECTED;
                 break;
             case MARK_UNREACHABLE:
@@ -631,8 +628,6 @@ final class ExcavationTaskRunner implements TaskRunner {
         }
         int verified = 0;
         for (ExcavationTarget target : batch.getTargets()) {
-            ExcavationFrontier targetFrontier = CylinderExcavationGeometry.atPosition(cylinder, target.getPosition());
-            if (verificationEndFrontier != null && verificationEndFrontier.equals(targetFrontier)) break;
             if (verificationLayerY != null && target.getPosition()
                 .getY() != verificationLayerY.intValue()) {
                 break;
@@ -800,30 +795,26 @@ final class ExcavationTaskRunner implements TaskRunner {
 
     private StepResult finishOrRepeatVerification(TaskStepContext context) {
         if (verificationChanged) {
-            verificationFrontier = verificationStartFrontier;
+            verificationFrontier = verificationLayerY == null ? CylinderExcavationGeometry.initialFrontier(cylinder)
+                : CylinderExcavationGeometry.layerStart(cylinder, verificationLayerY.intValue());
             verificationChanged = false;
             return StepResult.progress(
                 context.getActionEpoch(),
                 taskCheckpoint,
-                rediscoveredRangeVerification
-                    ? "Rediscovered blocks were cleared; rechecking every processed layer down to the primary frontier"
-                    : verificationLayerY == null
-                        ? "Rediscovered blocks were cleared; starting the required final clean verification pass"
-                        : "Rediscovered blocks were cleared; rechecking completed layer " + verificationLayerY);
+                verificationLayerY == null
+                    ? "Rediscovered blocks were cleared; starting the required final clean verification pass"
+                    : "Rediscovered blocks were cleared; rechecking completed layer " + verificationLayerY);
         }
         excavationCheckpoint = completionCandidate;
         taskCheckpoint = ExcavationTaskCheckpointCodec.encode(cylinder, excavationCheckpoint);
         Integer completedLayer = verificationLayerY;
-        boolean completedRediscoveredRange = rediscoveredRangeVerification;
         clearVerification();
         cacheAuditPending = false;
         if (!excavationCheckpoint.isComplete()) {
             return StepResult.progress(
                 context.getActionEpoch(),
                 taskCheckpoint,
-                completedRediscoveredRange
-                    ? "Cleaned every processed layer from the rediscovered block down to the primary frontier"
-                    : "Completed a clean verification of layer " + completedLayer + "; continuing excavation");
+                "Completed a clean verification of layer " + completedLayer + "; continuing excavation");
         }
         return StepResult.completed(
             context.getActionEpoch(),
@@ -948,11 +939,8 @@ final class ExcavationTaskRunner implements TaskRunner {
     private void clearVerification() {
         completionCandidate = null;
         verificationFrontier = null;
-        verificationStartFrontier = null;
-        verificationEndFrontier = null;
         verificationLayerY = null;
         verificationChanged = false;
-        rediscoveredRangeVerification = false;
         activeVerification = false;
     }
 
@@ -962,7 +950,6 @@ final class ExcavationTaskRunner implements TaskRunner {
         if (appliedCheckpoint.isComplete()) {
             completionCandidate = appliedCheckpoint;
             verificationFrontier = CylinderExcavationGeometry.initialFrontier(cylinder);
-            verificationStartFrontier = verificationFrontier;
             verificationLayerY = null;
             verificationChanged = false;
             return StepResult.progress(
@@ -975,7 +962,6 @@ final class ExcavationTaskRunner implements TaskRunner {
             completionCandidate = appliedCheckpoint;
             verificationLayerY = Integer.valueOf(previous.getLayerY());
             verificationFrontier = CylinderExcavationGeometry.layerStart(cylinder, previous.getLayerY());
-            verificationStartFrontier = verificationFrontier;
             verificationChanged = false;
             return StepResult.progress(
                 context.getActionEpoch(),
@@ -994,8 +980,7 @@ final class ExcavationTaskRunner implements TaskRunner {
     }
 
     private boolean verificationBoundaryReached() {
-        return verificationEndFrontier != null && verificationEndFrontier.equals(verificationFrontier)
-            || verificationFrontier.isComplete()
+        return verificationFrontier.isComplete()
             || verificationLayerY != null && verificationFrontier.getLayerY() != verificationLayerY.intValue();
     }
 
@@ -1053,17 +1038,7 @@ final class ExcavationTaskRunner implements TaskRunner {
             checked++;
             if (observed.getObservation()
                 .getClassification() != ExcavationBlockClassification.BREAKABLE) continue;
-            completionCandidate = excavationCheckpoint;
-            verificationFrontier = CylinderExcavationGeometry.layerStart(cylinder, position.getY());
-            verificationStartFrontier = verificationFrontier;
-            verificationEndFrontier = excavationCheckpoint.getFrontier();
-            verificationLayerY = null;
-            verificationChanged = false;
-            rediscoveredRangeVerification = true;
-            return StepResult.progress(
-                context.getActionEpoch(),
-                taskCheckpoint,
-                "Rediscovered block at " + position + "; cleaning every processed layer down to the primary frontier");
+            return resetPrimaryToRediscoveredLayer(context, position);
         }
         if (cacheAuditFrontier.isComplete() || cacheAuditOffset >= clearedPositions) resetCacheAuditCursor();
         return StepResult.progress(
@@ -1075,6 +1050,33 @@ final class ExcavationTaskRunner implements TaskRunner {
     private void resetCacheAuditCursor() {
         cacheAuditFrontier = CylinderExcavationGeometry.initialFrontier(cylinder);
         cacheAuditOffset = 0L;
+    }
+
+    private StepResult resetPrimaryToRediscoveredLayer(TaskStepContext context, BlockPosition position) {
+        ExcavationFrontier resetFrontier = CylinderExcavationGeometry.layerStart(cylinder, position.getY());
+        long processedPrefix = CylinderExcavationGeometry.processedBefore(cylinder, resetFrontier);
+        ExcavationProgress resetProgress = new ExcavationProgress(
+            cylinder.getVolume(),
+            processedPrefix,
+            0L,
+            0L,
+            0L,
+            0L);
+        excavationCheckpoint = ExcavationCheckpoint.restore(
+            cylinder,
+            nextRevision(),
+            context.getActionEpoch(),
+            resetFrontier,
+            resetProgress,
+            ExcavationSuspensionReason.NONE);
+        taskCheckpoint = ExcavationTaskCheckpointCodec.encode(cylinder, excavationCheckpoint);
+        clearVerification();
+        resetCacheAuditCursor();
+        cacheAuditPending = false;
+        return StepResult.progress(
+            context.getActionEpoch(),
+            taskCheckpoint,
+            "Rediscovered block at " + position + "; reset primary excavation to layer " + position.getY());
     }
 
     private static RuntimeException cancelAndClose(ExcavationActionHandle handle, ActionLease lease) {

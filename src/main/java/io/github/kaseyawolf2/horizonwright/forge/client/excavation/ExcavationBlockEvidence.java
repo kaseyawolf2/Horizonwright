@@ -13,21 +13,20 @@ final class ExcavationBlockEvidence {
     private final boolean fluidSource;
     private final boolean protectedGrave;
     private final boolean infrastructure;
-    private final boolean foliage;
     private final boolean breakable;
 
     ExcavationBlockEvidence(BlockPosition position, String fingerprint, boolean loaded, boolean air, boolean fluid,
-        boolean fluidSource, boolean protectedGrave, boolean infrastructure, boolean foliage, boolean breakable) {
+        boolean fluidSource, boolean protectedGrave, boolean infrastructure, boolean breakable) {
         if (position == null || fingerprint == null
             || fingerprint.trim()
                 .isEmpty()) {
             throw new IllegalArgumentException("position and fingerprint are required");
         }
-        if (!loaded && (air || fluid || fluidSource || protectedGrave || infrastructure || foliage || breakable)) {
+        if (!loaded && (air || fluid || fluidSource || protectedGrave || infrastructure || breakable)) {
             throw new IllegalArgumentException("unloaded evidence cannot claim block semantics");
         }
         if (fluidSource && !fluid) throw new IllegalArgumentException("a fluid source must be fluid");
-        if (air && (fluid || protectedGrave || infrastructure || foliage || breakable)) {
+        if (air && (fluid || protectedGrave || infrastructure || breakable)) {
             throw new IllegalArgumentException("air cannot also carry actionable block semantics");
         }
         if (protectedGrave && infrastructure) {
@@ -41,7 +40,6 @@ final class ExcavationBlockEvidence {
         this.fluidSource = fluidSource;
         this.protectedGrave = protectedGrave;
         this.infrastructure = infrastructure;
-        this.foliage = foliage;
         this.breakable = breakable;
     }
 
@@ -75,10 +73,6 @@ final class ExcavationBlockEvidence {
 
     boolean isInfrastructure() {
         return infrastructure;
-    }
-
-    boolean isFoliage() {
-        return foliage;
     }
 
     boolean isBreakable() {

@@ -17,7 +17,11 @@ import io.github.kaseyawolf2.horizonwright.core.action.ActionCapability;
 import io.github.kaseyawolf2.horizonwright.core.action.ActionLease;
 import io.github.kaseyawolf2.horizonwright.core.action.InMemoryActionBroker;
 import io.github.kaseyawolf2.horizonwright.core.excavation.BlockPosition;
+import io.github.kaseyawolf2.horizonwright.core.excavation.CylinderExcavationGeometry;
+import io.github.kaseyawolf2.horizonwright.core.excavation.CylinderExcavationSpec;
 import io.github.kaseyawolf2.horizonwright.core.excavation.ExcavationBlockClassification;
+import io.github.kaseyawolf2.horizonwright.core.excavation.ExcavationCheckpoint;
+import io.github.kaseyawolf2.horizonwright.core.excavation.ExcavationFrontier;
 import io.github.kaseyawolf2.horizonwright.core.excavation.ExcavationMode;
 import io.github.kaseyawolf2.horizonwright.core.excavation.ExcavationObservation;
 import io.github.kaseyawolf2.horizonwright.core.excavation.ExcavationSuspensionReason;
@@ -269,7 +273,10 @@ public class ExcavationTaskRunnerTest {
 
         assertTrue(
             rediscovered.getDetail()
-                .contains("Rediscovered block"));
+                .contains("reset primary excavation to layer 64"));
+        CylinderExcavationSpec cylinder = ExcavationTask.parse(spec);
+        ExcavationCheckpoint reset = ExcavationTaskCheckpointCodec.decode(cylinder, rediscovered.getCheckpoint());
+        assertEquals(CylinderExcavationGeometry.layerStart(cylinder, 64), reset.getFrontier());
         assertEquals(1, harness.backend.submissions);
 
         harness.controller.tick();
@@ -281,9 +288,10 @@ public class ExcavationTaskRunnerTest {
     }
 
     @Test
-    public void rediscoveryCleansEveryProcessedLayerDownToTheSavedPrimaryFrontier() {
+    public void rediscoveryResetsThePrimaryLayerAndNeverJumpsBackToTheObsoleteFrontier() {
         harness = new Harness();
         TaskSpec spec = ExcavationTask.cleanVolumeCylinder("layer-range-reconcile", 0, 8, 8, 1, 64, 65);
+        CylinderExcavationSpec cylinder = ExcavationTask.parse(spec);
         harness.controller.submit(spec);
         harness.controller.tick();
 
@@ -320,34 +328,36 @@ public class ExcavationTaskRunnerTest {
         BlockPosition retainedLowerPosition = harness.backend.lastRequest.getIntent()
             .getPosition();
         harness.backend.confirm();
-        harness.controller.tick();
+        TaskSnapshot lowerApplied = task(harness.controller.tick(), spec.getId());
+        ExcavationFrontier obsoleteLowerFrontier = ExcavationTaskCheckpointCodec
+            .decode(cylinder, lowerApplied.getCheckpoint())
+            .getFrontier();
         harness.backend.confirmedClear.clear();
         harness.backend.confirmedClear.add(retainedLowerPosition);
 
         TaskSnapshot rediscovered = task(harness.controller.tick(), spec.getId());
         assertTrue(
             rediscovered.getDetail()
-                .contains("cleaning every processed layer"));
+                .contains("reset primary excavation to layer 65"));
+        ExcavationCheckpoint reset = ExcavationTaskCheckpointCodec.decode(cylinder, rediscovered.getCheckpoint());
+        assertEquals(CylinderExcavationGeometry.layerStart(cylinder, 65), reset.getFrontier());
 
-        boolean observedSavedLayer = false;
-        boolean completedRange = false;
+        ExcavationCheckpoint descended = reset;
         for (int tick = 0; tick < 300; tick++) {
             TaskSnapshot progress = task(harness.controller.tick(), spec.getId());
-            if (harness.backend.lastObservationRequest != null && harness.backend.lastObservationRequest.getPosition()
-                .getY() == 64) {
-                observedSavedLayer = true;
-            }
             if (harness.backend.active != null && harness.backend.active.state == ExcavationActionState.SUBMITTED) {
                 harness.backend.confirm();
             }
-            if (progress.getDetail()
-                .contains("Cleaned every processed layer")) {
-                completedRange = true;
+            descended = ExcavationTaskCheckpointCodec.decode(cylinder, progress.getCheckpoint());
+            if (!descended.getFrontier()
+                .isComplete()
+                && descended.getFrontier()
+                    .getLayerY() == 64) {
                 break;
             }
         }
-        assertTrue("range verification never reached the saved primary layer", observedSavedLayer);
-        assertTrue("range verification never completed", completedRange);
+        assertEquals(CylinderExcavationGeometry.layerStart(cylinder, 64), descended.getFrontier());
+        assertTrue("reset unexpectedly restored the obsolete lower frontier", !obsoleteLowerFrontier.equals(descended));
     }
 
     @Test

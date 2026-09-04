@@ -271,7 +271,6 @@ public final class LiveExcavationBackend implements ExcavationBackend {
                 return ExcavationTargetOutcome.COMPLETED;
             case PROTECT_GRAVE:
             case PROTECT_INFRASTRUCTURE:
-            case IGNORE_FOLIAGE:
                 return ExcavationTargetOutcome.PROTECTED;
             case MARK_UNREACHABLE:
                 return ExcavationTargetOutcome.UNREACHABLE;
