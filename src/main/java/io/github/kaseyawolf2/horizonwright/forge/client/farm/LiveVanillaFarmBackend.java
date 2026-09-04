@@ -273,6 +273,7 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
         private boolean ownsActionSession;
         private boolean replantDispatched;
         private boolean slotChanged;
+        private int collectionSettleTicks;
         private volatile boolean cancellationRequested;
 
         private LiveHandle(ActionRequest request, ActionLease lease, NavigationBackend navigation, int seedSlot,
@@ -357,6 +358,9 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
             else if (phase == Phase.PLANTING) plantOnce();
             else if (phase == Phase.DISPATCHING_REPLANT) awaitReplantDispatch();
             else if (phase == Phase.CONFIRMING) confirmReplacement();
+            else if (phase == Phase.WAITING_FOR_COLLECTION_SESSION) beginCollectionWhenReady();
+            else if (phase == Phase.COLLECTING) pollCollection();
+            else if (phase == Phase.SETTLING_COLLECTION) settleCollection();
             return snapshot();
         }
 
@@ -582,8 +586,68 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
             }
             confirmedAfter = after;
             stopActionSession();
+            phase = Phase.WAITING_FOR_COLLECTION_SESSION;
+            detail = "Replacement confirmed; waiting to collect harvest drops";
+        }
+
+        private void beginCollectionWhenReady() {
+            if (!guard.isReadyForSession()) {
+                detail = "Waiting for replant packets to drain before collecting drops";
+                return;
+            }
+            BasePosition target = request.getDecision()
+                .getTarget();
+            int playerY = target.getY() == NavigationRequest.MAX_Y ? target.getY() : target.getY() + 1;
+            long now = System.nanoTime();
+            long remaining = deadlineNanos - now;
+            if (remaining <= 0L) {
+                fail("Farm drop collection deadline exceeded");
+                return;
+            }
+            navigationHandle = navigation.submit(
+                new NavigationRequest(
+                    request.getRequestId() + "-collect",
+                    request.getActionEpoch(),
+                    target.getDimensionId(),
+                    target.getX(),
+                    playerY,
+                    target.getZ(),
+                    0,
+                    now,
+                    Math.min(remaining, NavigationRequest.MAX_RUNTIME_NANOS)),
+                lease);
+            phase = Phase.COLLECTING;
+            detail = "Moving through the harvested crop to collect its drops";
+            trace("collection-start", "navigationRequest", navigationHandle.getRequestId(), "playerGoalY", playerY);
+        }
+
+        private void pollCollection() {
+            NavigationProgress progress = navigationHandle.progress();
+            trace("collection", "navigationState", progress.getState(), "navigationDetail", progress.getDetail());
+            if (progress.getState() == NavigationState.COMPLETED) {
+                navigationHandle = null;
+                collectionSettleTicks = 0;
+                phase = Phase.SETTLING_COLLECTION;
+                detail = "Harvest location reached; waiting for item pickup synchronization";
+            } else if (progress.getState() == NavigationState.FAILED) {
+                fail("Could not collect farm drops: " + progress.getDetail());
+            } else if (progress.getState() == NavigationState.CANCELLED) {
+                state = ActionState.CANCELLED;
+                detail = "Farm drop collection was cancelled";
+                clearActive(this);
+            } else {
+                detail = "Collecting farm drops: " + progress.getDetail();
+            }
+        }
+
+        private void settleCollection() {
+            collectionSettleTicks++;
+            if (collectionSettleTicks < 5) {
+                detail = "Waiting for harvest item pickup synchronization";
+                return;
+            }
             state = ActionState.CONFIRMED;
-            detail = "Exact replacement crop is confirmed immature";
+            detail = "Exact replacement crop is confirmed and its harvest location was collected";
             clearActive(this);
         }
 
@@ -765,7 +829,10 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
         BREAKING,
         PLANTING,
         DISPATCHING_REPLANT,
-        CONFIRMING
+        CONFIRMING,
+        WAITING_FOR_COLLECTION_SESSION,
+        COLLECTING,
+        SETTLING_COLLECTION
     }
 
     private static long saturatingAdd(long left, long right) {
