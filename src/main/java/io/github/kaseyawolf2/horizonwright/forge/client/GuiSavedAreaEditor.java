@@ -10,6 +10,8 @@ import org.lwjgl.input.Keyboard;
 import io.github.kaseyawolf2.horizonwright.HorizonwrightRuntime;
 import io.github.kaseyawolf2.horizonwright.core.base.BasePosition;
 import io.github.kaseyawolf2.horizonwright.core.base.NamedArea;
+import io.github.kaseyawolf2.horizonwright.core.task.ScheduleSnapshot;
+import io.github.kaseyawolf2.horizonwright.core.task.ScheduleState;
 import io.github.kaseyawolf2.horizonwright.core.task.TaskSnapshot;
 import io.github.kaseyawolf2.horizonwright.runtime.persistence.profile.ProfileAssetEditor;
 import io.github.kaseyawolf2.horizonwright.runtime.persistence.profile.ProfileAssetEditorProvider;
@@ -119,6 +121,7 @@ public final class GuiSavedAreaEditor extends GuiScreen {
                     .getZ()));
         seedReserve = field(left + 112, top + 267, 60, "2");
         intervalMinutes = field(left + 408, top + 267, 70, "30");
+        loadFarmScheduleDefaults();
 
         buttonList
             .add(new GuiHorizonwrightButton(FIRST_HERE_BUTTON, left + 350, top + 103, 128, 20, "Use my feet here"));
@@ -216,10 +219,55 @@ public final class GuiSavedAreaEditor extends GuiScreen {
         int minutes = ProfileAssetInput.positiveInteger(intervalMinutes.getText(), "farm interval minutes");
         long intervalMillis = Math.multiplyExact((long) minutes, 60_000L);
         String scheduleId = "farm-" + original.getId();
-        CurrentRuntimeUiResolver.resolve(runtimeProvider)
-            .getRuntime()
-            .scheduleFarm(scheduleId, original.getId(), reserve, intervalMillis);
-        status = "Scheduled '" + scheduleId + "' every " + minutes + " connected minute(s).";
+        HorizonwrightRuntime runtime = CurrentRuntimeUiResolver.resolve(runtimeProvider)
+            .getRuntime();
+        ScheduleSnapshot existing = findFarmSchedule(runtime, scheduleId);
+        if (existing == null) {
+            runtime.scheduleFarm(scheduleId, original.getId(), reserve, intervalMillis);
+            status = "Scheduled '" + scheduleId + "' every " + minutes + " connected minute(s).";
+            return;
+        }
+        if (existing.getState() == ScheduleState.CANCELLED) {
+            runtime.removeSchedule(scheduleId);
+            runtime.scheduleFarm(scheduleId, original.getId(), reserve, intervalMillis);
+            status = "Recreated '" + scheduleId + "' every " + minutes + " connected minute(s).";
+            return;
+        }
+        runtime.updateFarmSchedule(scheduleId, original.getId(), reserve, intervalMillis);
+        if (existing.getState() == ScheduleState.PAUSED) runtime.resumeSchedule(scheduleId);
+        status = "Updated '" + scheduleId + "' to every " + minutes + " connected minute(s).";
+    }
+
+    private void loadFarmScheduleDefaults() {
+        CurrentRuntimeUiResolver.Resolution resolution = CurrentRuntimeUiResolver.resolve(runtimeProvider);
+        if (!resolution.isAvailable()) return;
+        ScheduleSnapshot existing = findFarmSchedule(resolution.getRuntime(), "farm-" + original.getId());
+        if (existing == null || !FarmTask.isForPlot(
+            existing.getRule()
+                .getTask(),
+            original.getId())) return;
+        seedReserve.setText(
+            Integer.toString(
+                FarmTask.minimumSeedReserve(
+                    existing.getRule()
+                        .getTask())));
+        long interval = existing.getRule()
+            .getIntervalMillis();
+        if (interval >= 60_000L && interval % 60_000L == 0L) {
+            intervalMinutes.setText(Long.toString(interval / 60_000L));
+        }
+    }
+
+    private static ScheduleSnapshot findFarmSchedule(HorizonwrightRuntime runtime, String scheduleId) {
+        for (ScheduleSnapshot schedule : runtime.controllerSnapshot()
+            .getScheduler()
+            .getSchedules()) {
+            if (scheduleId.equals(
+                schedule.getRule()
+                    .getId()))
+                return schedule;
+        }
+        return null;
     }
 
     @Override
