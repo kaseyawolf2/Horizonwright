@@ -141,7 +141,7 @@ public class ExcavationPlannerTest {
                 .getPosition()
                 .getY());
         assertEquals(
-            9,
+            10,
             plan.getManagedIntents()
                 .get(1)
                 .getPosition()
@@ -153,11 +153,16 @@ public class ExcavationPlannerTest {
                 .getPosition()
                 .getY());
         assertEquals(
-            8,
+            9,
             plan.getManagedIntents()
                 .get(3)
                 .getPosition()
                 .getY());
+        assertFalse(
+            spec.contains(
+                plan.getManagedIntents()
+                    .get(0)
+                    .getPosition()));
         assertEquals(
             "ramp",
             plan.getManagedIntents()

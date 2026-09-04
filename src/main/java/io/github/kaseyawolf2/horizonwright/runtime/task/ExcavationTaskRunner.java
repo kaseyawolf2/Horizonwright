@@ -17,6 +17,7 @@ import io.github.kaseyawolf2.horizonwright.core.excavation.ExcavationCheckpoint;
 import io.github.kaseyawolf2.horizonwright.core.excavation.ExcavationExecutionResult;
 import io.github.kaseyawolf2.horizonwright.core.excavation.ExcavationFrontier;
 import io.github.kaseyawolf2.horizonwright.core.excavation.ExcavationIntent;
+import io.github.kaseyawolf2.horizonwright.core.excavation.ExcavationMode;
 import io.github.kaseyawolf2.horizonwright.core.excavation.ExcavationObservation;
 import io.github.kaseyawolf2.horizonwright.core.excavation.ExcavationPlan;
 import io.github.kaseyawolf2.horizonwright.core.excavation.ExcavationPlanner;
@@ -86,6 +87,10 @@ final class ExcavationTaskRunner implements TaskRunner {
         }
         this.spec = spec;
         this.cylinder = ExcavationTask.parse(spec);
+        if (cylinder.getMode() == ExcavationMode.MANAGED_QUARRY) {
+            ExcavationTask.managedConfiguration(spec);
+            throw new IllegalArgumentException("managed-quarry live infrastructure execution is not connected yet");
+        }
         this.runtime = runtime;
         this.taskCheckpoint = checkpoint;
         this.excavationCheckpoint = ExcavationTaskCheckpointCodec.decode(cylinder, checkpoint);

@@ -11,6 +11,7 @@ import org.junit.Test;
 
 import io.github.kaseyawolf2.horizonwright.core.action.InMemoryActionBroker;
 import io.github.kaseyawolf2.horizonwright.core.base.LivestockSpecies;
+import io.github.kaseyawolf2.horizonwright.core.excavation.ManagedQuarryConfiguration;
 import io.github.kaseyawolf2.horizonwright.runtime.task.ExcavationTask;
 import io.github.kaseyawolf2.horizonwright.runtime.task.FarmTask;
 import io.github.kaseyawolf2.horizonwright.runtime.task.HusbandryTask;
@@ -26,7 +27,13 @@ public class OperationalBaseMvpOrchestrationTest {
         TaskOrchestrator original = orchestrator(originalClock, originalFactory);
         try {
             configureSchedules(original);
-            TaskSpec excavation = ExcavationTask.cleanVolumeCylinder("radius-250", 0, 0, 0, 250, 20, 70);
+            ManagedQuarryConfiguration quarryConfiguration = new ManagedQuarryConfiguration(
+                "minecraft:cobblestone",
+                "minecraft:torch",
+                "minecraft:cobblestone",
+                4);
+            TaskSpec excavation = ExcavationTask
+                .managedQuarryCylinder("radius-250", 0, 0, 0, 250, 20, 70, quarryConfiguration);
             original.submit(excavation);
 
             ControllerSnapshot firstWork = original.tick(environment(12_000L));

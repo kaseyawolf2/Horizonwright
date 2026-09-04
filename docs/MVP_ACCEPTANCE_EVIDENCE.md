@@ -8,7 +8,7 @@ but cannot replace the disposable-world observation run required by the plan.
 
 | Requirement | Current evidence | Status |
 | --- | --- | --- |
-| Radius-250 excavation | Geometry, bounded scan, checkpoint, cache refresh, missed-layer recovery, navigation, breaking, unloading, repair, and reconnect tests; substantial physical excavation testing | Partially proven; complete observation run pending |
+| Radius-250 excavation | Geometry, bounded scan, checkpoint, cache refresh, missed-layer recovery, navigation, breaking, unloading, repair, and reconnect tests; the orchestration scenario now carries a persisted managed-quarry material policy; substantial physical clean-volume testing | Partially proven; live managed infrastructure and complete observation run pending |
 | Recurring crop chore preempts excavation | Real scheduler/task-spec/checkpoint synthetic scenario plus physical one-pass and scheduled farming tests | Automated orchestration proven; latest long-distance deadline fix awaits physical confirmation |
 | Recurring livestock chore preempts excavation | Real husbandry task contract and real scheduler/task-spec/checkpoint synthetic scenario | Orchestration proven; live action executor not yet authorized or implemented |
 | Night sleep preempts fallback | Real sleep task/schedule and scheduler synthetic scenario; nearby, far, and nightly physical sleep were confirmed | Proven for current tested bed workflow |
@@ -27,6 +27,9 @@ but cannot replace the disposable-world observation run required by the plan.
   livestock before the live executor is bound.
 - Managed-quarry ramp construction.
 - Managed-quarry lighting placement and reserve management.
+- The managed-quarry task now persists approved ramp/light/filler materials and
+  uses an outside descending-staircase geometry, but the live placement boundary
+  is not connected yet.
 - Fluid containment/removal integration; clean-volume excavation currently
   refuses blind fluid work.
 - Ordinary tree farming/replanting as a recurring base chore. Excavation tree

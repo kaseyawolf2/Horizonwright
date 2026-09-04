@@ -8,6 +8,8 @@ import java.util.Collections;
 
 import org.junit.Test;
 
+import io.github.kaseyawolf2.horizonwright.core.excavation.ExcavationMode;
+import io.github.kaseyawolf2.horizonwright.core.excavation.ManagedQuarryConfiguration;
 import io.github.kaseyawolf2.horizonwright.core.logistics.NamedLoadout;
 import io.github.kaseyawolf2.horizonwright.core.logistics.StorageItemFilter;
 import io.github.kaseyawolf2.horizonwright.core.persistence.NamedLocation;
@@ -18,6 +20,44 @@ import io.github.kaseyawolf2.horizonwright.core.persistence.WorldProfileIdentity
 import io.github.kaseyawolf2.horizonwright.core.task.TaskSpec;
 
 public class ExcavationTaskSubmissionTest {
+
+    @Test
+    public void managedQuarryPersistsExactApprovedMaterialsAndCadence() {
+        ManagedQuarryConfiguration configuration = new ManagedQuarryConfiguration(
+            "minecraft:stonebrick",
+            "minecraft:torch",
+            "minecraft:cobblestone",
+            3);
+
+        TaskSpec task = ExcavationTask.managedQuarryCylinder("managed", 0, -20, 40, 8, 30, 70, configuration);
+
+        assertEquals(
+            ExcavationMode.MANAGED_QUARRY,
+            ExcavationTask.parse(task)
+                .getMode());
+        assertEquals(configuration, ExcavationTask.managedConfiguration(task));
+        assertEquals(
+            "minecraft:stonebrick",
+            task.getParameters()
+                .get(ExcavationTask.RAMP_MATERIAL));
+        assertEquals(
+            "3",
+            task.getParameters()
+                .get(ExcavationTask.LIGHT_LAYER_INTERVAL));
+    }
+
+    @Test
+    public void managedQuarryRejectsMissingOrInvalidApprovedConfiguration() {
+        assertThrows(
+            IllegalArgumentException.class,
+            () -> ExcavationTask.managedQuarryCylinder("managed", 0, 0, 0, 8, 30, 70, null));
+        assertThrows(
+            IllegalArgumentException.class,
+            () -> new ManagedQuarryConfiguration("minecraft:stone", "minecraft:torch", "", 4));
+
+        TaskSpec clean = ExcavationTask.cleanVolumeCylinder("clean", 0, 0, 0, 1, 60, 64);
+        assertEquals(null, ExcavationTask.managedConfiguration(clean));
+    }
 
     @Test
     public void exactNamedDependenciesBecomeOneServiceEnabledTask() {

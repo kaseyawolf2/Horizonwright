@@ -105,18 +105,17 @@ public final class ExcavationPlanner {
 
     private static void addLayerInfrastructure(CylinderExcavationSpec spec, int layerY,
         ManagedQuarryConfiguration configuration, List<ManagedQuarryIntent> managedIntents) {
-        int perimeterX = spec.getCenterX() + spec.getRadius();
-        BlockPosition anchor = new BlockPosition(perimeterX, layerY, spec.getCenterZ());
+        BlockPosition rampStep = ManagedQuarryGeometry.rampStep(spec, layerY);
         managedIntents.add(
             new ManagedQuarryIntent(
                 ManagedQuarryIntentKind.MAINTAIN_PERIMETER_RAMP,
-                anchor,
+                rampStep,
                 configuration.getRampMaterial()));
         if ((spec.getTopY() - layerY) % configuration.getLightLayerInterval() == 0) {
             managedIntents.add(
                 new ManagedQuarryIntent(
                     ManagedQuarryIntentKind.PLACE_APPROVED_LIGHT,
-                    anchor,
+                    ManagedQuarryGeometry.lightPosition(spec, layerY),
                     configuration.getLightMaterial()));
         }
     }
