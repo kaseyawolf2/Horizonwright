@@ -65,6 +65,7 @@ final class ExcavationTaskRunner implements TaskRunner {
     private ActionLease activeLease;
     private ExcavationCheckpoint completionCandidate;
     private ExcavationFrontier verificationFrontier;
+    private Integer verificationLayerY;
     private boolean verificationChanged;
     private boolean activeVerification;
 
@@ -220,6 +221,12 @@ final class ExcavationTaskRunner implements TaskRunner {
                 .size());
         ExcavationObservationResult actionable = null;
         for (ExcavationTarget target : batch.getTargets()) {
+            if (target.getPosition()
+                .getY()
+                != excavationCheckpoint.getFrontier()
+                    .getLayerY()) {
+                break;
+            }
             ExcavationObservationRequest observationRequest = observationRequest(context, target, requirements);
             ExcavationObservationResult observed;
             try {
@@ -394,22 +401,10 @@ final class ExcavationTaskRunner implements TaskRunner {
                 throw new IllegalStateException(
                     "passive excavation progress was rejected as " + application.getDisposition());
             }
-            excavationCheckpoint = application.getCheckpoint();
-            taskCheckpoint = ExcavationTaskCheckpointCodec.encode(cylinder, excavationCheckpoint);
-            if (excavationCheckpoint.isComplete()) {
-                return StepResult.completed(
-                    context.getActionEpoch(),
-                    taskCheckpoint,
-                    "Clean-volume excavation completed after skipping " + results.size() + " passive targets");
-            }
-            return StepResult.progress(
-                context.getActionEpoch(),
-                taskCheckpoint,
-                "Skipped " + results.size()
-                    + " confirmed non-mutating excavation targets; "
-                    + excavationCheckpoint.getProgress()
-                        .getRemaining()
-                    + " blocks remain");
+            return acceptPrimaryCheckpoint(
+                context,
+                application.getCheckpoint(),
+                "Skipped " + results.size() + " confirmed non-mutating excavation targets");
         } catch (RuntimeException failure) {
             return StepResult.failed(
                 context.getActionEpoch(),
@@ -595,27 +590,10 @@ final class ExcavationTaskRunner implements TaskRunner {
             if (releaseFailure != null) {
                 throw releaseFailure;
             }
-            ExcavationCheckpoint appliedCheckpoint = application.getCheckpoint();
-            if (appliedCheckpoint.isComplete()) {
-                completionCandidate = appliedCheckpoint;
-                verificationFrontier = CylinderExcavationGeometry.initialFrontier(cylinder);
-                verificationChanged = false;
-                return StepResult.progress(
-                    context.getActionEpoch(),
-                    taskCheckpoint,
-                    "Primary excavation pass finished at " + targetResult.getPosition()
-                        + "; verifying the entire cleared volume against fresh world state");
-            }
-            excavationCheckpoint = appliedCheckpoint;
-            taskCheckpoint = ExcavationTaskCheckpointCodec.encode(cylinder, excavationCheckpoint);
-            return StepResult.progress(
-                context.getActionEpoch(),
-                taskCheckpoint,
-                "Confirmed excavation target " + targetResult.getPosition()
-                    + "; "
-                    + excavationCheckpoint.getProgress()
-                        .getRemaining()
-                    + " blocks remain");
+            return acceptPrimaryCheckpoint(
+                context,
+                application.getCheckpoint(),
+                "Confirmed excavation target " + targetResult.getPosition());
         } catch (RuntimeException failure) {
             RuntimeException cleanupFailure = stopActive();
             if (cleanupFailure != null) {
@@ -630,6 +608,7 @@ final class ExcavationTaskRunner implements TaskRunner {
     }
 
     private StepResult verifyCompletedVolume(TaskStepContext context, ExcavationBackend backend) {
+        if (verificationBoundaryReached()) return finishOrRepeatVerification(context);
         ExcavationTargetBatch batch = CylinderExcavationGeometry
             .nextBatch(cylinder, verificationFrontier, TARGETS_PER_SCAN);
         if (batch.isEmpty()) {
@@ -637,6 +616,10 @@ final class ExcavationTaskRunner implements TaskRunner {
         }
         int verified = 0;
         for (ExcavationTarget target : batch.getTargets()) {
+            if (verificationLayerY != null && target.getPosition()
+                .getY() != verificationLayerY.intValue()) {
+                break;
+            }
             ExcavationObservationRequest request = new ExcavationObservationRequest(
                 spec.getId(),
                 cylinder.getDimensionId(),
@@ -678,8 +661,9 @@ final class ExcavationTaskRunner implements TaskRunner {
             }
             verified++;
         }
-        verificationFrontier = batch.getNextFrontier();
-        if (verificationFrontier.isComplete()) {
+        if (verified == 0) return finishOrRepeatVerification(context);
+        verificationFrontier = frontierAfter(batch, verified);
+        if (verificationBoundaryReached()) {
             return finishOrRepeatVerification(context);
         }
         return StepResult.progress(
@@ -785,7 +769,7 @@ final class ExcavationTaskRunner implements TaskRunner {
             return StepResult.progress(
                 context.getActionEpoch(),
                 taskCheckpoint,
-                "Cleared rediscovered block " + result.getPosition() + "; continuing full-volume verification");
+                "Cleared rediscovered block " + result.getPosition() + "; continuing cleared-area verification");
         } catch (RuntimeException failure) {
             RuntimeException cleanupFailure = stopActive();
             if (cleanupFailure != null) failure.addSuppressed(cleanupFailure);
@@ -799,16 +783,26 @@ final class ExcavationTaskRunner implements TaskRunner {
 
     private StepResult finishOrRepeatVerification(TaskStepContext context) {
         if (verificationChanged) {
-            verificationFrontier = CylinderExcavationGeometry.initialFrontier(cylinder);
+            verificationFrontier = verificationLayerY == null ? CylinderExcavationGeometry.initialFrontier(cylinder)
+                : CylinderExcavationGeometry.layerStart(cylinder, verificationLayerY.intValue());
             verificationChanged = false;
             return StepResult.progress(
                 context.getActionEpoch(),
                 taskCheckpoint,
-                "Rediscovered blocks were cleared; starting the required final clean verification pass");
+                verificationLayerY == null
+                    ? "Rediscovered blocks were cleared; starting the required final clean verification pass"
+                    : "Rediscovered blocks were cleared; rechecking completed layer " + verificationLayerY);
         }
         excavationCheckpoint = completionCandidate;
         taskCheckpoint = ExcavationTaskCheckpointCodec.encode(cylinder, excavationCheckpoint);
+        Integer completedLayer = verificationLayerY;
         clearVerification();
+        if (!excavationCheckpoint.isComplete()) {
+            return StepResult.progress(
+                context.getActionEpoch(),
+                taskCheckpoint,
+                "Completed a clean verification of layer " + completedLayer + "; continuing excavation");
+        }
         return StepResult.completed(
             context.getActionEpoch(),
             taskCheckpoint,
@@ -932,8 +926,49 @@ final class ExcavationTaskRunner implements TaskRunner {
     private void clearVerification() {
         completionCandidate = null;
         verificationFrontier = null;
+        verificationLayerY = null;
         verificationChanged = false;
         activeVerification = false;
+    }
+
+    private StepResult acceptPrimaryCheckpoint(TaskStepContext context, ExcavationCheckpoint appliedCheckpoint,
+        String detailPrefix) {
+        ExcavationFrontier previous = excavationCheckpoint.getFrontier();
+        if (appliedCheckpoint.isComplete()) {
+            completionCandidate = appliedCheckpoint;
+            verificationFrontier = CylinderExcavationGeometry.initialFrontier(cylinder);
+            verificationLayerY = null;
+            verificationChanged = false;
+            return StepResult.progress(
+                context.getActionEpoch(),
+                taskCheckpoint,
+                detailPrefix + "; verifying the entire cleared volume against fresh world state");
+        }
+        if (!previous.isComplete() && appliedCheckpoint.getFrontier()
+            .getLayerY() < previous.getLayerY()) {
+            completionCandidate = appliedCheckpoint;
+            verificationLayerY = Integer.valueOf(previous.getLayerY());
+            verificationFrontier = CylinderExcavationGeometry.layerStart(cylinder, previous.getLayerY());
+            verificationChanged = false;
+            return StepResult.progress(
+                context.getActionEpoch(),
+                taskCheckpoint,
+                detailPrefix + "; verifying completed layer " + previous.getLayerY() + " before descending");
+        }
+        excavationCheckpoint = appliedCheckpoint;
+        taskCheckpoint = ExcavationTaskCheckpointCodec.encode(cylinder, excavationCheckpoint);
+        return StepResult.progress(
+            context.getActionEpoch(),
+            taskCheckpoint,
+            detailPrefix + "; "
+                + excavationCheckpoint.getProgress()
+                    .getRemaining()
+                + " blocks remain");
+    }
+
+    private boolean verificationBoundaryReached() {
+        return verificationFrontier.isComplete()
+            || verificationLayerY != null && verificationFrontier.getLayerY() != verificationLayerY.intValue();
     }
 
     private static RuntimeException cancelAndClose(ExcavationActionHandle handle, ActionLease lease) {

@@ -186,7 +186,7 @@ public class ExcavationTaskRunnerTest {
         assertEquals(TaskState.RUNNING, cleared.getState());
         assertTrue(
             cleared.getDetail()
-                .contains("continuing full-volume verification"));
+                .contains("continuing cleared-area verification"));
 
         TaskSnapshot repeating = task(harness.controller.tick(), spec.getId());
         assertEquals(TaskState.RUNNING, repeating.getState());
@@ -201,6 +201,48 @@ public class ExcavationTaskRunnerTest {
             completed.getCheckpoint()
                 .getValues()
                 .get("phase"));
+    }
+
+    @Test
+    public void completedLayerIsRecheckedAndRepairedBeforeDescending() {
+        harness = new Harness();
+        TaskSpec spec = ExcavationTask.cleanVolumeCylinder("layer-reconcile", 0, 8, 8, 0, 11, 12);
+        harness.controller.submit(spec);
+        harness.controller.tick();
+        harness.controller.tick();
+        harness.backend.confirm();
+
+        TaskSnapshot layerVerification = task(harness.controller.tick(), spec.getId());
+        assertTrue(
+            layerVerification.getDetail()
+                .contains("verifying completed layer 12"));
+        harness.backend.confirmedClear.clear();
+
+        TaskSnapshot rediscovered = task(harness.controller.tick(), spec.getId());
+        assertTrue(
+            rediscovered.getDetail()
+                .contains("Rediscovered block"));
+        assertEquals(2, harness.backend.submissions);
+
+        harness.backend.confirm();
+        harness.controller.tick();
+        TaskSnapshot rechecking = task(harness.controller.tick(), spec.getId());
+        assertTrue(
+            rechecking.getDetail()
+                .contains("rechecking completed layer 12"));
+
+        TaskSnapshot layerClean = task(harness.controller.tick(), spec.getId());
+        assertTrue(
+            layerClean.getDetail()
+                .contains("clean verification of layer 12"));
+
+        harness.controller.tick();
+        assertEquals(3, harness.backend.submissions);
+        assertEquals(
+            11,
+            harness.backend.lastRequest.getIntent()
+                .getPosition()
+                .getY());
     }
 
     @Test

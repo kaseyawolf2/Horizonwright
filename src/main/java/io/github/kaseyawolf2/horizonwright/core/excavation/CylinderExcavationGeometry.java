@@ -15,6 +15,15 @@ public final class CylinderExcavationGeometry {
         return normalize(spec, rawLayerStart(spec, spec.getTopY()));
     }
 
+    /** First canonical position in one layer, used by bounded cleared-layer verification. */
+    public static ExcavationFrontier layerStart(CylinderExcavationSpec spec, int layerY) {
+        requireSpec(spec);
+        if (layerY < spec.getBottomY() || layerY > spec.getTopY()) {
+            throw new IllegalArgumentException("layerY is outside the excavation cylinder");
+        }
+        return normalize(spec, rawLayerStart(spec, layerY));
+    }
+
     public static ExcavationTargetBatch nextBatch(CylinderExcavationSpec spec, ExcavationFrontier frontier,
         int maximumTargets) {
         requireSpec(spec);
