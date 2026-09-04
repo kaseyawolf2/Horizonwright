@@ -18,6 +18,7 @@ public final class NavigationRequest {
     private final int z;
     private final int tolerance;
     private final NavigationGoalKind goalKind;
+    private final boolean placementAllowed;
     private final long createdAtNanos;
     private final long deadlineNanos;
 
@@ -37,7 +38,8 @@ public final class NavigationRequest {
             tolerance,
             createdAtNanos,
             timeoutNanos,
-            NavigationGoalKind.RANGE);
+            NavigationGoalKind.RANGE,
+            false);
     }
 
     public static NavigationRequest adjacentTo(String requestId, long actionEpoch, int dimensionId, int x, int y, int z,
@@ -52,11 +54,44 @@ public final class NavigationRequest {
             0,
             createdAtNanos,
             timeoutNanos,
-            NavigationGoalKind.ADJACENT);
+            NavigationGoalKind.ADJACENT,
+            false);
+    }
+
+    public static NavigationRequest adjacentToAllowingPlacement(String requestId, long actionEpoch, int dimensionId,
+        int x, int y, int z, long createdAtNanos, long timeoutNanos) {
+        return new NavigationRequest(
+            requestId,
+            actionEpoch,
+            dimensionId,
+            x,
+            y,
+            z,
+            0,
+            createdAtNanos,
+            timeoutNanos,
+            NavigationGoalKind.ADJACENT,
+            true);
+    }
+
+    public static NavigationRequest nearAllowingPlacement(String requestId, long actionEpoch, int dimensionId, int x,
+        int y, int z, int tolerance, long createdAtNanos, long timeoutNanos) {
+        return new NavigationRequest(
+            requestId,
+            actionEpoch,
+            dimensionId,
+            x,
+            y,
+            z,
+            tolerance,
+            createdAtNanos,
+            timeoutNanos,
+            NavigationGoalKind.RANGE,
+            true);
     }
 
     private NavigationRequest(String requestId, long actionEpoch, int dimensionId, int x, int y, int z, int tolerance,
-        long createdAtNanos, long timeoutNanos, NavigationGoalKind goalKind) {
+        long createdAtNanos, long timeoutNanos, NavigationGoalKind goalKind, boolean placementAllowed) {
         if (requestId == null || requestId.trim()
             .isEmpty()) {
             throw new IllegalArgumentException("requestId must not be blank");
@@ -85,6 +120,7 @@ public final class NavigationRequest {
         this.z = z;
         this.tolerance = tolerance;
         this.goalKind = goalKind;
+        this.placementAllowed = placementAllowed;
         this.createdAtNanos = createdAtNanos;
         this.deadlineNanos = saturatingAdd(createdAtNanos, timeoutNanos);
     }
@@ -119,6 +155,10 @@ public final class NavigationRequest {
 
     public NavigationGoalKind getGoalKind() {
         return goalKind;
+    }
+
+    public boolean isPlacementAllowed() {
+        return placementAllowed;
     }
 
     public long getCreatedAtNanos() {

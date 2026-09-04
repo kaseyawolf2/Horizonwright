@@ -56,7 +56,7 @@ final class HorizonwrightBaritoneProcess implements IBaritoneProcess {
         if (firstTick) {
             firstTick = false;
             backend.markMoving(handle, "Baritone path calculation requested");
-            return backend.movementOnlyCommand(handle, PathingCommandType.FORCE_REVALIDATE_GOAL_AND_PATH);
+            return backend.navigationCommand(handle, PathingCommandType.FORCE_REVALIDATE_GOAL_AND_PATH);
         }
         if (calcFailed) {
             backend.finishFromProcess(handle, NavigationState.FAILED, "Baritone path calculation failed");
@@ -64,7 +64,7 @@ final class HorizonwrightBaritoneProcess implements IBaritoneProcess {
             return new PathingCommand(null, PathingCommandType.CANCEL_AND_SET_GOAL);
         }
         backend.markMoving(handle, "Following bounded Baritone path");
-        return backend.movementOnlyCommand(handle, PathingCommandType.SET_GOAL_AND_PATH);
+        return backend.navigationCommand(handle, PathingCommandType.SET_GOAL_AND_PATH);
     }
 
     @Override

@@ -51,7 +51,12 @@ final class ExcavationTaskRunner implements TaskRunner {
     private static final int CLEARED_CACHE_AUDIT_BATCH = CylinderExcavationGeometry.MAX_BATCH_SIZE;
     private static final long POLL_DELAY_MILLIS = 0L;
     private static final Set<ActionCapability> REQUIRED_CAPABILITIES = Collections.unmodifiableSet(
-        EnumSet.of(ActionCapability.MOVEMENT, ActionCapability.LOOK, ActionCapability.DIG, ActionCapability.HELD_USE));
+        EnumSet.of(
+            ActionCapability.MOVEMENT,
+            ActionCapability.LOOK,
+            ActionCapability.DIG,
+            ActionCapability.PLACE,
+            ActionCapability.HELD_USE));
 
     private final TaskSpec spec;
     private final CylinderExcavationSpec cylinder;

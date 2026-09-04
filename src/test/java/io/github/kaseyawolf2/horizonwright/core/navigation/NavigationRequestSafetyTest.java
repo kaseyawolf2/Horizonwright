@@ -40,6 +40,21 @@ public class NavigationRequestSafetyTest {
 
         assertEquals(4_096, request.getX());
         assertEquals(-4_096, request.getZ());
+        assertFalse(request.isPlacementAllowed());
+    }
+
+    @Test
+    public void placementMustBeExplicitlyEnabledForOneNavigationRequest() {
+        NavigationRequest adjacent = NavigationRequest
+            .adjacentToAllowingPlacement("scaffold-adjacent", 1L, 0, 4, 90, 4, 100L, 1_000L);
+        NavigationRequest near = NavigationRequest
+            .nearAllowingPlacement("scaffold-near", 1L, 0, 4, 90, 4, 3, 100L, 1_000L);
+
+        assertTrue(adjacent.isPlacementAllowed());
+        assertEquals(NavigationGoalKind.ADJACENT, adjacent.getGoalKind());
+        assertTrue(near.isPlacementAllowed());
+        assertEquals(NavigationGoalKind.RANGE, near.getGoalKind());
+        assertEquals(3, near.getTolerance());
     }
 
     private static void assertRejected(int x, int y, int z, int tolerance) {

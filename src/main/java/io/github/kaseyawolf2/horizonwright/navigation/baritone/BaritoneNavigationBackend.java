@@ -45,7 +45,7 @@ public final class BaritoneNavigationBackend implements NavigationBackend, Actio
     private final ActionSessionGuard actionSessionGuard;
     private final HorizonwrightBaritoneProcess process;
     private volatile BackendAvailability availability = BackendAvailability
-        .available("Baritone enhanced build fcbbd4882c ready (movement/look only)");
+        .available("Baritone enhanced build fcbbd4882c ready (scoped navigation contexts)");
     private Handle active;
     private PendingCleanup pendingCleanup;
 
@@ -86,9 +86,15 @@ public final class BaritoneNavigationBackend implements NavigationBackend, Actio
         if (!movementLease.isValid()) {
             throw new IllegalArgumentException("movement lease is not valid");
         }
+        EnumSet<ActionCapability> requiredCapabilities = EnumSet.copyOf(REQUIRED_CAPABILITIES);
+        if (request.isPlacementAllowed()) {
+            requiredCapabilities.add(ActionCapability.PLACE);
+            requiredCapabilities.add(ActionCapability.HELD_USE);
+        }
         if (!movementLease.getCapabilities()
-            .containsAll(REQUIRED_CAPABILITIES)) {
-            throw new IllegalArgumentException("Baritone navigation requires MOVEMENT and LOOK capabilities");
+            .containsAll(requiredCapabilities)) {
+            throw new IllegalArgumentException(
+                "Baritone navigation requires capabilities " + requiredCapabilities + " for this request");
         }
         if (request.getActionEpoch() != movementLease.getEpoch()) {
             throw new IllegalArgumentException("request and lease epochs differ");
@@ -123,6 +129,8 @@ public final class BaritoneNavigationBackend implements NavigationBackend, Actio
             request.getZ(),
             "tolerance",
             request.getTolerance(),
+            "allowPlacement",
+            request.isPlacementAllowed(),
             "leaseOwner",
             movementLease.getOwner(),
             "safetyRecovery",
@@ -132,8 +140,8 @@ public final class BaritoneNavigationBackend implements NavigationBackend, Actio
         Goal goal = request.getGoalKind() == NavigationGoalKind.ADJACENT ? new GoalGetToBlock(target)
             : request.getTolerance() == 0 ? new GoalBlock(request.getX(), request.getY(), request.getZ())
                 : new GoalNear(target, request.getTolerance());
-        CalculationContext movementOnlyContext = createMovementOnlyContext();
-        Handle handle = new Handle(this, request, movementLease, goal, movementOnlyContext);
+        CalculationContext calculationContext = createMovementContext(request.isPlacementAllowed());
+        Handle handle = new Handle(this, request, movementLease, goal, calculationContext);
         actionSessionGuard.begin(movementLease);
         active = handle;
         process.activate(handle);
@@ -380,11 +388,11 @@ public final class BaritoneNavigationBackend implements NavigationBackend, Actio
         }
     }
 
-    PathingCommand movementOnlyCommand(Handle handle, PathingCommandType commandType) {
-        return new PathingCommandContext(handle.goal, commandType, handle.movementOnlyContext);
+    PathingCommand navigationCommand(Handle handle, PathingCommandType commandType) {
+        return new PathingCommandContext(handle.goal, commandType, handle.calculationContext);
     }
 
-    private CalculationContext createMovementOnlyContext() {
+    private CalculationContext createMovementContext(boolean allowPlacement) {
         Settings settings = BaritoneAPI.getSettings();
         synchronized (settings) {
             boolean allowBreak = settings.allowBreak.value;
@@ -397,10 +405,10 @@ public final class BaritoneNavigationBackend implements NavigationBackend, Actio
             try {
                 settings.allowBreak.value = false;
                 settings.allowBreakAnyway.value = Collections.emptyList();
-                settings.allowPlace.value = false;
+                settings.allowPlace.value = allowPlacement;
                 settings.allowInventory.value = false;
                 settings.allowParkour.value = false;
-                settings.allowParkourPlace.value = false;
+                settings.allowParkourPlace.value = allowPlacement;
                 settings.allowWaterBucketFall.value = false;
                 return new CalculationContext(baritone, true);
             } finally {
@@ -445,17 +453,17 @@ public final class BaritoneNavigationBackend implements NavigationBackend, Actio
         private final NavigationRequest request;
         private final ActionLease movementLease;
         final Goal goal;
-        private final CalculationContext movementOnlyContext;
+        private final CalculationContext calculationContext;
         private volatile NavigationState state = NavigationState.SUBMITTED;
         private volatile String detail = "Request accepted; waiting for Baritone control";
 
         private Handle(BaritoneNavigationBackend backend, NavigationRequest request, ActionLease movementLease,
-            Goal goal, CalculationContext movementOnlyContext) {
+            Goal goal, CalculationContext calculationContext) {
             this.backend = backend;
             this.request = request;
             this.movementLease = movementLease;
             this.goal = goal;
-            this.movementOnlyContext = movementOnlyContext;
+            this.calculationContext = calculationContext;
         }
 
         @Override

@@ -58,8 +58,12 @@ public final class LiveExcavationBackend implements ExcavationBackend {
         NavigationBackend getNavigationBackend();
     }
 
-    private static final EnumSet<ActionCapability> REQUIRED = EnumSet
-        .of(ActionCapability.MOVEMENT, ActionCapability.LOOK, ActionCapability.DIG, ActionCapability.HELD_USE);
+    private static final EnumSet<ActionCapability> REQUIRED = EnumSet.of(
+        ActionCapability.MOVEMENT,
+        ActionCapability.LOOK,
+        ActionCapability.DIG,
+        ActionCapability.PLACE,
+        ActionCapability.HELD_USE);
     private static final long APPROACH_TIMEOUT_NANOS = NavigationRequest.MAX_RUNTIME_NANOS;
     private static final long LOCAL_ACTION_TIMEOUT_NANOS = TimeUnit.SECONDS.toNanos(20L);
     private static final long FINISH_BOUNDARY_FALLBACK_NANOS = TimeUnit.MILLISECONDS.toNanos(250L);
@@ -350,32 +354,64 @@ public final class LiveExcavationBackend implements ExcavationBackend {
             BlockPosition position = workingPosition;
             approachAttempt++;
             long startedAtNanos = System.nanoTime();
-            NavigationRequest approach = approachAttempt == 1
-                ? NavigationRequest.adjacentTo(
-                    request.getRequestId() + "-approach-" + approachAttempt,
-                    request.getActionEpoch(),
-                    request.getDimensionId(),
-                    position.getX(),
-                    position.getY(),
-                    position.getZ(),
-                    startedAtNanos,
-                    APPROACH_TIMEOUT_NANOS)
-                : new NavigationRequest(
-                    request.getRequestId() + "-approach-" + approachAttempt,
-                    request.getActionEpoch(),
-                    request.getDimensionId(),
-                    position.getX(),
-                    position.getY(),
-                    position.getZ(),
-                    3,
-                    startedAtNanos,
-                    APPROACH_TIMEOUT_NANOS);
+            String approachId = request.getRequestId() + "-approach-" + approachAttempt;
+            NavigationRequest approach;
+            if (approachAttempt == 1) {
+                approach = clearingObstruction
+                    ? NavigationRequest.adjacentToAllowingPlacement(
+                        approachId,
+                        request.getActionEpoch(),
+                        request.getDimensionId(),
+                        position.getX(),
+                        position.getY(),
+                        position.getZ(),
+                        startedAtNanos,
+                        APPROACH_TIMEOUT_NANOS)
+                    : NavigationRequest.adjacentTo(
+                        approachId,
+                        request.getActionEpoch(),
+                        request.getDimensionId(),
+                        position.getX(),
+                        position.getY(),
+                        position.getZ(),
+                        startedAtNanos,
+                        APPROACH_TIMEOUT_NANOS);
+            } else {
+                approach = clearingObstruction
+                    ? NavigationRequest.nearAllowingPlacement(
+                        approachId,
+                        request.getActionEpoch(),
+                        request.getDimensionId(),
+                        position.getX(),
+                        position.getY(),
+                        position.getZ(),
+                        3,
+                        startedAtNanos,
+                        APPROACH_TIMEOUT_NANOS)
+                    : new NavigationRequest(
+                        approachId,
+                        request.getActionEpoch(),
+                        request.getDimensionId(),
+                        position.getX(),
+                        position.getY(),
+                        position.getZ(),
+                        3,
+                        startedAtNanos,
+                        APPROACH_TIMEOUT_NANOS);
+            }
             navigationHandle = navigation.submit(approach, lease);
             phase = Phase.APPROACHING;
             deadlineNanos = saturatingAdd(System.nanoTime(), APPROACH_TIMEOUT_NANOS);
             state = ExcavationActionState.EXECUTING;
             detail = reason;
-            trace("phase", "navigationRequest", navigationHandle.getRequestId(), "attempt", approachAttempt);
+            trace(
+                "phase",
+                "navigationRequest",
+                navigationHandle.getRequestId(),
+                "attempt",
+                approachAttempt,
+                "allowPlacement",
+                approach.isPlacementAllowed());
         }
 
         @Override
