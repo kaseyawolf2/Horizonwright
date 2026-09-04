@@ -65,6 +65,9 @@ public final class ExcavationPlanner {
             case AIR:
                 kind = ExcavationIntentKind.ALREADY_CLEAR;
                 break;
+            case IGNORED_FOLIAGE:
+                kind = ExcavationIntentKind.IGNORE_FOLIAGE;
+                break;
             case BREAKABLE:
                 kind = ExcavationIntentKind.BREAK_BLOCK;
                 break;

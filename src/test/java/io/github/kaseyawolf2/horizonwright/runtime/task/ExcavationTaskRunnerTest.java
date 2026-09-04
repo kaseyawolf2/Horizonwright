@@ -16,6 +16,7 @@ import org.junit.Test;
 import io.github.kaseyawolf2.horizonwright.core.action.ActionCapability;
 import io.github.kaseyawolf2.horizonwright.core.action.ActionLease;
 import io.github.kaseyawolf2.horizonwright.core.action.InMemoryActionBroker;
+import io.github.kaseyawolf2.horizonwright.core.excavation.BlockPosition;
 import io.github.kaseyawolf2.horizonwright.core.excavation.ExcavationBlockClassification;
 import io.github.kaseyawolf2.horizonwright.core.excavation.ExcavationMode;
 import io.github.kaseyawolf2.horizonwright.core.excavation.ExcavationObservation;
@@ -269,11 +270,84 @@ public class ExcavationTaskRunnerTest {
         assertTrue(
             rediscovered.getDetail()
                 .contains("Rediscovered block"));
+        assertEquals(1, harness.backend.submissions);
+
+        harness.controller.tick();
         assertEquals(2, harness.backend.submissions);
         assertTrue(
             harness.backend.lastRequest.getIntent()
                 .getPosition()
                 .getY() == 64);
+    }
+
+    @Test
+    public void rediscoveryCleansEveryProcessedLayerDownToTheSavedPrimaryFrontier() {
+        harness = new Harness();
+        TaskSpec spec = ExcavationTask.cleanVolumeCylinder("layer-range-reconcile", 0, 8, 8, 1, 64, 65);
+        harness.controller.submit(spec);
+        harness.controller.tick();
+
+        TaskSnapshot snapshot = null;
+        for (int tick = 0; tick < 200; tick++) {
+            if (harness.backend.active != null && harness.backend.active.state == ExcavationActionState.SUBMITTED) {
+                harness.backend.confirm();
+            }
+            snapshot = task(harness.controller.tick(), spec.getId());
+            if ("64".equals(
+                snapshot.getCheckpoint()
+                    .getValues()
+                    .get("frontier.layerY"))) {
+                break;
+            }
+        }
+        assertNotNull(snapshot);
+        assertEquals(
+            "64",
+            snapshot.getCheckpoint()
+                .getValues()
+                .get("frontier.layerY"));
+
+        int submissionsBeforeLowerLayer = harness.backend.submissions;
+        for (int tick = 0; tick < 20 && harness.backend.submissions == submissionsBeforeLowerLayer; tick++) {
+            harness.controller.tick();
+        }
+        assertTrue(harness.backend.submissions > submissionsBeforeLowerLayer);
+        assertEquals(
+            64,
+            harness.backend.lastRequest.getIntent()
+                .getPosition()
+                .getY());
+        BlockPosition retainedLowerPosition = harness.backend.lastRequest.getIntent()
+            .getPosition();
+        harness.backend.confirm();
+        harness.controller.tick();
+        harness.backend.confirmedClear.clear();
+        harness.backend.confirmedClear.add(retainedLowerPosition);
+
+        TaskSnapshot rediscovered = task(harness.controller.tick(), spec.getId());
+        assertTrue(
+            rediscovered.getDetail()
+                .contains("cleaning every processed layer"));
+
+        boolean observedSavedLayer = false;
+        boolean completedRange = false;
+        for (int tick = 0; tick < 300; tick++) {
+            TaskSnapshot progress = task(harness.controller.tick(), spec.getId());
+            if (harness.backend.lastObservationRequest != null && harness.backend.lastObservationRequest.getPosition()
+                .getY() == 64) {
+                observedSavedLayer = true;
+            }
+            if (harness.backend.active != null && harness.backend.active.state == ExcavationActionState.SUBMITTED) {
+                harness.backend.confirm();
+            }
+            if (progress.getDetail()
+                .contains("Cleaned every processed layer")) {
+                completedRange = true;
+                break;
+            }
+        }
+        assertTrue("range verification never reached the saved primary layer", observedSavedLayer);
+        assertTrue("range verification never completed", completedRange);
     }
 
     @Test

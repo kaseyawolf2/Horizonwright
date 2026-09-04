@@ -212,7 +212,7 @@ public final class LiveExcavationBackend implements ExcavationBackend {
         if (!lease.isValid() || lease.getEpoch() != request.getActionEpoch()
             || !lease.getCapabilities()
                 .containsAll(REQUIRED)) {
-            throw new IllegalArgumentException("a matching MOVEMENT, LOOK, and DIG lease is required");
+            throw new IllegalArgumentException("a matching MOVEMENT, LOOK, DIG, PLACE, and HELD_USE lease is required");
         }
         requireClientThread();
         ExcavationObservation current = observer.observePosition(
@@ -271,6 +271,7 @@ public final class LiveExcavationBackend implements ExcavationBackend {
                 return ExcavationTargetOutcome.COMPLETED;
             case PROTECT_GRAVE:
             case PROTECT_INFRASTRUCTURE:
+            case IGNORE_FOLIAGE:
                 return ExcavationTargetOutcome.PROTECTED;
             case MARK_UNREACHABLE:
                 return ExcavationTargetOutcome.UNREACHABLE;

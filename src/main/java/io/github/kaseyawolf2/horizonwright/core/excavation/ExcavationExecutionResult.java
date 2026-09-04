@@ -85,6 +85,7 @@ public final class ExcavationExecutionResult {
                 break;
             case PROTECT_GRAVE:
             case PROTECT_INFRASTRUCTURE:
+            case IGNORE_FOLIAGE:
                 compatible = outcome == ExcavationTargetOutcome.PROTECTED;
                 break;
             case CONTAIN_FLUID:

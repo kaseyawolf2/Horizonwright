@@ -21,10 +21,11 @@ public class ExcavationPlannerTest {
         ExcavationPlanningWindow window = ExcavationTestSupport.window(
             spec,
             start,
-            9,
+            10,
             12L,
             41L,
             ExcavationBlockClassification.AIR,
+            ExcavationBlockClassification.IGNORED_FOLIAGE,
             ExcavationBlockClassification.BREAKABLE,
             ExcavationBlockClassification.PROTECTED_GRAVE,
             ExcavationBlockClassification.PROTECTED_INFRASTRUCTURE,
@@ -42,6 +43,7 @@ public class ExcavationPlannerTest {
         assertEquals(
             Arrays.asList(
                 ExcavationIntentKind.ALREADY_CLEAR,
+                ExcavationIntentKind.IGNORE_FOLIAGE,
                 ExcavationIntentKind.BREAK_BLOCK,
                 ExcavationIntentKind.PROTECT_GRAVE,
                 ExcavationIntentKind.PROTECT_INFRASTRUCTURE,
@@ -55,7 +57,7 @@ public class ExcavationPlannerTest {
             ManagedQuarryConfiguration.defaults()
                 .getFluidFillerMaterial(),
             plan.getIntents()
-                .get(5)
+                .get(6)
                 .getApprovedMaterial()
                 .get());
         assertEquals(

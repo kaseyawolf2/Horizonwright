@@ -34,7 +34,17 @@ final class MinecraftExcavationObserver {
         World world = minecraft.theWorld;
         if (!world.blockExists(position.getX(), position.getY(), position.getZ())) {
             return ExcavationBlockClassifier.classify(
-                new ExcavationBlockEvidence(position, "unloaded", false, false, false, false, false, false, false));
+                new ExcavationBlockEvidence(
+                    position,
+                    "unloaded",
+                    false,
+                    false,
+                    false,
+                    false,
+                    false,
+                    false,
+                    false,
+                    false));
         }
         Block block = world.getBlock(position.getX(), position.getY(), position.getZ());
         int metadata = world.getBlockMetadata(position.getX(), position.getY(), position.getZ());
@@ -47,9 +57,11 @@ final class MinecraftExcavationObserver {
             tile.getClass()
                 .getName());
         boolean infrastructure = tile != null && !grave;
+        boolean foliage = !air && block != null
+            && block.isLeaves(world, position.getX(), position.getY(), position.getZ());
         float hardness = block == null ? -1.0F
             : block.getBlockHardness(world, position.getX(), position.getY(), position.getZ());
-        boolean breakable = !air && !fluid && !grave && !infrastructure && hardness >= 0.0F;
+        boolean breakable = !air && !fluid && !grave && !infrastructure && !foliage && hardness >= 0.0F;
         return ExcavationBlockClassifier.classify(
             new ExcavationBlockEvidence(
                 position,
@@ -60,6 +72,7 @@ final class MinecraftExcavationObserver {
                 source,
                 grave,
                 infrastructure,
+                foliage,
                 breakable));
     }
 

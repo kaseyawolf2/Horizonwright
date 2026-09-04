@@ -16,6 +16,8 @@ final class ExcavationBlockClassifier {
         else if (evidence.isProtectedGrave()) classification = ExcavationBlockClassification.PROTECTED_GRAVE;
         else if (evidence.isInfrastructure()) {
             classification = ExcavationBlockClassification.PROTECTED_INFRASTRUCTURE;
+        } else if (evidence.isFoliage()) {
+            classification = ExcavationBlockClassification.IGNORED_FOLIAGE;
         } else if (evidence.isFluid()) {
             // Clean-volume mode has no bucket or containment integration yet. Never attack a fluid packet-blindly.
             classification = evidence.isFluidSource() ? ExcavationBlockClassification.FLUID_SOURCE_UNREACHABLE

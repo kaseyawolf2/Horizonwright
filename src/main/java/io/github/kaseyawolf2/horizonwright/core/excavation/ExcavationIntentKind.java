@@ -2,6 +2,7 @@ package io.github.kaseyawolf2.horizonwright.core.excavation;
 
 public enum ExcavationIntentKind {
     ALREADY_CLEAR,
+    IGNORE_FOLIAGE,
     BREAK_BLOCK,
     PROTECT_GRAVE,
     PROTECT_INFRASTRUCTURE,
