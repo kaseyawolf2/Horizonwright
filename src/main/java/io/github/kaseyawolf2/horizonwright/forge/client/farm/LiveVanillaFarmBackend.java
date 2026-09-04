@@ -45,7 +45,7 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
         ActionCapability.PLACE,
         ActionCapability.HELD_USE);
     private static final EnumSet<ActionCapability> RIGHT_CLICK_HARVEST = EnumSet
-        .of(ActionCapability.MOVEMENT, ActionCapability.LOOK, ActionCapability.USE, ActionCapability.HELD_USE);
+        .of(ActionCapability.MOVEMENT, ActionCapability.LOOK, ActionCapability.USE);
     private static final long ACTION_TIMEOUT_NANOS = TimeUnit.SECONDS.toNanos(30L);
 
     private final Minecraft minecraft;
@@ -212,6 +212,9 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
             : -1;
         if (action == FarmActionKind.BREAK_AND_REPLANT && seedSlot < 0)
             throw new IllegalStateException("an exact approved replant seed must be present in the hotbar");
+        int emptyHandSlot = action == FarmActionKind.RIGHT_CLICK_HARVEST ? findEmptyHotbarSlot() : -1;
+        if (action == FarmActionKind.RIGHT_CLICK_HARVEST && emptyHandSlot < 0)
+            throw new IllegalStateException("right-click crop harvesting requires an empty hotbar slot");
         verifier.requireCurrent(
             request.getDecision(),
             current,
@@ -221,7 +224,14 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
         NavigationBackend navigation = navigationSource.getNavigationBackend();
         Availability available = availability();
         if (navigation == null || !available.isAvailable()) throw new IllegalStateException(available.getDiagnostic());
-        LiveHandle handle = new LiveHandle(request, lease, navigation, seedSlot, current, System.nanoTime());
+        LiveHandle handle = new LiveHandle(
+            request,
+            lease,
+            navigation,
+            seedSlot,
+            emptyHandSlot,
+            current,
+            System.nanoTime());
         DevelopmentTrace.event(
             "farm-live",
             "execute-validated",
@@ -229,6 +239,8 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
             request.getRequestId(),
             "seedSlot",
             seedSlot,
+            "emptyHandSlot",
+            emptyHandSlot,
             "priorSlot",
             minecraft.thePlayer.inventory.currentItem,
             "playerX",
@@ -261,12 +273,20 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
         if (active == handle) active = null;
     }
 
+    private int findEmptyHotbarSlot() {
+        for (int slot = 0; slot < 9; slot++) {
+            if (minecraft.thePlayer.inventory.mainInventory[slot] == null) return slot;
+        }
+        return -1;
+    }
+
     private final class LiveHandle implements ActionHandle {
 
         private final ActionRequest request;
         private final ActionLease lease;
         private final NavigationBackend navigation;
         private final int seedSlot;
+        private final int emptyHandSlot;
         private final CropObservation plannedBefore;
         private final int priorHotbarSlot;
         private final long deadlineNanos;
@@ -283,11 +303,12 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
         private volatile boolean cancellationRequested;
 
         private LiveHandle(ActionRequest request, ActionLease lease, NavigationBackend navigation, int seedSlot,
-            CropObservation plannedBefore, long startedAtNanos) {
+            int emptyHandSlot, CropObservation plannedBefore, long startedAtNanos) {
             this.request = request;
             this.lease = lease;
             this.navigation = navigation;
             this.seedSlot = seedSlot;
+            this.emptyHandSlot = emptyHandSlot;
             this.plannedBefore = plannedBefore;
             this.priorHotbarSlot = minecraft.thePlayer.inventory.currentItem;
             this.deadlineNanos = saturatingAdd(startedAtNanos, ACTION_TIMEOUT_NANOS);
@@ -449,6 +470,11 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
                 fail("Seed inventory changed after approach");
                 return;
             }
+            if (action == FarmActionKind.RIGHT_CLICK_HARVEST
+                && minecraft.thePlayer.inventory.mainInventory[emptyHandSlot] != null) {
+                fail("The reserved empty hotbar slot was filled before crop harvesting");
+                return;
+            }
             try {
                 verifier.requireCurrent(
                     request.getDecision(),
@@ -482,7 +508,14 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
         private void rightClickHarvest() {
             BasePosition target = request.getDecision()
                 .getTarget();
+            minecraft.thePlayer.inventory.currentItem = emptyHandSlot;
+            slotChanged = emptyHandSlot != priorHotbarSlot;
+            minecraft.playerController.updateController();
             ItemStack held = MinecraftRuntimeAccess.heldItem(minecraft.thePlayer);
+            if (held != null) {
+                fail("Could not establish an empty hand for crop harvesting");
+                return;
+            }
             aimAt(target);
             boolean accepted = minecraft.playerController.onPlayerRightClick(
                 minecraft.thePlayer,

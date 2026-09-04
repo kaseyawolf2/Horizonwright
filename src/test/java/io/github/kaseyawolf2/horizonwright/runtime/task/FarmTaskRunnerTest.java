@@ -123,7 +123,7 @@ public class FarmTaskRunnerTest {
         assertFalse(
             harness.backend.lease.getCapabilities()
                 .contains(ActionCapability.PLACE));
-        assertTrue(
+        assertFalse(
             harness.backend.lease.getCapabilities()
                 .contains(ActionCapability.HELD_USE));
         assertFalse(
