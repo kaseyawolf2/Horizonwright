@@ -10,6 +10,7 @@ import io.github.kaseyawolf2.horizonwright.core.base.NamedArea;
 import io.github.kaseyawolf2.horizonwright.core.base.SaplingReserveEvidence;
 import io.github.kaseyawolf2.horizonwright.core.base.TreeDecision;
 import io.github.kaseyawolf2.horizonwright.core.base.TreeObservation;
+import io.github.kaseyawolf2.horizonwright.core.base.TreeWorkCheckpoint;
 
 /** Version-isolated observation and confirmed-action boundary for ordinary tree farms. */
 public interface TreeBackend {
@@ -88,19 +89,23 @@ public interface TreeBackend {
         private final long passRevision;
         private final long actionEpoch;
         private final int index;
-        private final String treeId;
+        private final TreeWorkCheckpoint work;
         private final int minimumSaplingReserve;
 
-        public TargetRequest(String taskId, long passRevision, long actionEpoch, int index, String treeId,
+        public TargetRequest(String taskId, long passRevision, long actionEpoch, int index, TreeWorkCheckpoint work,
             int minimumSaplingReserve) {
             this.taskId = required(taskId, "task id");
-            this.treeId = required(treeId, "tree id");
-            if (passRevision < 1L || actionEpoch < 1L || index < 0 || minimumSaplingReserve < 0) {
+            if (passRevision < 1L || actionEpoch < 1L
+                || index < 0
+                || work == null
+                || work.getWorkRevision() != passRevision
+                || minimumSaplingReserve < 0) {
                 throw new IllegalArgumentException("valid pass, epoch, index, and sapling reserve are required");
             }
             this.passRevision = passRevision;
             this.actionEpoch = actionEpoch;
             this.index = index;
+            this.work = work;
             this.minimumSaplingReserve = minimumSaplingReserve;
         }
 
@@ -120,8 +125,8 @@ public interface TreeBackend {
             return index;
         }
 
-        public String getTreeId() {
-            return treeId;
+        public TreeWorkCheckpoint getWork() {
+            return work;
         }
 
         public int getMinimumSaplingReserve() {

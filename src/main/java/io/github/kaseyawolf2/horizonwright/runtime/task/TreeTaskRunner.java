@@ -126,27 +126,23 @@ final class TreeTaskRunner implements TaskRunner {
 
     private StepResult plan(TaskStepContext context, TreeBackend backend) {
         TreeObservation frozen = pass.trees.get(pass.nextIndex);
+        TreeWorkCheckpoint work = pass.work;
+        if (work == null) {
+            work = TreeWorkCheckpoint.start(pass.area, pass.passRevision, frozen);
+            pass = pass.withWork(work);
+            checkpoint = TreeTaskCheckpointCodec.encode(spec, pass, nextRevision());
+        }
         TreeBackend.TargetRequest request = new TreeBackend.TargetRequest(
             spec.getId(),
             pass.passRevision,
             context.getActionEpoch(),
             pass.nextIndex,
-            frozen.getTreeId(),
+            work,
             TreeTask.minimumSaplingReserve(spec));
         try {
             TreeBackend.TargetSnapshot snapshot = backend.observe(request);
             validateTarget(request, snapshot);
             TreeObservation current = snapshot.getObservation();
-            TreeWorkCheckpoint work = pass.work;
-            if (work == null) {
-                if (!sameStandingObservation(frozen, current)) {
-                    pass = pass.advance(false);
-                    return persist(context, "Skipped a tree changed after the finite pass was frozen");
-                }
-                work = TreeWorkCheckpoint.start(pass.area, pass.passRevision, current);
-                pass = pass.withWork(work);
-                checkpoint = TreeTaskCheckpointCodec.encode(spec, pass, nextRevision());
-            }
             TreeDecision decision = planner.plan(pass.area, work, current, snapshot.getReserveEvidence());
             if (decision.getAction() == TreeActionKind.HOLD_SAPLING_RESERVE) {
                 return StepResult.blocked(
@@ -333,25 +329,13 @@ final class TreeTaskRunner implements TaskRunner {
             || request.getPassRevision() != snapshot.getPassRevision()
             || request.getActionEpoch() != snapshot.getActionEpoch()
             || request.getIndex() != snapshot.getIndex()
-            || !request.getTreeId()
+            || !request.getWork()
+                .getTreeId()
                 .equals(
                     snapshot.getObservation()
                         .getTreeId())) {
             throw new IllegalStateException("tree target returned stale or mismatched evidence");
         }
-    }
-
-    private static boolean sameStandingObservation(TreeObservation frozen, TreeObservation current) {
-        return frozen.getTreeId()
-            .equals(current.getTreeId()) && frozen.getRevision() == current.getRevision()
-            && frozen.getObservationFingerprint()
-                .equals(current.getObservationFingerprint())
-            && frozen.getRequiredSaplingFingerprint()
-                .equals(current.getRequiredSaplingFingerprint())
-            && frozen.getReplantPosition()
-                .equals(current.getReplantPosition())
-            && frozen.getTreeBlocks()
-                .equals(current.getTreeBlocks());
     }
 
     private static Set<ActionCapability> capabilities(TreeActionKind action) {
