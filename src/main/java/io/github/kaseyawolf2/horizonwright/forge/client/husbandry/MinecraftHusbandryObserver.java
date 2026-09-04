@@ -74,16 +74,34 @@ public final class MinecraftHusbandryObserver {
         return observation;
     }
 
-    public int findBreedingItemHotbarSlot(VanillaLivestockClassifier.Descriptor descriptor) {
+    public int findBreedingItemSlot(VanillaLivestockClassifier.Descriptor descriptor, int startInclusive,
+        int endExclusive) {
         requireClient();
         if (descriptor == null) throw new IllegalArgumentException("livestock descriptor is required");
-        for (int slot = 0; slot < 9; slot++) {
+        if (startInclusive < 0 || endExclusive > 36 || startInclusive > endExclusive) {
+            throw new IllegalArgumentException("inventory bounds must be within 0..36");
+        }
+        for (int slot = startInclusive; slot < endExclusive; slot++) {
             ItemStack stack = minecraft.thePlayer.inventory.mainInventory[slot];
             Object registryName = stack == null ? null : Item.itemRegistry.getNameForObject(stack.getItem());
             if (registryName != null && descriptor.getBreedingItemId()
                 .equals(registryName.toString())) return slot;
         }
         return -1;
+    }
+
+    public boolean matchesDrop(EntityItem drop, HusbandryDropObservation expected) {
+        requireClient();
+        if (drop == null || expected == null
+            || drop.isDead
+            || !expected.getIdentity()
+                .equals(identity(drop))) {
+            return false;
+        }
+        io.github.kaseyawolf2.horizonwright.core.container.ItemFingerprint fingerprint = items
+            .fingerprint(drop.getEntityItem());
+        return fingerprint != null && expected.getItemFingerprint()
+            .equals(fingerprint.toString());
     }
 
     public EntityAnimal findSupportedAnimal(String identity) {

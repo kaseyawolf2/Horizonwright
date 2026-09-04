@@ -290,8 +290,12 @@ final class HusbandryTaskRunner implements TaskRunner {
 
     private static Set<ActionCapability> capabilities(HusbandryActionKind kind) {
         if (kind == HusbandryActionKind.FEED_ADULT) return Collections.unmodifiableSet(
-            EnumSet
-                .of(ActionCapability.MOVEMENT, ActionCapability.LOOK, ActionCapability.USE, ActionCapability.HELD_USE));
+            EnumSet.of(
+                ActionCapability.MOVEMENT,
+                ActionCapability.LOOK,
+                ActionCapability.USE,
+                ActionCapability.HELD_USE,
+                ActionCapability.CONTAINER));
         if (kind == HusbandryActionKind.CULL_EXCESS_ADULT) return Collections
             .unmodifiableSet(EnumSet.of(ActionCapability.MOVEMENT, ActionCapability.LOOK, ActionCapability.ATTACK));
         if (kind == HusbandryActionKind.COLLECT_DROPS)

@@ -238,6 +238,27 @@ scheduled-jobs page, and verify deleting the saved area cancels the unfinished
 tree occurrence and schedule. This path is automated-build green but has not
 yet been physically recorded.
 
+## Pending non-destructive husbandry checkpoint
+
+Create a small loaded named pen containing exactly two unnamed adult vanilla
+animals of one supported species. Put their exact vanilla breeding item anywhere
+in the player inventory. Configure the selected species with a minimum above the
+current adult count, then queue one husbandry pass. Confirm Baritone approaches
+the exact observed adult, the correct feed is staged and returned safely, one
+normal entity interaction occurs, and the action advances only after a fresh
+complete scan shows that exact adult in breeding state. The next plan may feed
+the second adult, but must never target a baby, named animal, player, unsupported
+mod animal, or already-engaged animal.
+
+Drop an ordinary item inside the stable-population pen and queue another pass.
+Confirm Horizonwright walks through that exact item position and advances only
+after the same item-entity identity disappears from a fresh complete scan. Test
+with a full inventory: an uncollected drop must remain unconfirmed rather than
+being reported as collected. Pause during each approach and confirm no action is
+recorded before its postcondition. Finally configure a maximum below the current
+eligible adult count. The pass must block with the explicit culling-authorization
+diagnostic and must not acquire attack authority or damage any animal.
+
 ## Pending registered-bed sleep checkpoint
 
 After installing the automated-test-green build, look directly at a vanilla bed

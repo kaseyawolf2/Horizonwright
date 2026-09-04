@@ -10,21 +10,22 @@ but cannot replace the disposable-world observation run required by the plan.
 | --- | --- | --- |
 | Radius-250 excavation | Geometry, bounded scan, checkpoint, cache refresh, missed-layer recovery, navigation, breaking, unloading, repair, and reconnect tests; the orchestration scenario now carries a persisted managed-quarry material policy; substantial physical clean-volume testing | Partially proven; live managed infrastructure and complete observation run pending |
 | Recurring crop chore preempts excavation | Real scheduler/task-spec/checkpoint synthetic scenario plus physical one-pass and scheduled farming tests | Automated orchestration proven; latest long-distance deadline fix awaits physical confirmation |
-| Recurring livestock chore preempts excavation | Real husbandry task contract and real scheduler/task-spec/checkpoint synthetic scenario | Orchestration proven; live action executor not yet authorized or implemented |
+| Recurring livestock chore preempts excavation | Real husbandry task contract and scheduler scenario; live vanilla feeding/drop collection adapter with explicit culling denial | Non-destructive execution automated-build proven; physical test and authorized culling pending |
 | Night sleep preempts fallback | Real sleep task/schedule and scheduler synthetic scenario; nearby, far, and nightly physical sleep were confirmed | Proven for current tested bed workflow |
 | Unloading occurs as needed | Transactional chest backend and service-coordinator tests; physical excavation unload behavior exercised | Subsystem proven; full combined observation run pending |
 | Tinkers repair occurs as needed | Transactional Tinkers Crafting Station repair tests and physical repeated-material/full-cycle confirmation | Subsystem proven; full combined observation run pending |
 | Excavation resumes after each interruption | Real scheduler synthetic scenario and physical excavation/farm/sleep interruption testing | Partially proven; combined observation run pending |
 | Excavation resumes after reconnect | Export/restore tests preserve exact checkpoint and reject stale epochs; physical excavation rejoin was confirmed | Proven for current tested workflow |
 | Reserved items are not lost | Container transition tokens, cursor/slot postconditions, staged repair-material return, and physical repair testing | Partially proven; full observation run pending |
-| Population bounds are never violated | Pure husbandry planner preserves at least one breeding pair and excludes babies, named/tamed/protected entities | Policy proven; live execution and physical evidence missing |
+| Population bounds are never violated | Pure planner preserves breeding pair and excludes babies/named/tamed/protected; live boundary refuses all culls pending authorization | Non-destructive actions cannot reduce population; authorized live culling and physical evidence missing |
 | Excavation checkpoint is not lost | Persistence and reconnect tests plus physical rejoin testing | Proven for current tested workflow |
 
 ## Milestone 4 functionality still missing or incomplete
 
-- Live husbandry execution for feeding, collecting drops, and bounded culling.
+- Physical validation of live vanilla feeding and exact-drop collection.
+- Live bounded culling remains unimplemented.
 - Explicit operator authorization for automatic killing of eligible excess adult
-  livestock before the live executor is bound.
+  livestock before the culling executor is bound.
 - Managed-quarry ramp construction and full-player-inventory material staging
   are connected; physical validation is pending.
 - Managed-quarry lighting placement and full-player-inventory material staging
@@ -47,7 +48,8 @@ but cannot replace the disposable-world observation run required by the plan.
   remains pending.
 - Physical confirmation of the separated long-distance farm travel/action
   deadlines in commit `0853c61`.
-- Installation and physical validation of the read-only livestock pen scan.
+- Installation and physical validation of the livestock pen scan and new
+  non-destructive action executor.
 - The final configured-duration disposable-world observation run combining
   radius-250 excavation, recurring crops and livestock, nightly sleep, unloading,
   repair, interruption, and reconnect.

@@ -45,6 +45,8 @@ import io.github.kaseyawolf2.horizonwright.forge.client.excavation.LiveExcavatio
 import io.github.kaseyawolf2.horizonwright.forge.client.farm.LiveVanillaFarmBackend;
 import io.github.kaseyawolf2.horizonwright.forge.client.farm.LiveVanillaTreeBackend;
 import io.github.kaseyawolf2.horizonwright.forge.client.farm.ProfileFarmConfiguration;
+import io.github.kaseyawolf2.horizonwright.forge.client.husbandry.LiveVanillaHusbandryBackend;
+import io.github.kaseyawolf2.horizonwright.forge.client.husbandry.ProfileHusbandryConfiguration;
 import io.github.kaseyawolf2.horizonwright.forge.client.network.ClientPacketFirewallInstaller;
 import io.github.kaseyawolf2.horizonwright.forge.client.network.ContainerTransactionPacketCoordinator;
 import io.github.kaseyawolf2.horizonwright.forge.client.persistence.SingleplayerWorldBindingEvidence;
@@ -96,6 +98,7 @@ public final class ClientBootstrap {
     private LiveExcavationBackend liveExcavationBackend;
     private LiveVanillaFarmBackend liveFarmBackend;
     private LiveVanillaTreeBackend liveTreeBackend;
+    private LiveVanillaHusbandryBackend liveHusbandryBackend;
     private LiveVanillaChestUnloadBackend liveUnloadBackend;
     private LiveTinkersRepairBackend liveRepairBackend;
     private LiveVanillaSleepBackend liveSleepBackend;
@@ -344,6 +347,13 @@ public final class ClientBootstrap {
                 new ProfileFarmConfiguration(profileEditorProvider()));
             attachedRuntime.getTaskServices()
                 .bindTreeBackend(liveTreeBackend);
+            liveHusbandryBackend = new LiveVanillaHusbandryBackend(
+                minecraft,
+                attachedRuntime.getActionSessionGuard(),
+                attachedRuntime::getNavigationBackend,
+                new ProfileHusbandryConfiguration(profileEditorProvider()));
+            attachedRuntime.getTaskServices()
+                .bindHusbandryBackend(liveHusbandryBackend);
             liveSleepBackend = new LiveVanillaSleepBackend(
                 minecraft,
                 attachedRuntime.getActionSessionGuard(),
@@ -468,6 +478,10 @@ public final class ClientBootstrap {
             attachedRuntime.getTaskServices()
                 .unbindTreeBackend(liveTreeBackend);
         }
+        if (attachedRuntime != null && liveHusbandryBackend != null) {
+            attachedRuntime.getTaskServices()
+                .unbindHusbandryBackend(liveHusbandryBackend);
+        }
         if (attachedRuntime != null && liveUnloadBackend != null) {
             attachedRuntime.getTaskServices()
                 .unbindUnloadBackend(liveUnloadBackend);
@@ -496,6 +510,7 @@ public final class ClientBootstrap {
         liveExcavationBackend = null;
         liveFarmBackend = null;
         liveTreeBackend = null;
+        liveHusbandryBackend = null;
         liveUnloadBackend = null;
         liveRepairBackend = null;
         liveSleepBackend = null;

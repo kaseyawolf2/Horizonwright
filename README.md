@@ -179,8 +179,7 @@ forces a fresh observation. Operators can target a vanilla bed from
 night**. Equivalent commands are `/hw sleep <task-id> <bed-location>` and
 `/hw sleepschedule <id> <bed-location>`. This path is automated-test covered but
 has not been installed or physically verified.
-A bounded husbandry-pass task contract is now also present behind a disabled-by-
-default backend boundary. It binds one named pen, vanilla livestock species,
+A bounded husbandry-pass task contract binds one named pen, vanilla livestock species,
 minimum/maximum adult policy, and a hard per-pass action cap. Every feed, cull,
 or drop-collection decision comes from a complete loaded-pen scan, receives only
 its exact movement/look/use/held-use or attack capabilities, and must obtain a
@@ -194,15 +193,22 @@ captures adult, named, breeding-ready/engaged, position, and item-drop state;
 and emits complete per-candidate development traces plus an opaque snapshot
 fingerprint. Areas captured as support blocks include the two-block animal
 space above them while policy positions remain normalized to the saved area.
-No live action executor is bound yet, so configured work holds safely without
-moving, feeding, collecting, or attacking. Operator configuration is available
-from **Work areas**: select a
+The bound live vanilla executor now enables only the non-destructive subset.
+Baritone approaches the exact freshly observed adult or item drop. Feeding
+requires the exact vanilla species feed, can transactionally stage it from the
+full player inventory, performs one normal entity interaction, restores the
+hotbar, drains the action session, and confirms that exact adult entered breeding
+state in a fresh complete scan. Drop collection navigates through the exact
+observed item position and confirms that identity disappeared in a fresh scan.
+An explicit tested authorization boundary rejects `CULL_EXCESS_ADULT`; no attack
+capability or attack call is available until the operator separately authorizes
+automatic killing. Operator configuration is available from **Work areas**: select a
 saved area, open **Livestock settings**, choose cow/sheep/pig/chicken, and set
 minimum adults, maximum adults, the hard per-pass action cap, and recurring
 interval. One finite pass or one species-specific recurring schedule can be
 created there. The scheduled-jobs screen can pause, resume, delete, or edit the
 pen, interval, and compact `minimum/maximum/actions` policy. Deleting the saved
-area cancels both farm and husbandry schedules and unfinished occurrences bound
+area cancels farm, tree, and husbandry schedules and unfinished occurrences bound
 to it before removing the area. **Scan loaded pen** runs only the read-only
 observer and reports the selected species' total adults, breeding-ready and
 already-engaged animals, protected/excluded targets, and item drops. It is the
@@ -212,7 +218,8 @@ the action executor is enabled. The equivalent read-only command is
 `/hw husbandry <task-id> <pen-id> <cow|sheep|pig|chicken> <minimum> <maximum>
 [max-actions]`; recurring policies use `/hw husbandryschedule <id> <pen-id>
 <species> <minimum> <maximum> <minutes> [max-actions]`. These configuration
-commands retain the same disabled live-action boundary.
+commands use the non-destructive live boundary and hold with a clear diagnostic
+if the current policy requires culling.
 Clean-volume excavation is now attached to a live, session-owned backend. Every
 observation and action carries the explicit dimension as well as the existing
 geometry, frontier, revision, epoch, and block fingerprint. The observer treats

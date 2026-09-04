@@ -93,6 +93,9 @@ public class HusbandryTaskRunnerTest {
         assertTrue(
             harness.backend.lease.getCapabilities()
                 .contains(ActionCapability.HELD_USE));
+        assertTrue(
+            harness.backend.lease.getCapabilities()
+                .contains(ActionCapability.CONTAINER));
         assertFalse(
             harness.backend.lease.getCapabilities()
                 .contains(ActionCapability.ATTACK));
