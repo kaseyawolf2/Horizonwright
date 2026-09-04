@@ -96,7 +96,8 @@ public final class GuiSavedAreas extends GuiScreen {
             deleteSelectedArea();
         } else if (button.id == EDIT_BUTTON) {
             NamedArea selected = selectedArea();
-            if (selected != null) mc.displayGuiScreen(new GuiSavedAreaEditor(this, editorProvider, selected));
+            if (selected != null)
+                mc.displayGuiScreen(new GuiSavedAreaEditor(this, editorProvider, runtimeProvider, selected));
         } else if (button.id >= AREA_BUTTON_BASE && button.id < AREA_BUTTON_BASE + AREAS_PER_PAGE) {
             int index = page * AREAS_PER_PAGE + button.id - AREA_BUTTON_BASE;
             if (index < areas.size()) {

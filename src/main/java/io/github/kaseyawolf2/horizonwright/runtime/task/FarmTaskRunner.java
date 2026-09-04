@@ -143,8 +143,16 @@ final class FarmTaskRunner implements TaskRunner {
         try {
             FarmBackend.TargetSnapshot snapshot = backend.observe(request);
             validateTarget(request, snapshot);
-            FarmDecision decision = planner
-                .plan(pass.getPlot(), pass, snapshot.getObservation(), snapshot.getReserveEvidence());
+            CropObservation frozen = frozenObservations.get(pass.getNextObservationIndex());
+            CropObservation current = snapshot.getObservation();
+            if (!frozen.getObservationFingerprint()
+                .equals(current.getObservationFingerprint())) {
+                pass = pass.advanceExternallyReplanted(frozen, current);
+                return persistAdvance(
+                    context,
+                    "Skipped a crop which was externally harvested and replanted while this pass was waiting");
+            }
+            FarmDecision decision = planner.plan(pass.getPlot(), pass, current, snapshot.getReserveEvidence());
             if (decision.getAction() == FarmActionKind.HOLD_FOR_ADAPTER
                 || decision.getAction() == FarmActionKind.HOLD_REPLANT_RESERVE) {
                 return StepResult.blocked(

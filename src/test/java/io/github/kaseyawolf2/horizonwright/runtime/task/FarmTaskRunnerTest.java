@@ -170,6 +170,30 @@ public class FarmTaskRunnerTest {
     }
 
     @Test
+    public void externallyReplantedFrozenTargetCompletesWithoutAnAction() {
+        harness = new Harness(crop("wheat-7", true));
+        TaskSpec spec = FarmTask.finitePass("farm", "north-field", 2);
+        harness.controller.submit(spec);
+        harness.controller.tick();
+        harness.backend.current = crop("wheat-0", false);
+
+        TaskSnapshot completed = task(harness.controller.tick(), spec.getId());
+
+        assertEquals(TaskState.COMPLETED, completed.getState());
+        assertEquals(0, harness.backend.actions);
+        assertEquals(
+            "1",
+            completed.getCheckpoint()
+                .getValues()
+                .get("nextIndex"));
+        assertEquals(
+            "0",
+            completed.getCheckpoint()
+                .getValues()
+                .get("verifiedMutations"));
+    }
+
+    @Test
     public void pauseCancelsAnUnconfirmedMutationWithoutAdvancingAndResumeReobserves() {
         harness = new Harness(crop("wheat-7", true));
         TaskSpec spec = FarmTask.finitePass("farm", "north-field", 2);

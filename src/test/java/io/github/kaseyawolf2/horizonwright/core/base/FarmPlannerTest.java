@@ -118,6 +118,26 @@ public class FarmPlannerTest {
     }
 
     @Test
+    public void finitePassSafelyAdvancesPastAnExternallyReplantedCrop() {
+        CropObservation mature = crop(CropFamily.VANILLA, "wheat:7", WHEAT_SEEDS, true, true, false);
+        CropObservation replanted = crop(CropFamily.VANILLA, "wheat:0", WHEAT_SEEDS, true, false, false);
+        FarmPassCheckpoint checkpoint = checkpoint(mature);
+
+        FarmPassCheckpoint completed = checkpoint.advanceExternallyReplanted(mature, replanted);
+
+        assertTrue(completed.isComplete());
+        assertEquals(0, completed.getVerifiedMutations());
+        assertRejected(
+            () -> checkpoint.advanceExternallyReplanted(
+                mature,
+                crop(CropFamily.VANILLA, "wheat:changed-mature", WHEAT_SEEDS, true, true, false)));
+        assertRejected(
+            () -> checkpoint.advanceExternallyReplanted(
+                mature,
+                crop(CropFamily.VANILLA, "carrot:0", "minecraft:carrot", true, false, false)));
+    }
+
+    @Test
     public void treeFellAndReplantAreSeparateRecoverableBoundedTransitions() {
         TreePlanner trees = new TreePlanner();
         TreeObservation standing = standingTree("oak-1", 10L, "oak:standing", OAK_SAPLING, insideTreeBlocks());

@@ -104,6 +104,40 @@ public final class FarmPassCheckpoint {
             verifiedMutations + (decision.requiresMutation() ? 1 : 0));
     }
 
+    /**
+     * Safely reconciles a crop which another actor harvested and replanted while this pass was blocked.
+     * No Horizonwright mutation is credited; the frontier advances only when the exact target is now a
+     * known, unprotected, immature crop of the same family and replant material.
+     */
+    public FarmPassCheckpoint advanceExternallyReplanted(CropObservation frozenObservation,
+        CropObservation currentObservation) {
+        if (frozenObservation == null || currentObservation == null) {
+            throw new IllegalArgumentException("frozen and current crop observations are required");
+        }
+        if (isComplete()) throw new IllegalStateException("a completed farm pass cannot reconcile a crop");
+        if (!expectedTarget().equals(frozenObservation.getPosition())
+            || !expectedFingerprint().equals(frozenObservation.getObservationFingerprint())
+            || !expectedSeedFingerprint().equals(frozenObservation.getRequiredSeedFingerprint())) {
+            throw new IllegalStateException("frozen crop evidence does not belong to the current farm frontier");
+        }
+        if (!expectedTarget().equals(currentObservation.getPosition())
+            || frozenObservation.getFamily() != currentObservation.getFamily()
+            || !expectedSeedFingerprint().equals(currentObservation.getRequiredSeedFingerprint())
+            || currentObservation.isProtectedBlock()
+            || !currentObservation.isMaturityKnown()
+            || currentObservation.isMature()) {
+            throw new IllegalStateException("changed crop is not a verified external replant of the frozen target");
+        }
+        return new FarmPassCheckpoint(
+            plot,
+            passRevision,
+            observationTargets,
+            observationFingerprints,
+            requiredSeedFingerprints,
+            nextObservationIndex + 1,
+            verifiedMutations);
+    }
+
     private void requireValidPostcondition(FarmDecision decision, CropObservation beforeObservation,
         CropObservation afterObservation) {
         if (!expectedTarget().equals(afterObservation.getPosition())

@@ -7,11 +7,15 @@ import net.minecraft.util.MathHelper;
 
 import org.lwjgl.input.Keyboard;
 
+import io.github.kaseyawolf2.horizonwright.HorizonwrightRuntime;
 import io.github.kaseyawolf2.horizonwright.core.base.BasePosition;
 import io.github.kaseyawolf2.horizonwright.core.base.NamedArea;
+import io.github.kaseyawolf2.horizonwright.core.task.TaskSnapshot;
 import io.github.kaseyawolf2.horizonwright.runtime.persistence.profile.ProfileAssetEditor;
 import io.github.kaseyawolf2.horizonwright.runtime.persistence.profile.ProfileAssetEditorProvider;
 import io.github.kaseyawolf2.horizonwright.runtime.persistence.profile.ProfileAssetUpdate;
+import io.github.kaseyawolf2.horizonwright.runtime.persistence.session.CurrentRuntimeProvider;
+import io.github.kaseyawolf2.horizonwright.runtime.task.FarmTask;
 
 /** Safe editor for one existing named area's display name and inclusive block bounds. */
 public final class GuiSavedAreaEditor extends GuiScreen {
@@ -20,9 +24,13 @@ public final class GuiSavedAreaEditor extends GuiScreen {
     private static final int SAVE_BUTTON = 2;
     private static final int FIRST_HERE_BUTTON = 3;
     private static final int SECOND_HERE_BUTTON = 4;
+    private static final int QUEUE_FARM_BUTTON = 5;
+    private static final int SCHEDULE_FARM_BUTTON = 6;
+    private static final int CLOSE_BUTTON = 7;
 
     private final GuiScreen parent;
     private final ProfileAssetEditorProvider editorProvider;
+    private final CurrentRuntimeProvider runtimeProvider;
     private final NamedArea original;
     private GuiTextField displayName;
     private GuiTextField dimension;
@@ -32,17 +40,22 @@ public final class GuiSavedAreaEditor extends GuiScreen {
     private GuiTextField secondX;
     private GuiTextField secondY;
     private GuiTextField secondZ;
+    private GuiTextField seedReserve;
+    private GuiTextField intervalMinutes;
     private int left;
     private int top;
     private int panelWidth;
     private String status = "Edit the inclusive bounds, or stand at a corner and capture your feet position.";
 
-    public GuiSavedAreaEditor(GuiScreen parent, ProfileAssetEditorProvider editorProvider, NamedArea original) {
-        if (parent == null || editorProvider == null || original == null) {
-            throw new IllegalArgumentException("parent, editorProvider, and original area are required");
+    public GuiSavedAreaEditor(GuiScreen parent, ProfileAssetEditorProvider editorProvider,
+        CurrentRuntimeProvider runtimeProvider, NamedArea original) {
+        if (parent == null || editorProvider == null || runtimeProvider == null || original == null) {
+            throw new IllegalArgumentException(
+                "parent, editorProvider, runtimeProvider, and original area are required");
         }
         this.parent = parent;
         this.editorProvider = editorProvider;
+        this.runtimeProvider = runtimeProvider;
         this.original = original;
     }
 
@@ -52,7 +65,7 @@ public final class GuiSavedAreaEditor extends GuiScreen {
         buttonList.clear();
         panelWidth = Math.min(500, width - 24);
         left = (width - panelWidth) / 2;
-        top = Math.max(8, (height - 294) / 2);
+        top = Math.max(8, (height - 380) / 2);
 
         displayName = field(left + 116, top + 52, 188, original.getDisplayName());
         dimension = field(
@@ -104,6 +117,8 @@ public final class GuiSavedAreaEditor extends GuiScreen {
             Integer.toString(
                 original.getMaximum()
                     .getZ()));
+        seedReserve = field(left + 112, top + 267, 60, "2");
+        intervalMinutes = field(left + 408, top + 267, 70, "30");
 
         buttonList
             .add(new GuiHorizonwrightButton(FIRST_HERE_BUTTON, left + 350, top + 103, 128, 20, "Use my feet here"));
@@ -111,7 +126,18 @@ public final class GuiSavedAreaEditor extends GuiScreen {
             .add(new GuiHorizonwrightButton(SECOND_HERE_BUTTON, left + 350, top + 157, 128, 20, "Use my feet here"));
         buttonList.add(
             new GuiHorizonwrightButton(SAVE_BUTTON, left + 18, top + 232, panelWidth - 112, 22, "Save area changes"));
-        buttonList.add(new GuiHorizonwrightButton(BACK_BUTTON, left + panelWidth - 82, top + 233, 64, 20, "Back"));
+        buttonList
+            .add(new GuiHorizonwrightButton(QUEUE_FARM_BUTTON, left + 18, top + 294, 220, 22, "Queue one farm pass"));
+        buttonList.add(
+            new GuiHorizonwrightButton(
+                SCHEDULE_FARM_BUTTON,
+                left + 244,
+                top + 294,
+                panelWidth - 262,
+                22,
+                "Schedule farm"));
+        buttonList.add(new GuiHorizonwrightButton(CLOSE_BUTTON, left + 18, top + 332, 64, 20, "Close"));
+        buttonList.add(new GuiHorizonwrightButton(BACK_BUTTON, left + panelWidth - 82, top + 332, 64, 20, "Back"));
     }
 
     @Override
@@ -125,10 +151,16 @@ public final class GuiSavedAreaEditor extends GuiScreen {
             mc.displayGuiScreen(parent);
             return;
         }
+        if (button.id == CLOSE_BUTTON) {
+            mc.displayGuiScreen(null);
+            return;
+        }
         try {
             if (button.id == FIRST_HERE_BUTTON) capture(firstX, firstY, firstZ);
             else if (button.id == SECOND_HERE_BUTTON) capture(secondX, secondY, secondZ);
             else if (button.id == SAVE_BUTTON) save();
+            else if (button.id == QUEUE_FARM_BUTTON) queueFarmPass();
+            else if (button.id == SCHEDULE_FARM_BUTTON) scheduleFarmPasses();
         } catch (RuntimeException failure) {
             status = "Nothing changed: " + safeMessage(failure);
         }
@@ -167,6 +199,29 @@ public final class GuiSavedAreaEditor extends GuiScreen {
         status = "Saved area '" + original.getId() + "'. Schedules using it remain connected.";
     }
 
+    private void queueFarmPass() {
+        if (mc == null || mc.theWorld == null) throw new IllegalStateException("join the bound world first");
+        int reserve = ProfileAssetInput.nonNegativeInteger(seedReserve.getText(), "minimum seed reserve");
+        String taskId = "farm-" + original.getId() + "-" + MinecraftRuntimeAccess.totalWorldTime(mc.theWorld);
+        HorizonwrightRuntime runtime = CurrentRuntimeUiResolver.resolve(runtimeProvider)
+            .getRuntime();
+        TaskSnapshot submitted = runtime.submitFarm(FarmTask.finitePass(taskId, original.getId(), reserve));
+        status = "Queued '" + submitted.getSpec()
+            .getId() + "' with seed reserve " + reserve + ".";
+    }
+
+    private void scheduleFarmPasses() {
+        if (mc == null || mc.theWorld == null) throw new IllegalStateException("join the bound world first");
+        int reserve = ProfileAssetInput.nonNegativeInteger(seedReserve.getText(), "minimum seed reserve");
+        int minutes = ProfileAssetInput.positiveInteger(intervalMinutes.getText(), "farm interval minutes");
+        long intervalMillis = Math.multiplyExact((long) minutes, 60_000L);
+        String scheduleId = "farm-" + original.getId();
+        CurrentRuntimeUiResolver.resolve(runtimeProvider)
+            .getRuntime()
+            .scheduleFarm(scheduleId, original.getId(), reserve, intervalMillis);
+        status = "Scheduled '" + scheduleId + "' every " + minutes + " connected minute(s).";
+    }
+
     @Override
     public void updateScreen() {
         for (GuiTextField field : fields()) field.updateCursorCounter();
@@ -190,7 +245,7 @@ public final class GuiSavedAreaEditor extends GuiScreen {
     @Override
     public void drawScreen(int mouseX, int mouseY, float partialTicks) {
         drawDefaultBackground();
-        drawRect(left, top, left + panelWidth, top + 274, 0xEE10141B);
+        drawRect(left, top, left + panelWidth, top + 364, 0xEE10141B);
         drawCenteredString(fontRendererObj, "Edit saved work area", width / 2, top + 14, 0xFFF0C674);
         drawCenteredString(fontRendererObj, "Stable ID: " + original.getId(), width / 2, top + 29, 0xFF8FAAD0);
         label("Display name", left + 18, top + 58);
@@ -205,6 +260,9 @@ public final class GuiSavedAreaEditor extends GuiScreen {
             top + 194,
             panelWidth - 36,
             status.startsWith("Nothing") ? 0xFFFF7777 : 0xFFB8C8DE);
+        drawCenteredString(fontRendererObj, "Farm actions for this saved area", width / 2, top + 258, 0xFFF0C674);
+        label("Seed reserve", left + 18, top + 273);
+        label("Every minutes", left + 300, top + 273);
         for (GuiTextField field : fields()) field.drawTextBox();
         super.drawScreen(mouseX, mouseY, partialTicks);
     }
@@ -227,7 +285,8 @@ public final class GuiSavedAreaEditor extends GuiScreen {
     }
 
     private GuiTextField[] fields() {
-        return new GuiTextField[] { displayName, dimension, firstX, firstY, firstZ, secondX, secondY, secondZ };
+        return new GuiTextField[] { displayName, dimension, firstX, firstY, firstZ, secondX, secondY, secondZ,
+            seedReserve, intervalMinutes };
     }
 
     private static int integer(String value, String field) {
