@@ -156,6 +156,30 @@ entities must be protected, bedrock and unloaded positions must be unreachable,
 and fluid must never receive a blind dig action. This checkpoint has not yet
 been physically recorded.
 
+## Pending live managed-quarry checkpoint
+
+Use a disposable radius-2-or-larger site and open **Dashboard > Profile assets
+> Managed quarry**. Confirm the dedicated form has no overlapping controls and
+that invalid material names, radius 0–1, invalid Y bounds, or an invalid light
+interval leave the page open with a clear diagnostic. Queue the task with
+`minecraft:cobblestone` for ramp/filler and `minecraft:torch` for lighting.
+Cross-check the typed path with `/hw excavate managed managed-smoke 2 ~-3 ~
+minecraft:cobblestone minecraft:torch minecraft:cobblestone 2`.
+
+Place the approved stacks in main inventory rather than the hotbar and fill the
+hotbar. Verify the selected hotbar item returns to the same slot after every
+placement and unused infrastructure material returns to its original inventory
+slot. The quarry must retain one adjacent descending stair step per layer,
+clear headroom around that staircase, place scheduled lights only after their
+future position is clear, and never excavate a confirmed ramp/light block.
+Remove one retained step and confirm it is rebuilt without advancing the volume
+frontier first. Introduce a shallow water source and flowing water inside the
+next layer; each exact fluid target must be replaced only with the approved
+filler and increment `fluidContained` only after the server-visible replacement.
+Pause or disconnect during approach, inventory staging, and placement; no
+unconfirmed infrastructure or volume target may advance. This checkpoint is
+automated-test covered but has not yet been physically recorded.
+
 ## Pending named work-area checkpoint
 
 Open **Dashboard > Profile assets > Work areas** in the bound disposable world.

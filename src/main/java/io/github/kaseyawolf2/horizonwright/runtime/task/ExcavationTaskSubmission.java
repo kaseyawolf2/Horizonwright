@@ -1,5 +1,6 @@
 package io.github.kaseyawolf2.horizonwright.runtime.task;
 
+import io.github.kaseyawolf2.horizonwright.core.excavation.ManagedQuarryConfiguration;
 import io.github.kaseyawolf2.horizonwright.core.logistics.NamedLoadout;
 import io.github.kaseyawolf2.horizonwright.core.persistence.NamedRepairStation;
 import io.github.kaseyawolf2.horizonwright.core.persistence.NamedStorageEndpoint;
@@ -19,6 +20,40 @@ public final class ExcavationTaskSubmission {
     public static TaskSpec withServices(ProfileEnvelope profile, String taskId, int dimensionId, int centerX,
         int centerZ, int radius, int bottomY, int topY, String loadoutId, String storageId, String repairStationId,
         int reservedToolSlot, int predictedWorkDamage) {
+        return ExcavationTask.cleanVolumeCylinder(
+            taskId,
+            dimensionId,
+            centerX,
+            centerZ,
+            radius,
+            bottomY,
+            topY,
+            servicePolicy(profile, loadoutId, storageId, repairStationId, reservedToolSlot, predictedWorkDamage));
+    }
+
+    public static TaskSpec managedWithoutServices(String taskId, int dimensionId, int centerX, int centerZ, int radius,
+        int bottomY, int topY, ManagedQuarryConfiguration configuration) {
+        return ExcavationTask
+            .managedQuarryCylinder(taskId, dimensionId, centerX, centerZ, radius, bottomY, topY, configuration);
+    }
+
+    public static TaskSpec managedWithServices(ProfileEnvelope profile, String taskId, int dimensionId, int centerX,
+        int centerZ, int radius, int bottomY, int topY, ManagedQuarryConfiguration configuration, String loadoutId,
+        String storageId, String repairStationId, int reservedToolSlot, int predictedWorkDamage) {
+        return ExcavationTask.managedQuarryCylinder(
+            taskId,
+            dimensionId,
+            centerX,
+            centerZ,
+            radius,
+            bottomY,
+            topY,
+            configuration,
+            servicePolicy(profile, loadoutId, storageId, repairStationId, reservedToolSlot, predictedWorkDamage));
+    }
+
+    private static ExcavationServicePolicy servicePolicy(ProfileEnvelope profile, String loadoutId, String storageId,
+        String repairStationId, int reservedToolSlot, int predictedWorkDamage) {
         if (profile == null) throw new IllegalArgumentException("active profile is required for named services");
         NamedLoadout loadout = loadout(profile, loadoutId);
         storage(profile, storageId);
@@ -28,16 +63,8 @@ public final class ExcavationTaskSubmission {
             throw new IllegalArgumentException(
                 "repair station '" + station.getId() + "' uses loadout '" + station.getLoadoutId() + "'");
         }
-        return ExcavationTask.cleanVolumeCylinder(
-            taskId,
-            dimensionId,
-            centerX,
-            centerZ,
-            radius,
-            bottomY,
-            topY,
-            ExcavationServicePolicy
-                .unloadAndRepair(loadout.getId(), storageId, station.getId(), reservedToolSlot, predictedWorkDamage));
+        return ExcavationServicePolicy
+            .unloadAndRepair(loadout.getId(), storageId, station.getId(), reservedToolSlot, predictedWorkDamage);
     }
 
     private static NamedLoadout loadout(ProfileEnvelope profile, String id) {

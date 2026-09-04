@@ -215,12 +215,16 @@ requests repair. Non-breaking targets never create service churn. These reasons
 are persisted at the current frontier and flow into the durable child-task
 coordinator; no runner or GUI directly performs the service operation.
 Operators can now reach that path without editing task JSON. The **Profile
-assets** page opens a guided **New excavation** form which centers a validated
-clean-volume cylinder at the player's X/Z when it is queued, and optionally
-binds the saved loadout, chest, repair station, reserved tool slot, and expected
-work damage. The equivalent typed entry point is
+assets** page provides separate **Clean excavation** and **Managed quarry**
+forms. Both center a validated cylinder at the player's X/Z when queued and can
+bind the saved loadout, chest, repair station, reserved tool slot, and expected
+work damage. The managed form additionally requires explicit approved ramp,
+light, and fluid-filler registry names plus a lighting interval. The clean typed entry point is
 `/hw excavate cylinder <id> <radius> <bottom-y> <top-y>`; supplying all five service arguments adds the
-named unload and repair bindings. Both paths validate geometry and profile
+named unload and repair bindings. The managed equivalent is `/hw excavate
+managed <id> <radius> <bottom-y> <top-y> <ramp-block> <light-block>
+<filler-block> <light-interval>`, with the same optional five service arguments.
+Both paths validate geometry, approved material names, and profile
 references before the controller accepts the task.
 Unattended operation remains disabled.
 
@@ -315,6 +319,12 @@ was installed for this test.
   Append `<loadout> <storage> <station> <tool-slot> <work-damage>` to bind all
   guided unload and repair services, or use **Dashboard > Profile assets > New
   excavation** for the nontechnical form.
+- Use `/hw excavate managed <id> <radius> <bottom-y> <top-y> <ramp-block>
+  <light-block> <filler-block> <light-interval>` to queue a radius-2-or-larger
+  managed quarry. The dedicated **Dashboard > Profile assets > Managed quarry**
+  form exposes the same approved materials and optional unload/repair services.
+  Ramp, light, and filler stacks may be anywhere in the 36-slot player
+  inventory; Horizonwright stages and returns them transactionally.
 - Use `/hw farm <task-id> <plot-id> [seed-reserve]` for one finite CHORE-lane
   pass over a saved work area, or use **Dashboard > Profile assets > Work areas
   > Queue one farm pass**. Keep the exact replant seed in the hotbar; the

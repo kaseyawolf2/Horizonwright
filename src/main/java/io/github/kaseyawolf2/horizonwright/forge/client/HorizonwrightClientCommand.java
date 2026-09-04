@@ -22,6 +22,7 @@ import io.github.kaseyawolf2.horizonwright.HorizonwrightRuntime.RuntimeSnapshot;
 import io.github.kaseyawolf2.horizonwright.core.base.AnimalObservation;
 import io.github.kaseyawolf2.horizonwright.core.base.HusbandryObservation;
 import io.github.kaseyawolf2.horizonwright.core.base.LivestockSpecies;
+import io.github.kaseyawolf2.horizonwright.core.excavation.ManagedQuarryConfiguration;
 import io.github.kaseyawolf2.horizonwright.core.navigation.NavigationProgress;
 import io.github.kaseyawolf2.horizonwright.core.task.ControllerSnapshot;
 import io.github.kaseyawolf2.horizonwright.core.task.TaskLane;
@@ -74,7 +75,7 @@ public final class HorizonwrightClientCommand extends CommandBase {
 
     @Override
     public String getCommandUsage(ICommandSender sender) {
-        return "/hw [panel|profile [status|enroll|recover|reassociate <id>]|debug [on|off|status]|status|task [id]|goto <x> <y> <z> [tolerance]|excavate cylinder <id> <radius> <bottom-y> <top-y> [<loadout> <storage> <station> <tool-slot> <work-damage>]|farm <task-id> <plot-id> [seed-reserve]|farmschedule <id> <plot-id> <minutes> [seed-reserve]|husbandryscan <pen-id>|husbandry <task-id> <pen-id> <species> <minimum> <maximum> [max-actions]|husbandryschedule <id> <pen-id> <species> <minimum> <maximum> <minutes> [max-actions]|sleep <task-id> <bed-location>|sleepschedule <id> <bed-location>|pause [id]|resume [id]|cancel <id>|navcancel|dryrun [on|off]|stop|reset]";
+        return "/hw [panel|profile [status|enroll|recover|reassociate <id>]|debug [on|off|status]|status|task [id]|goto <x> <y> <z> [tolerance]|excavate cylinder <id> <radius> <bottom-y> <top-y> [<loadout> <storage> <station> <tool-slot> <work-damage>]|excavate managed <id> <radius> <bottom-y> <top-y> <ramp-block> <light-block> <filler-block> <light-interval> [<loadout> <storage> <station> <tool-slot> <work-damage>]|farm <task-id> <plot-id> [seed-reserve]|farmschedule <id> <plot-id> <minutes> [seed-reserve]|husbandryscan <pen-id>|husbandry <task-id> <pen-id> <species> <minimum> <maximum> [max-actions]|husbandryschedule <id> <pen-id> <species> <minimum> <maximum> <minutes> [max-actions]|sleep <task-id> <bed-location>|sleepschedule <id> <bed-location>|pause [id]|resume [id]|cancel <id>|navcancel|dryrun [on|off]|stop|reset]";
     }
 
     @Override
@@ -287,7 +288,7 @@ public final class HorizonwrightClientCommand extends CommandBase {
             return getListOfStringsMatchingLastWord(arguments, "status", "enroll", "recover", "reassociate");
         }
         if (arguments.length == 2 && "excavate".equalsIgnoreCase(arguments[0])) {
-            return getListOfStringsMatchingLastWord(arguments, "cylinder");
+            return getListOfStringsMatchingLastWord(arguments, "cylinder", "managed");
         }
         if (arguments.length == 3 && "profile".equalsIgnoreCase(arguments[0])
             && "reassociate".equalsIgnoreCase(arguments[1])
@@ -419,7 +420,11 @@ public final class HorizonwrightClientCommand extends CommandBase {
     }
 
     private void startExcavation(ICommandSender sender, String[] arguments, HorizonwrightRuntime runtime) {
-        if ((arguments.length != 6 && arguments.length != 11) || !"cylinder".equalsIgnoreCase(arguments[1])) {
+        boolean clean = arguments.length > 1 && "cylinder".equalsIgnoreCase(arguments[1]);
+        boolean managed = arguments.length > 1 && "managed".equalsIgnoreCase(arguments[1]);
+        boolean cleanLength = arguments.length == 6 || arguments.length == 11;
+        boolean managedLength = arguments.length == 10 || arguments.length == 15;
+        if (!clean && !managed || clean && !cleanLength || managed && !managedLength) {
             sender.addChatMessage(new ChatComponentText(EnumChatFormatting.RED + getCommandUsage(sender)));
             return;
         }
@@ -431,14 +436,19 @@ public final class HorizonwrightClientCommand extends CommandBase {
             int topY = parseCoordinate(arguments[5], current.posY);
             int dimension = sender.getEntityWorld().provider.dimensionId;
             TaskSpec spec;
-            if (arguments.length == 6) {
+            boolean withServices = clean ? arguments.length == 11 : arguments.length == 15;
+            ManagedQuarryConfiguration configuration = managed
+                ? new ManagedQuarryConfiguration(
+                    ManagedQuarryMaterialInput.requirePlaceableBlock(arguments[6], "ramp block"),
+                    ManagedQuarryMaterialInput.requirePlaceableBlock(arguments[7], "light block"),
+                    ManagedQuarryMaterialInput.requirePlaceableBlock(arguments[8], "fluid filler"),
+                    Integer.parseInt(arguments[9]))
+                : null;
+            if (!withServices && clean) {
                 spec = ExcavationTaskSubmission
                     .withoutServices(taskId, dimension, current.posX, current.posZ, radius, bottomY, topY);
-            } else {
-                ProfileAssetEditor editor = profileEditorProvider.getCurrentProfileAssetEditor()
-                    .orElseThrow(() -> new IllegalStateException("active profile assets are unavailable"));
-                spec = ExcavationTaskSubmission.withServices(
-                    editor.load(),
+            } else if (!withServices) {
+                spec = ExcavationTaskSubmission.managedWithoutServices(
                     taskId,
                     dimension,
                     current.posX,
@@ -446,16 +456,47 @@ public final class HorizonwrightClientCommand extends CommandBase {
                     radius,
                     bottomY,
                     topY,
-                    arguments[6],
-                    arguments[7],
-                    arguments[8],
-                    Integer.parseInt(arguments[9]),
-                    Integer.parseInt(arguments[10]));
+                    configuration);
+            } else {
+                ProfileAssetEditor editor = profileEditorProvider.getCurrentProfileAssetEditor()
+                    .orElseThrow(() -> new IllegalStateException("active profile assets are unavailable"));
+                int serviceOffset = clean ? 6 : 10;
+                spec = clean
+                    ? ExcavationTaskSubmission.withServices(
+                        editor.load(),
+                        taskId,
+                        dimension,
+                        current.posX,
+                        current.posZ,
+                        radius,
+                        bottomY,
+                        topY,
+                        arguments[serviceOffset],
+                        arguments[serviceOffset + 1],
+                        arguments[serviceOffset + 2],
+                        Integer.parseInt(arguments[serviceOffset + 3]),
+                        Integer.parseInt(arguments[serviceOffset + 4]))
+                    : ExcavationTaskSubmission.managedWithServices(
+                        editor.load(),
+                        taskId,
+                        dimension,
+                        current.posX,
+                        current.posZ,
+                        radius,
+                        bottomY,
+                        topY,
+                        configuration,
+                        arguments[serviceOffset],
+                        arguments[serviceOffset + 1],
+                        arguments[serviceOffset + 2],
+                        Integer.parseInt(arguments[serviceOffset + 3]),
+                        Integer.parseInt(arguments[serviceOffset + 4]));
             }
             TaskSnapshot submitted = runtime.submitExcavation(spec);
             sender.addChatMessage(
                 new ChatComponentText(
-                    EnumChatFormatting.AQUA + "Horizonwright queued clean-volume excavation '"
+                    EnumChatFormatting.AQUA + "Horizonwright queued "
+                        + (clean ? "clean-volume excavation '" : "managed quarry '")
                         + submitted.getSpec()
                             .getId()
                         + "' centered at "
@@ -468,7 +509,7 @@ public final class HorizonwrightClientCommand extends CommandBase {
                         + bottomY
                         + ".."
                         + topY
-                        + (arguments.length == 11 ? ", with named unload and repair services." : ".")));
+                        + (withServices ? ", with named unload and repair services." : ".")));
         } catch (RuntimeException failure) {
             sender.addChatMessage(
                 new ChatComponentText(EnumChatFormatting.RED + "Excavation not started: " + safeMessage(failure)));

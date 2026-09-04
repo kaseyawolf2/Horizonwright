@@ -42,6 +42,7 @@ public final class GuiProfileAssets extends GuiScreen {
     private static final int SAVE_BED_BUTTON = 7;
     private static final int QUEUE_SLEEP_BUTTON = 8;
     private static final int SCHEDULE_SLEEP_BUTTON = 9;
+    private static final int MANAGED_QUARRY_BUTTON = 10;
 
     private final GuiScreen parent;
     private final CurrentRuntimeProvider runtimeProvider;
@@ -107,8 +108,10 @@ public final class GuiProfileAssets extends GuiScreen {
         buttonList.add(new GuiHorizonwrightButton(SCHEDULE_SLEEP_BUTTON, left + 382, top + 262, 96, 20, "Every night"));
         buttonList.add(new GuiHorizonwrightButton(BACK_BUTTON, left + panelWidth - 82, top + 310, 70, 20, "Back"));
         buttonList
-            .add(new GuiHorizonwrightButton(NEW_EXCAVATION_BUTTON, left + 12, top + 310, 128, 20, "New excavation"));
-        buttonList.add(new GuiHorizonwrightButton(WORK_AREAS_BUTTON, left + 146, top + 310, 110, 20, "Work areas"));
+            .add(new GuiHorizonwrightButton(NEW_EXCAVATION_BUTTON, left + 12, top + 310, 112, 20, "Clean excavation"));
+        buttonList.add(new GuiHorizonwrightButton(WORK_AREAS_BUTTON, left + 130, top + 310, 110, 20, "Work areas"));
+        buttonList
+            .add(new GuiHorizonwrightButton(MANAGED_QUARRY_BUTTON, left + 246, top + 310, 148, 20, "Managed quarry"));
         refreshStatus();
     }
 
@@ -125,6 +128,10 @@ public final class GuiProfileAssets extends GuiScreen {
         }
         if (button.id == NEW_EXCAVATION_BUTTON) {
             mc.displayGuiScreen(new GuiExcavationSetup(this, runtimeProvider, editorProvider));
+            return;
+        }
+        if (button.id == MANAGED_QUARRY_BUTTON) {
+            mc.displayGuiScreen(new GuiManagedQuarrySetup(this, runtimeProvider, editorProvider));
             return;
         }
         if (button.id == WORK_AREAS_BUTTON) {

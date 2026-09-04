@@ -93,6 +93,46 @@ public class ExcavationTaskSubmissionTest {
     }
 
     @Test
+    public void managedSubmissionCarriesApprovedMaterialsAndTheSameValidatedServices() {
+        ProfileEnvelope profile = profile("mining");
+        ManagedQuarryConfiguration configuration = new ManagedQuarryConfiguration(
+            "minecraft:cobblestone",
+            "minecraft:torch",
+            "minecraft:dirt",
+            5);
+
+        TaskSpec spec = ExcavationTaskSubmission.managedWithServices(
+            profile,
+            "managed",
+            0,
+            10,
+            20,
+            8,
+            30,
+            60,
+            configuration,
+            "mining",
+            "ore-chest",
+            "tool-forge",
+            3,
+            2);
+
+        assertEquals(configuration, ExcavationTask.managedConfiguration(spec));
+        assertEquals(
+            "mining",
+            spec.getParameters()
+                .get(ExcavationTask.LOADOUT_ID));
+        assertEquals(
+            "ore-chest",
+            spec.getParameters()
+                .get(ExcavationTask.STORAGE_ID));
+        assertEquals(
+            "tool-forge",
+            spec.getParameters()
+                .get(ExcavationTask.REPAIR_STATION_ID));
+    }
+
+    @Test
     public void missingOrMismatchedProfileDependenciesAreRejectedBeforeSubmission() {
         ProfileEnvelope profile = profile("other-loadout");
         assertThrows(
