@@ -3,7 +3,9 @@ package io.github.kaseyawolf2.horizonwright.navigation.baritone;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.EnumSet;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 import net.minecraft.block.Block;
 import net.minecraft.client.Minecraft;
@@ -30,6 +32,7 @@ import io.github.kaseyawolf2.horizonwright.core.action.ActionRevocation;
 import io.github.kaseyawolf2.horizonwright.core.action.ActionRevocationListener;
 import io.github.kaseyawolf2.horizonwright.core.action.ActionSessionGuard;
 import io.github.kaseyawolf2.horizonwright.core.navigation.BackendAvailability;
+import io.github.kaseyawolf2.horizonwright.core.navigation.CropTravelSafety;
 import io.github.kaseyawolf2.horizonwright.core.navigation.NavigationBackend;
 import io.github.kaseyawolf2.horizonwright.core.navigation.NavigationGoalKind;
 import io.github.kaseyawolf2.horizonwright.core.navigation.NavigationHandle;
@@ -38,7 +41,7 @@ import io.github.kaseyawolf2.horizonwright.core.navigation.NavigationRequest;
 import io.github.kaseyawolf2.horizonwright.core.navigation.NavigationState;
 
 public final class BaritoneNavigationBackend
-    implements NavigationBackend, ActionRevocationListener, AbstractGameEventListener {
+    implements NavigationBackend, CropTravelSafety, ActionRevocationListener, AbstractGameEventListener {
 
     static final int MAX_CLEANUP_ATTEMPTS = 3;
 
@@ -49,6 +52,7 @@ public final class BaritoneNavigationBackend
     private final ActionSessionGuard actionSessionGuard;
     private final HorizonwrightBaritoneProcess process;
     private final CropsNhTravelPolicy cropsNhTravel = new CropsNhTravelPolicy();
+    private final Set<String> cropOperations = new HashSet<>();
     private boolean cropSprintSuppressed;
     private volatile BackendAvailability availability = BackendAvailability
         .available("Baritone enhanced build fcbbd4882c ready (scoped navigation contexts)");
@@ -205,27 +209,27 @@ public final class BaritoneNavigationBackend
     @Override
     public void onPlayerSprintState(SprintStateEvent event) {
         if (event == null) return;
-        Handle handle;
+        boolean protectionRequested;
         synchronized (this) {
-            handle = active;
+            protectionRequested = cropProtectionRequested();
         }
-        if (handle != null && !handle.isTerminal()
-            && cropsNhTravel.shouldSuppressSprint(
-                baritone.getPlayerContext()
-                    .world(),
-                baritone.getPlayerContext()
-                    .player()))
+        if (protectionRequested && cropsNhTravel.shouldSuppressSprint(
+            baritone.getPlayerContext()
+                .world(),
+            baritone.getPlayerContext()
+                .player()))
             event.setState(false);
     }
 
     private void enforceCropSprintSafety() {
         Handle handle;
+        boolean protectionRequested;
         synchronized (this) {
             handle = active;
+            protectionRequested = cropProtectionRequested();
         }
-        boolean suppress = handle != null && !handle.isTerminal()
-            && baritone.getPlayerContext()
-                .world() != null
+        boolean suppress = protectionRequested && baritone.getPlayerContext()
+            .world() != null
             && baritone.getPlayerContext()
                 .player() != null
             && cropsNhTravel.shouldSuppressSprint(
@@ -245,9 +249,53 @@ public final class BaritoneNavigationBackend
                 suppress,
                 "request",
                 handle == null ? "none" : handle.request.getRequestId(),
+                "cropOperations",
+                cropOperationCount(),
                 "radius",
                 CropsNhTravelPolicy.SPRINT_SUPPRESSION_RADIUS);
         }
+    }
+
+    @Override
+    public synchronized void beginCropOperation(String operationId) {
+        String normalized = requireOperationId(operationId);
+        if (cropOperations.add(normalized)) {
+            DevelopmentTrace.event(
+                "navigation",
+                "cropsnh-protection-acquired",
+                "operation",
+                normalized,
+                "owners",
+                cropOperations.size());
+        }
+    }
+
+    @Override
+    public synchronized void endCropOperation(String operationId) {
+        String normalized = requireOperationId(operationId);
+        if (cropOperations.remove(normalized)) {
+            DevelopmentTrace.event(
+                "navigation",
+                "cropsnh-protection-released",
+                "operation",
+                normalized,
+                "owners",
+                cropOperations.size());
+        }
+    }
+
+    private boolean cropProtectionRequested() {
+        return active != null && !active.isTerminal() || !cropOperations.isEmpty();
+    }
+
+    private synchronized int cropOperationCount() {
+        return cropOperations.size();
+    }
+
+    private static String requireOperationId(String operationId) {
+        if (operationId == null || operationId.trim()
+            .isEmpty()) throw new IllegalArgumentException("crop operation id is required");
+        return operationId.trim();
     }
 
     synchronized Handle activeHandle() {

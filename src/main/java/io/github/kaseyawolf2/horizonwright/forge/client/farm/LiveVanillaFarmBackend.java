@@ -21,6 +21,7 @@ import io.github.kaseyawolf2.horizonwright.core.base.FarmActionKind;
 import io.github.kaseyawolf2.horizonwright.core.base.NamedArea;
 import io.github.kaseyawolf2.horizonwright.core.base.SeedReserveEvidence;
 import io.github.kaseyawolf2.horizonwright.core.navigation.BackendAvailability;
+import io.github.kaseyawolf2.horizonwright.core.navigation.CropTravelSafety;
 import io.github.kaseyawolf2.horizonwright.core.navigation.NavigationBackend;
 import io.github.kaseyawolf2.horizonwright.core.navigation.NavigationHandle;
 import io.github.kaseyawolf2.horizonwright.core.navigation.NavigationProgress;
@@ -276,10 +277,12 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
             minecraft.thePlayer.posZ);
         active = handle;
         try {
+            handle.beginCropTravelSafety();
             handle.start();
             return handle;
         } catch (RuntimeException failure) {
             active = null;
+            handle.endCropTravelSafety();
             handle.cancel();
             throw failure;
         }
@@ -296,6 +299,7 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
 
     private synchronized void clearActive(LiveHandle handle) {
         if (active == handle) active = null;
+        handle.endCropTravelSafety();
     }
 
     private int findEmptyHotbarSlot() {
@@ -378,6 +382,7 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
         private boolean emptyHandPrepared;
         private boolean spadeStaged;
         private boolean slotChanged;
+        private boolean cropTravelSafetyHeld;
         private int collectionSettleTicks;
         private volatile boolean cancellationRequested;
 
@@ -421,6 +426,20 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
             state = ActionState.EXECUTING;
             detail = "Approaching exact farm target";
             trace("phase", "navigationRequest", navigationHandle.getRequestId());
+        }
+
+        private void beginCropTravelSafety() {
+            if (plannedBefore.getFamily() != CropFamily.CROPS_NH || !(navigation instanceof CropTravelSafety)) return;
+            ((CropTravelSafety) navigation).beginCropOperation(request.getRequestId());
+            cropTravelSafetyHeld = true;
+            trace("crop-travel-safety", "active", true);
+        }
+
+        private void endCropTravelSafety() {
+            if (!cropTravelSafetyHeld) return;
+            cropTravelSafetyHeld = false;
+            ((CropTravelSafety) navigation).endCropOperation(request.getRequestId());
+            trace("crop-travel-safety", "active", false);
         }
 
         @Override
