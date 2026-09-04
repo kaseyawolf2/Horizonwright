@@ -791,7 +791,10 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
         }
 
         private ActionProgress snapshot() {
-            return new ActionProgress(request.getRequestId(), state, detail, confirmedAfter);
+            // The replacement is verified before the collection leg starts, but it is not
+            // post-action evidence until that leg finishes and the whole action is confirmed.
+            CropObservation reportableAfter = state == ActionState.CONFIRMED ? confirmedAfter : null;
+            return new ActionProgress(request.getRequestId(), state, detail, reportableAfter);
         }
 
         private boolean isTerminal() {
