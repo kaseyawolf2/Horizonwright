@@ -62,6 +62,7 @@ public final class LiveExcavationBackend implements ExcavationBackend {
         .of(ActionCapability.MOVEMENT, ActionCapability.LOOK, ActionCapability.DIG, ActionCapability.HELD_USE);
     private static final long APPROACH_TIMEOUT_NANOS = NavigationRequest.MAX_RUNTIME_NANOS;
     private static final long LOCAL_ACTION_TIMEOUT_NANOS = TimeUnit.SECONDS.toNanos(20L);
+    private static final long FINISH_BOUNDARY_FALLBACK_NANOS = TimeUnit.MILLISECONDS.toNanos(250L);
     private static final double TARGET_SAMPLE_INSET = 0.001D;
     private static final int MAX_APPROACH_ATTEMPTS = 4;
     private static final int VERTICAL_PREFLIGHT_BLOCKS = 6;
@@ -312,6 +313,8 @@ public final class LiveExcavationBackend implements ExcavationBackend {
         private BlockPosition occludingPosition;
         private boolean clearingObstruction;
         private TargetAim verifiedTargetAim;
+        private boolean finishPacketBoundaryReached;
+        private long finishStartedAtNanos;
         private volatile boolean cancellationRequested;
 
         private LiveHandle(ExcavationActionRequest request, ActionLease lease, NavigationBackend navigation,
@@ -421,6 +424,7 @@ public final class LiveExcavationBackend implements ExcavationBackend {
             else if (phase == Phase.WAITING_FOR_APPROACH_SESSION) retryApproachWhenReady();
             else if (phase == Phase.WAITING_FOR_DIG_SESSION) beginDigWhenReady();
             else if (phase == Phase.DIGGING) digOneTick();
+            else if (phase == Phase.FINISHING) finishWhenReady();
             return snapshot();
         }
 
@@ -559,7 +563,12 @@ public final class LiveExcavationBackend implements ExcavationBackend {
             }
             if (!canReachTarget()) {
                 stopDigSession();
-                fail("Player moved out of exact digging reach");
+                approachAttempt = 0;
+                pendingApproachReason = "Reapproaching after the player moved outside exact digging reach";
+                phase = Phase.WAITING_FOR_APPROACH_SESSION;
+                deadlineNanos = saturatingAdd(System.nanoTime(), LOCAL_ACTION_TIMEOUT_NANOS);
+                detail = "Player left digging reach; waiting for action packets to drain before reapproaching";
+                trace("dig-reapproach", "reason", "lost-exact-reach");
                 return;
             }
             aimAtTarget();
@@ -611,25 +620,53 @@ public final class LiveExcavationBackend implements ExcavationBackend {
             minecraft.playerController.resetBlockRemoving();
             restoreHotbarSlot();
             phase = Phase.FINISHING;
+            finishPacketBoundaryReached = false;
+            finishStartedAtNanos = System.nanoTime();
             detail = "Exact target is air; dispatching the final tool state";
             try {
                 ActionPacketDispatch.afterPendingWrites(minecraft, () -> {
                     synchronized (LiveHandle.this) {
-                        if (ownsDigSession) {
-                            guard.quarantine(lease);
-                            guard.end(lease);
-                            ownsDigSession = false;
-                        }
-                        if (clearingObstruction) resumePlannedTargetAfterObstruction();
-                        else {
-                            confirm(ExcavationTargetOutcome.COMPLETED, "Exact target is confirmed air");
-                        }
+                        endDigAuthority();
+                        finishPacketBoundaryReached = true;
+                        detail = "Final tool state dispatched; waiting for the action-session drain";
+                        trace("finish-packet-boundary", "reached", true);
                     }
                 });
             } catch (RuntimeException failure) {
                 stopDigSession();
                 fail("Could not finish the excavation packet boundary: " + failure.getMessage());
             }
+        }
+
+        /** Completes the post-dig transition only from Minecraft's client thread. */
+        private synchronized void finishWhenReady() {
+            if (!finishPacketBoundaryReached) {
+                // The event-loop callback is the preferred FIFO boundary. If it is lost,
+                // ending authority here still enters quarantine and the firewall installs
+                // its own FIFO drain barrier before another action session may begin.
+                if (System.nanoTime() - finishStartedAtNanos < FINISH_BOUNDARY_FALLBACK_NANOS) {
+                    detail = "Waiting for the final excavation packet boundary";
+                    return;
+                }
+                endDigAuthority();
+                finishPacketBoundaryReached = true;
+                detail = "Final packet callback was delayed; waiting for the guarded drain fallback";
+                trace("finish-packet-boundary", "fallback", true);
+            }
+            if (!guard.isReadyForSession()) {
+                detail = "Waiting for final excavation packets to drain";
+                trace("finish-drain", "blockedActions", guard.getBlockedActionCount());
+                return;
+            }
+            if (clearingObstruction) resumePlannedTargetAfterObstruction();
+            else confirm(ExcavationTargetOutcome.COMPLETED, "Exact target is confirmed air");
+        }
+
+        private void endDigAuthority() {
+            if (!ownsDigSession) return;
+            guard.quarantine(lease);
+            guard.end(lease);
+            ownsDigSession = false;
         }
 
         private void selectBestHotbarTool() {
