@@ -12,6 +12,7 @@ import net.minecraft.block.material.Material;
 import net.minecraft.client.Minecraft;
 import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.item.ItemStack;
+import net.minecraft.util.AxisAlignedBB;
 import net.minecraft.util.MovingObjectPosition;
 import net.minecraft.util.Vec3;
 import net.minecraftforge.common.ForgeHooks;
@@ -59,7 +60,9 @@ public final class LiveExcavationBackend implements ExcavationBackend {
 
     private static final EnumSet<ActionCapability> REQUIRED = EnumSet
         .of(ActionCapability.MOVEMENT, ActionCapability.LOOK, ActionCapability.DIG, ActionCapability.HELD_USE);
-    private static final long ACTION_TIMEOUT_NANOS = TimeUnit.SECONDS.toNanos(20L);
+    private static final long APPROACH_TIMEOUT_NANOS = NavigationRequest.MAX_RUNTIME_NANOS;
+    private static final long LOCAL_ACTION_TIMEOUT_NANOS = TimeUnit.SECONDS.toNanos(20L);
+    private static final double TARGET_SAMPLE_INSET = 0.001D;
 
     private final Minecraft minecraft;
     private final ActionSessionGuard guard;
@@ -291,7 +294,7 @@ public final class LiveExcavationBackend implements ExcavationBackend {
         private final ExcavationActionRequest request;
         private final ActionLease lease;
         private final NavigationBackend navigation;
-        private final long deadlineNanos;
+        private long deadlineNanos;
         private NavigationHandle navigationHandle;
         private Phase phase = Phase.APPROACHING;
         private ExcavationActionState state = ExcavationActionState.SUBMITTED;
@@ -300,6 +303,7 @@ public final class LiveExcavationBackend implements ExcavationBackend {
         private boolean ownsDigSession;
         private int priorHotbarSlot = -1;
         private boolean toolSlotChanged;
+        private TargetAim verifiedTargetAim;
         private volatile boolean cancellationRequested;
 
         private LiveHandle(ExcavationActionRequest request, ActionLease lease, NavigationBackend navigation,
@@ -307,12 +311,13 @@ public final class LiveExcavationBackend implements ExcavationBackend {
             this.request = request;
             this.lease = lease;
             this.navigation = navigation;
-            this.deadlineNanos = saturatingAdd(startedAtNanos, ACTION_TIMEOUT_NANOS);
+            this.deadlineNanos = saturatingAdd(startedAtNanos, APPROACH_TIMEOUT_NANOS);
         }
 
         private void start() {
             if (canReachTarget()) {
                 phase = Phase.WAITING_FOR_DIG_SESSION;
+                deadlineNanos = saturatingAdd(System.nanoTime(), LOCAL_ACTION_TIMEOUT_NANOS);
                 state = ExcavationActionState.EXECUTING;
                 detail = "Target is within confirmed reach";
                 trace("phase", "reach", true);
@@ -328,7 +333,7 @@ public final class LiveExcavationBackend implements ExcavationBackend {
                 position.getY(),
                 position.getZ(),
                 System.nanoTime(),
-                ACTION_TIMEOUT_NANOS);
+                APPROACH_TIMEOUT_NANOS);
             navigationHandle = navigation.submit(approach, lease);
             state = ExcavationActionState.EXECUTING;
             detail = "Approaching exact excavation target";
@@ -400,6 +405,7 @@ public final class LiveExcavationBackend implements ExcavationBackend {
                 navigationHandle.cancel();
                 navigationHandle = null;
                 phase = Phase.WAITING_FOR_DIG_SESSION;
+                deadlineNanos = saturatingAdd(System.nanoTime(), LOCAL_ACTION_TIMEOUT_NANOS);
                 detail = "Exact target became reachable before the navigation goal completed";
                 trace("approach-reach", "navigationCancelled", true);
                 return;
@@ -409,6 +415,7 @@ public final class LiveExcavationBackend implements ExcavationBackend {
             if (progress.getState() == NavigationState.COMPLETED) {
                 navigationHandle = null;
                 phase = Phase.WAITING_FOR_DIG_SESSION;
+                deadlineNanos = saturatingAdd(System.nanoTime(), LOCAL_ACTION_TIMEOUT_NANOS);
                 detail = "Approach complete; waiting for the packet drain boundary";
             } else if (progress.getState() == NavigationState.FAILED) {
                 fail("Could not approach excavation target: " + progress.getDetail());
@@ -780,57 +787,84 @@ public final class LiveExcavationBackend implements ExcavationBackend {
         }
 
         private boolean canReachTarget() {
+            verifiedTargetAim = reachableTargetAim();
+            return verifiedTargetAim != null;
+        }
+
+        private TargetAim reachableTargetAim() {
             if (minecraft.thePlayer == null || minecraft.theWorld == null
                 || minecraft.playerController == null
                 || minecraft.theWorld.provider == null
                 || minecraft.theWorld.provider.dimensionId != request.getDimensionId()) {
                 trace("reach", "reachable", false, "reason", "client-or-dimension-unavailable");
-                return false;
+                return null;
             }
             BlockPosition position = request.getIntent()
                 .getPosition();
             EntityPlayer player = minecraft.thePlayer;
             Vec3 eyes = Vec3
                 .createVectorHelper(player.posX, player.posY + MinecraftRuntimeAccess.eyeHeight(player), player.posZ);
-            Vec3 center = Vec3
-                .createVectorHelper(position.getX() + 0.5D, position.getY() + 0.5D, position.getZ() + 0.5D);
-            double reach = minecraft.playerController.getBlockReachDistance() + 0.5D;
-            double distanceSquared = eyes.squareDistanceTo(center);
-            if (distanceSquared > reach * reach) {
-                trace(
-                    "reach",
-                    "reachable",
-                    false,
-                    "reason",
-                    "distance",
-                    "distanceSquared",
-                    distanceSquared,
-                    "reachSquared",
-                    reach * reach,
-                    "eyes",
-                    eyes,
-                    "center",
-                    center);
-                return false;
+            double reach = minecraft.playerController.getBlockReachDistance();
+            Block block = minecraft.theWorld.getBlock(position.getX(), position.getY(), position.getZ());
+            block.setBlockBoundsBasedOnState(minecraft.theWorld, position.getX(), position.getY(), position.getZ());
+            AxisAlignedBB bounds = block
+                .getSelectedBoundingBoxFromPool(minecraft.theWorld, position.getX(), position.getY(), position.getZ());
+            if (bounds == null) {
+                trace("reach", "reachable", false, "reason", "no-selection-bounds");
+                return null;
             }
-            MovingObjectPosition hit = MinecraftRuntimeAccess.rayTraceBlocks(minecraft.theWorld, eyes, center, false);
-            boolean reachable = hit != null && hit.typeOfHit == MovingObjectPosition.MovingObjectType.BLOCK
-                && hit.blockX == position.getX()
-                && hit.blockY == position.getY()
-                && hit.blockZ == position.getZ();
+            double[] xs = sampleAxis(bounds.minX, bounds.maxX);
+            double[] ys = sampleAxis(bounds.minY, bounds.maxY);
+            double[] zs = sampleAxis(bounds.minZ, bounds.maxZ);
+            TargetAim best = null;
+            MovingObjectPosition nearestMismatch = null;
+            for (double x : xs) {
+                for (double y : ys) {
+                    for (double z : zs) {
+                        Vec3 sample = Vec3.createVectorHelper(x, y, z);
+                        MovingObjectPosition hit = MinecraftRuntimeAccess
+                            .rayTraceBlocks(minecraft.theWorld, eyes, sample, false);
+                        if (hit == null || hit.typeOfHit != MovingObjectPosition.MovingObjectType.BLOCK) continue;
+                        if (hit.blockX != position.getX() || hit.blockY != position.getY()
+                            || hit.blockZ != position.getZ()) {
+                            nearestMismatch = hit;
+                            continue;
+                        }
+                        double hitDistanceSquared = hit.hitVec == null ? eyes.squareDistanceTo(sample)
+                            : eyes.squareDistanceTo(hit.hitVec);
+                        if (hitDistanceSquared <= reach * reach
+                            && (best == null || hitDistanceSquared < best.distanceSquared)) {
+                            best = new TargetAim(sample, hit.sideHit, hitDistanceSquared);
+                        }
+                    }
+                }
+            }
             trace(
                 "reach",
                 "reachable",
-                reachable,
+                best != null,
                 "reason",
-                reachable ? "target-hit" : "raytrace-mismatch",
+                best != null ? "visible-target-shape" : "no-visible-point-within-reach",
                 "distanceSquared",
-                distanceSquared,
+                best == null ? "none" : best.distanceSquared,
                 "reachSquared",
                 reach * reach,
+                "sample",
+                best == null ? "none" : best.point,
                 "hit",
-                hit == null ? "none" : hit.typeOfHit + ":" + hit.blockX + "," + hit.blockY + "," + hit.blockZ);
-            return reachable;
+                nearestMismatch == null ? "none"
+                    : nearestMismatch.typeOfHit + ":"
+                        + nearestMismatch.blockX
+                        + ","
+                        + nearestMismatch.blockY
+                        + ","
+                        + nearestMismatch.blockZ);
+            return best;
+        }
+
+        private double[] sampleAxis(double minimum, double maximum) {
+            double inset = Math.min(TARGET_SAMPLE_INSET, Math.max(0.0D, (maximum - minimum) / 4.0D));
+            return new double[] { minimum + inset, (minimum + maximum) / 2.0D, maximum - inset };
         }
 
         private void traceObservation(String event, ExcavationObservation observation) {
@@ -871,17 +905,23 @@ public final class LiveExcavationBackend implements ExcavationBackend {
 
         private void aimAtTarget() {
             EntityPlayer player = minecraft.thePlayer;
+            TargetAim aim = verifiedTargetAim;
             BlockPosition position = request.getIntent()
                 .getPosition();
-            double dx = position.getX() + 0.5D - player.posX;
-            double dy = position.getY() + 0.5D - (player.posY + MinecraftRuntimeAccess.eyeHeight(player));
-            double dz = position.getZ() + 0.5D - player.posZ;
+            Vec3 point = aim == null
+                ? Vec3.createVectorHelper(position.getX() + 0.5D, position.getY() + 0.5D, position.getZ() + 0.5D)
+                : aim.point;
+            double dx = point.xCoord - player.posX;
+            double dy = point.yCoord - (player.posY + MinecraftRuntimeAccess.eyeHeight(player));
+            double dz = point.zCoord - player.posZ;
             double horizontal = Math.sqrt(dx * dx + dz * dz);
             player.rotationYaw = (float) (Math.atan2(dz, dx) * 180.0D / Math.PI) - 90.0F;
             player.rotationPitch = (float) -(Math.atan2(dy, horizontal) * 180.0D / Math.PI);
         }
 
         private int targetSide() {
+            TargetAim aim = verifiedTargetAim;
+            if (aim != null) return aim.side;
             EntityPlayer player = minecraft.thePlayer;
             BlockPosition position = request.getIntent()
                 .getPosition();
@@ -894,6 +934,19 @@ public final class LiveExcavationBackend implements ExcavationBackend {
             if (ay >= ax && ay >= az) return dy > 0.0D ? 1 : 0;
             if (ax >= az) return dx > 0.0D ? 5 : 4;
             return dz > 0.0D ? 3 : 2;
+        }
+
+        private final class TargetAim {
+
+            private final Vec3 point;
+            private final int side;
+            private final double distanceSquared;
+
+            private TargetAim(Vec3 point, int side, double distanceSquared) {
+                this.point = point;
+                this.side = side;
+                this.distanceSquared = distanceSquared;
+            }
         }
 
         private ExcavationActionProgress snapshot() {
