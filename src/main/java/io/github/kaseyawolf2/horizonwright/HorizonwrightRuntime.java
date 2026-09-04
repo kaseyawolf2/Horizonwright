@@ -7,6 +7,7 @@ import io.github.kaseyawolf2.horizonwright.core.action.ActionBrokerSnapshot;
 import io.github.kaseyawolf2.horizonwright.core.action.ActionRevocationListener;
 import io.github.kaseyawolf2.horizonwright.core.action.ActionSessionGuard;
 import io.github.kaseyawolf2.horizonwright.core.action.InMemoryActionBroker;
+import io.github.kaseyawolf2.horizonwright.core.base.LivestockSpecies;
 import io.github.kaseyawolf2.horizonwright.core.navigation.BackendAvailability;
 import io.github.kaseyawolf2.horizonwright.core.navigation.NavigationBackend;
 import io.github.kaseyawolf2.horizonwright.core.navigation.NavigationProgress;
@@ -26,6 +27,7 @@ import io.github.kaseyawolf2.horizonwright.runtime.task.ExcavationServiceCoordin
 import io.github.kaseyawolf2.horizonwright.runtime.task.ExcavationTask;
 import io.github.kaseyawolf2.horizonwright.runtime.task.FarmTask;
 import io.github.kaseyawolf2.horizonwright.runtime.task.GoToTask;
+import io.github.kaseyawolf2.horizonwright.runtime.task.HusbandryTask;
 import io.github.kaseyawolf2.horizonwright.runtime.task.NavigationRuntimeAccess;
 import io.github.kaseyawolf2.horizonwright.runtime.task.RuntimeTaskRunnerFactory;
 import io.github.kaseyawolf2.horizonwright.runtime.task.RuntimeTaskServices;
@@ -294,6 +296,44 @@ public final class HorizonwrightRuntime implements AutoCloseable {
                 0));
     }
 
+    public TaskSnapshot submitHusbandry(TaskSpec spec) {
+        ensureOpen();
+        if (spec == null || !HusbandryTask.TYPE.equals(spec.getType())) {
+            throw new IllegalArgumentException("a husbandry-pass task specification is required");
+        }
+        requireAutomationAvailable("submitting new work");
+        return controller.submit(spec);
+    }
+
+    public ScheduleSnapshot scheduleHusbandry(String scheduleId, String penId, LivestockSpecies species,
+        int minimumAdults, int maximumAdults, int maximumActions, long intervalMillis) {
+        ensureOpen();
+        if (intervalMillis < 1L) throw new IllegalArgumentException("husbandry schedule interval must be positive");
+        requireAutomationAvailable("scheduling new work");
+        return controller.submitSchedule(
+            ScheduleRule.connectedInterval(
+                scheduleId,
+                HusbandryTask.scheduledPass(penId, species, minimumAdults, maximumAdults, maximumActions),
+                intervalMillis,
+                intervalMillis,
+                java.util.Collections.<String>emptySet(),
+                0));
+    }
+
+    public ScheduleSnapshot updateHusbandrySchedule(String scheduleId, String penId, LivestockSpecies species,
+        int minimumAdults, int maximumAdults, int maximumActions, long intervalMillis) {
+        ensureOpen();
+        if (intervalMillis < 1L) throw new IllegalArgumentException("husbandry schedule interval must be positive");
+        return controller.updateSchedule(
+            ScheduleRule.connectedInterval(
+                scheduleId,
+                HusbandryTask.scheduledPass(penId, species, minimumAdults, maximumAdults, maximumActions),
+                intervalMillis,
+                intervalMillis,
+                java.util.Collections.<String>emptySet(),
+                0));
+    }
+
     public ScheduleSnapshot pauseSchedule(String scheduleId) {
         ensureOpen();
         return controller.pauseSchedule(scheduleId);
@@ -309,17 +349,17 @@ public final class HorizonwrightRuntime implements AutoCloseable {
         return controller.removeSchedule(scheduleId);
     }
 
-    /** Cancels future runs and any unfinished occurrences that reference a deleted farm plot. */
-    public int cancelFarmAutomationForPlot(String plotId) {
+    /** Cancels future runs and unfinished area-bound chores before a saved area is deleted. */
+    public int cancelAreaAutomation(String areaId) {
         ensureOpen();
-        if (plotId == null || plotId.trim()
-            .isEmpty()) throw new IllegalArgumentException("plotId must not be blank");
-        String normalized = plotId.trim();
+        if (areaId == null || areaId.trim()
+            .isEmpty()) throw new IllegalArgumentException("areaId must not be blank");
+        String normalized = areaId.trim();
         ControllerSnapshot snapshot = controller.snapshot();
         int cancelled = 0;
         for (ScheduleSnapshot schedule : snapshot.getScheduler()
             .getSchedules()) {
-            if (schedule.getState() != ScheduleState.CANCELLED && FarmTask.isForPlot(
+            if (schedule.getState() != ScheduleState.CANCELLED && isForArea(
                 schedule.getRule()
                     .getTask(),
                 normalized)) {
@@ -331,7 +371,7 @@ public final class HorizonwrightRuntime implements AutoCloseable {
         }
         for (TaskSnapshot task : snapshot.getTasks()) {
             if (!task.getState()
-                .isTerminal() && FarmTask.isForPlot(task.getSpec(), normalized)) {
+                .isTerminal() && isForArea(task.getSpec(), normalized)) {
                 controller.cancel(
                     task.getSpec()
                         .getId());
@@ -339,6 +379,20 @@ public final class HorizonwrightRuntime implements AutoCloseable {
             }
         }
         return cancelled;
+    }
+
+    /** Compatibility alias retained for callers compiled before husbandry used saved areas. */
+    public int cancelFarmAutomationForPlot(String plotId) {
+        return cancelAreaAutomation(plotId);
+    }
+
+    private static boolean isForArea(io.github.kaseyawolf2.horizonwright.core.task.ScheduledTaskSpec task,
+        String areaId) {
+        return FarmTask.isForPlot(task, areaId) || HusbandryTask.isForPen(task, areaId);
+    }
+
+    private static boolean isForArea(TaskSpec task, String areaId) {
+        return FarmTask.isForPlot(task, areaId) || HusbandryTask.isForPen(task, areaId);
     }
 
     public TaskSnapshot submitSleep(TaskSpec spec) {

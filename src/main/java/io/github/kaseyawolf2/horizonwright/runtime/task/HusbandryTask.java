@@ -48,49 +48,85 @@ public final class HusbandryTask {
             parameters);
     }
 
-    static String penId(TaskSpec spec) {
+    public static String penId(TaskSpec spec) {
         requireType(spec);
-        return required(
-            spec.getParameters()
-                .get(PEN_ID),
-            "pen id");
+        return penId(spec.getParameters());
     }
 
-    static LivestockSpecies species(TaskSpec spec) {
+    public static String penId(ScheduledTaskSpec spec) {
         requireType(spec);
+        return penId(spec.getParameters());
+    }
+
+    public static LivestockSpecies species(TaskSpec spec) {
+        requireType(spec);
+        return species(spec.getParameters());
+    }
+
+    public static LivestockSpecies species(ScheduledTaskSpec spec) {
+        requireType(spec);
+        return species(spec.getParameters());
+    }
+
+    private static LivestockSpecies species(Map<String, String> parameters) {
         try {
-            return LivestockSpecies.valueOf(
-                required(
-                    spec.getParameters()
-                        .get(SPECIES),
-                    "species"));
+            return LivestockSpecies.valueOf(required(parameters.get(SPECIES), "species"));
         } catch (IllegalArgumentException failure) {
             throw new IllegalArgumentException("invalid livestock species", failure);
         }
     }
 
-    static int minimumAdults(TaskSpec spec) {
-        return integer(spec, MINIMUM_ADULTS, 2, 1_000);
+    public static int minimumAdults(TaskSpec spec) {
+        requireType(spec);
+        return integer(spec.getParameters(), MINIMUM_ADULTS, 2, 1_000);
     }
 
-    static int maximumAdults(TaskSpec spec) {
-        int maximum = integer(spec, MAXIMUM_ADULTS, 2, 1_000);
+    public static int minimumAdults(ScheduledTaskSpec spec) {
+        requireType(spec);
+        return integer(spec.getParameters(), MINIMUM_ADULTS, 2, 1_000);
+    }
+
+    public static int maximumAdults(TaskSpec spec) {
+        requireType(spec);
+        int maximum = integer(spec.getParameters(), MAXIMUM_ADULTS, 2, 1_000);
         if (maximum < minimumAdults(spec)) throw new IllegalArgumentException("maximum adults is below minimum");
         return maximum;
     }
 
-    static int maximumActions(TaskSpec spec) {
-        return integer(spec, MAXIMUM_ACTIONS, 1, 256);
+    public static int maximumAdults(ScheduledTaskSpec spec) {
+        requireType(spec);
+        int maximum = integer(spec.getParameters(), MAXIMUM_ADULTS, 2, 1_000);
+        if (maximum < minimumAdults(spec)) throw new IllegalArgumentException("maximum adults is below minimum");
+        return maximum;
     }
 
-    private static int integer(TaskSpec spec, String key, int minimum, int maximum) {
+    public static int maximumActions(TaskSpec spec) {
         requireType(spec);
+        return integer(spec.getParameters(), MAXIMUM_ACTIONS, 1, 256);
+    }
+
+    public static int maximumActions(ScheduledTaskSpec spec) {
+        requireType(spec);
+        return integer(spec.getParameters(), MAXIMUM_ACTIONS, 1, 256);
+    }
+
+    public static boolean isForPen(TaskSpec spec, String penId) {
+        return spec != null && TYPE.equals(spec.getType())
+            && penId != null
+            && penId.trim()
+                .equals(penId(spec));
+    }
+
+    public static boolean isForPen(ScheduledTaskSpec spec, String penId) {
+        return spec != null && TYPE.equals(spec.getType())
+            && penId != null
+            && penId.trim()
+                .equals(penId(spec));
+    }
+
+    private static int integer(Map<String, String> parameters, String key, int minimum, int maximum) {
         try {
-            int value = Integer.parseInt(
-                required(
-                    spec.getParameters()
-                        .get(key),
-                    key));
+            int value = Integer.parseInt(required(parameters.get(key), key));
             if (value < minimum || value > maximum) throw new IllegalArgumentException(key + " is out of range");
             return value;
         } catch (NumberFormatException failure) {
@@ -101,6 +137,16 @@ public final class HusbandryTask {
     private static void requireType(TaskSpec spec) {
         if (spec == null || !TYPE.equals(spec.getType()))
             throw new IllegalArgumentException("a husbandry-pass task is required");
+    }
+
+    private static void requireType(ScheduledTaskSpec spec) {
+        if (spec == null || !TYPE.equals(spec.getType())) {
+            throw new IllegalArgumentException("a scheduled husbandry-pass task is required");
+        }
+    }
+
+    private static String penId(Map<String, String> parameters) {
+        return required(parameters.get(PEN_ID), "pen id");
     }
 
     private static String required(String value, String field) {

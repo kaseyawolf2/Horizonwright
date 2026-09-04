@@ -19,6 +19,7 @@ import io.github.kaseyawolf2.horizonwright.runtime.persistence.profile.ProfileAs
 import io.github.kaseyawolf2.horizonwright.runtime.persistence.profile.ProfileAssetEditorProvider;
 import io.github.kaseyawolf2.horizonwright.runtime.persistence.session.CurrentRuntimeProvider;
 import io.github.kaseyawolf2.horizonwright.runtime.task.FarmTask;
+import io.github.kaseyawolf2.horizonwright.runtime.task.HusbandryTask;
 import io.github.kaseyawolf2.horizonwright.runtime.task.SleepTask;
 
 /** Operator-facing recurring-job list and type-safe settings editor. */
@@ -171,10 +172,10 @@ public final class GuiScheduleManager extends GuiScreen {
 
     private void saveSelected(HorizonwrightRuntime runtime, ScheduleSnapshot selected) {
         String target = ProfileAssetInput.stableId(targetField.getText(), targetLabel(selected));
-        if (FarmTask.TYPE.equals(
-            selected.getRule()
-                .getTask()
-                .getType())) {
+        String type = selected.getRule()
+            .getTask()
+            .getType();
+        if (FarmTask.TYPE.equals(type)) {
             requireSavedArea(target);
             int minutes = ProfileAssetInput.positiveInteger(intervalField.getText(), "interval minutes");
             int reserve = ProfileAssetInput.nonNegativeInteger(reserveField.getText(), "seed reserve");
@@ -187,16 +188,42 @@ public final class GuiScheduleManager extends GuiScreen {
                 + " connected minute(s), seed reserve "
                 + reserve
                 + ".";
-        } else if (SleepTask.TYPE.equals(
-            selected.getRule()
-                .getTask()
-                .getType())) {
-                    requireSavedLocation(target);
-                    runtime.updateNightSleepSchedule(selectedScheduleId, target);
-                    message = "Saved '" + selectedScheduleId + "': sleep at '" + target + "' each night.";
-                } else {
-                    throw new IllegalStateException("this schedule type is currently view-only");
-                }
+        } else if (SleepTask.TYPE.equals(type)) {
+            requireSavedLocation(target);
+            runtime.updateNightSleepSchedule(selectedScheduleId, target);
+            message = "Saved '" + selectedScheduleId + "': sleep at '" + target + "' each night.";
+        } else if (HusbandryTask.TYPE.equals(type)) {
+            requireSavedArea(target);
+            int minutes = ProfileAssetInput.positiveInteger(intervalField.getText(), "interval minutes");
+            String[] bounds = reserveField.getText()
+                .split("/");
+            if (bounds.length != 3) throw new IllegalArgumentException("use minimum/maximum/actions");
+            int minimum = ProfileAssetInput.positiveInteger(bounds[0], "minimum adults");
+            int maximum = ProfileAssetInput.positiveInteger(bounds[1], "maximum adults");
+            int actions = ProfileAssetInput.positiveInteger(bounds[2], "maximum actions");
+            runtime.updateHusbandrySchedule(
+                selectedScheduleId,
+                target,
+                HusbandryTask.species(
+                    selected.getRule()
+                        .getTask()),
+                minimum,
+                maximum,
+                actions,
+                Math.multiplyExact(minutes, 60_000L));
+            message = "Saved '" + selectedScheduleId
+                + "': pen '"
+                + target
+                + "', policy "
+                + minimum
+                + "/"
+                + maximum
+                + "/"
+                + actions
+                + ".";
+        } else {
+            throw new IllegalStateException("this schedule type is currently view-only");
+        }
     }
 
     private void deleteSelected(HorizonwrightRuntime runtime) {
@@ -268,7 +295,12 @@ public final class GuiScheduleManager extends GuiScreen {
             top + 230,
             0xFFE0E0E0);
         drawString(fontRendererObj, "Minutes", left + 256, top + 230, 0xFFE0E0E0);
-        drawString(fontRendererObj, "Seed reserve", left + 372, top + 230, 0xFFE0E0E0);
+        drawString(
+            fontRendererObj,
+            selected != null && isHusbandry(selected) ? "Policy" : "Seed reserve",
+            left + 372,
+            top + 230,
+            0xFFE0E0E0);
         targetField.drawTextBox();
         intervalField.drawTextBox();
         reserveField.drawTextBox();
@@ -323,8 +355,8 @@ public final class GuiScheduleManager extends GuiScreen {
         ScheduleSnapshot selected = selectedSchedule();
         boolean editable = selected != null && isEditable(selected);
         targetField.setEnabled(editable);
-        intervalField.setEnabled(editable && isFarm(selected));
-        reserveField.setEnabled(editable && isFarm(selected));
+        intervalField.setEnabled(editable && (isFarm(selected) || isHusbandry(selected)));
+        reserveField.setEnabled(editable && (isFarm(selected) || isHusbandry(selected)));
         saveButton.enabled = editable;
         stateButton.enabled = selected != null && selected.getState() != ScheduleState.CANCELLED;
         stateButton.displayString = selected != null && selected.getState() == ScheduleState.PAUSED ? "Resume"
@@ -357,6 +389,27 @@ public final class GuiScheduleManager extends GuiScreen {
                         .getTask()));
             intervalField.setText("nightly");
             reserveField.setText("n/a");
+        } else if (isHusbandry(selected)) {
+            targetField.setText(
+                HusbandryTask.penId(
+                    selected.getRule()
+                        .getTask()));
+            intervalField.setText(
+                Long.toString(
+                    selected.getRule()
+                        .getIntervalMillis() / 60_000L));
+            reserveField.setText(
+                HusbandryTask.minimumAdults(
+                    selected.getRule()
+                        .getTask())
+                    + "/"
+                    + HusbandryTask.maximumAdults(
+                        selected.getRule()
+                            .getTask())
+                    + "/"
+                    + HusbandryTask.maximumActions(
+                        selected.getRule()
+                            .getTask()));
         } else {
             targetField.setText("view only");
             intervalField.setText("n/a");
@@ -412,7 +465,7 @@ public final class GuiScheduleManager extends GuiScreen {
     }
 
     private static boolean isEditable(ScheduleSnapshot schedule) {
-        return isFarm(schedule) || isSleep(schedule);
+        return isFarm(schedule) || isSleep(schedule) || isHusbandry(schedule);
     }
 
     private static boolean isFarm(ScheduleSnapshot schedule) {
@@ -429,8 +482,16 @@ public final class GuiScheduleManager extends GuiScreen {
                 .getType());
     }
 
+    private static boolean isHusbandry(ScheduleSnapshot schedule) {
+        return schedule != null && HusbandryTask.TYPE.equals(
+            schedule.getRule()
+                .getTask()
+                .getType());
+    }
+
     private static String targetLabel(ScheduleSnapshot schedule) {
-        return isFarm(schedule) ? "Farm area" : isSleep(schedule) ? "Bed" : "Target";
+        return isFarm(schedule) ? "Farm area"
+            : isSleep(schedule) ? "Bed" : isHusbandry(schedule) ? "Livestock pen" : "Target";
     }
 
     private static String description(ScheduleSnapshot schedule) {

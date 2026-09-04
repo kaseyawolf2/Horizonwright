@@ -166,7 +166,15 @@ its exact movement/look/use/held-use or attack capabilities, and must obtain a
 backend-confirmed postcondition before the verified-action checkpoint advances.
 The next action always requires a wholly fresh pen observation; pause and
 reconnect cancel the unconfirmed action without advancement. No live Minecraft
-entity adapter or operator control is claimed yet.
+entity adapter is claimed yet, so configured work holds safely without touching
+animals. Operator configuration is available from **Work areas**: select a
+saved area, open **Livestock settings**, choose cow/sheep/pig/chicken, and set
+minimum adults, maximum adults, the hard per-pass action cap, and recurring
+interval. One finite pass or one species-specific recurring schedule can be
+created there. The scheduled-jobs screen can pause, resume, delete, or edit the
+pen, interval, and compact `minimum/maximum/actions` policy. Deleting the saved
+area cancels both farm and husbandry schedules and unfinished occurrences bound
+to it before removing the area.
 Clean-volume excavation is now attached to a live, session-owned backend. Every
 observation and action carries the explicit dimension as well as the existing
 geometry, frontier, revision, epoch, and block fingerprint. The observer treats

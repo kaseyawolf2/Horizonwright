@@ -15,6 +15,7 @@ import io.github.kaseyawolf2.horizonwright.core.action.ActionRevocation;
 import io.github.kaseyawolf2.horizonwright.core.action.ActionRevocationListener;
 import io.github.kaseyawolf2.horizonwright.core.action.ActionSessionGuard;
 import io.github.kaseyawolf2.horizonwright.core.action.InMemoryActionBroker;
+import io.github.kaseyawolf2.horizonwright.core.base.LivestockSpecies;
 import io.github.kaseyawolf2.horizonwright.core.navigation.BackendAvailability;
 import io.github.kaseyawolf2.horizonwright.core.navigation.NavigationBackend;
 import io.github.kaseyawolf2.horizonwright.core.navigation.NavigationHandle;
@@ -30,6 +31,7 @@ import io.github.kaseyawolf2.horizonwright.core.task.TaskLane;
 import io.github.kaseyawolf2.horizonwright.core.task.TaskState;
 import io.github.kaseyawolf2.horizonwright.runtime.task.ExcavationTask;
 import io.github.kaseyawolf2.horizonwright.runtime.task.FarmTask;
+import io.github.kaseyawolf2.horizonwright.runtime.task.HusbandryTask;
 import io.github.kaseyawolf2.horizonwright.runtime.task.SleepTask;
 
 public class HorizonwrightRuntimeTest {
@@ -356,6 +358,95 @@ public class HorizonwrightRuntimeTest {
             TaskState.CANCELLED,
             runtime.controllerSnapshot()
                 .findTask("one-pass")
+                .get()
+                .getState());
+        runtime.close();
+    }
+
+    @Test
+    public void husbandryConfigurationRetainsPopulationPolicyAndCanBeEdited() {
+        HorizonwrightRuntime runtime = new HorizonwrightRuntime(
+            new InMemoryActionBroker(),
+            new ActionSessionGuard(),
+            new FixedClock());
+
+        assertEquals(
+            "one-cow-pass",
+            runtime.submitHusbandry(HusbandryTask.finitePass("one-cow-pass", "cow-pen", LivestockSpecies.COW, 2, 8, 16))
+                .getSpec()
+                .getId());
+        runtime.scheduleHusbandry("cows", "cow-pen", LivestockSpecies.COW, 2, 8, 16, 1_800_000L);
+        ScheduleSnapshot edited = runtime
+            .updateHusbandrySchedule("cows", "south-pen", LivestockSpecies.SHEEP, 4, 12, 24, 600_000L);
+
+        assertEquals(
+            "south-pen",
+            HusbandryTask.penId(
+                edited.getRule()
+                    .getTask()));
+        assertEquals(
+            LivestockSpecies.SHEEP,
+            HusbandryTask.species(
+                edited.getRule()
+                    .getTask()));
+        assertEquals(
+            4,
+            HusbandryTask.minimumAdults(
+                edited.getRule()
+                    .getTask()));
+        assertEquals(
+            12,
+            HusbandryTask.maximumAdults(
+                edited.getRule()
+                    .getTask()));
+        assertEquals(
+            24,
+            HusbandryTask.maximumActions(
+                edited.getRule()
+                    .getTask()));
+        assertEquals(
+            600_000L,
+            edited.getRule()
+                .getIntervalMillis());
+        runtime.close();
+    }
+
+    @Test
+    public void deletingAnAreaCancelsFarmAndHusbandryAutomationBoundToIt() {
+        HorizonwrightRuntime runtime = new HorizonwrightRuntime(
+            new InMemoryActionBroker(),
+            new ActionSessionGuard(),
+            new FixedClock());
+        runtime.scheduleFarm("field", "shared-area", 2, 600_000L);
+        runtime.scheduleHusbandry("cows", "shared-area", LivestockSpecies.COW, 2, 8, 16, 600_000L);
+        runtime.submitFarm(FarmTask.finitePass("farm-now", "shared-area", 2));
+        runtime.submitHusbandry(HusbandryTask.finitePass("cows-now", "shared-area", LivestockSpecies.COW, 2, 8, 16));
+
+        assertEquals(4, runtime.cancelAreaAutomation("shared-area"));
+        assertEquals(
+            ScheduleState.CANCELLED,
+            runtime.controllerSnapshot()
+                .getScheduler()
+                .findSchedule("field")
+                .get()
+                .getState());
+        assertEquals(
+            ScheduleState.CANCELLED,
+            runtime.controllerSnapshot()
+                .getScheduler()
+                .findSchedule("cows")
+                .get()
+                .getState());
+        assertEquals(
+            TaskState.CANCELLED,
+            runtime.controllerSnapshot()
+                .findTask("farm-now")
+                .get()
+                .getState());
+        assertEquals(
+            TaskState.CANCELLED,
+            runtime.controllerSnapshot()
+                .findTask("cows-now")
                 .get()
                 .getState());
         runtime.close();

@@ -29,6 +29,7 @@ public final class GuiSavedAreaEditor extends GuiScreen {
     private static final int QUEUE_FARM_BUTTON = 5;
     private static final int SCHEDULE_FARM_BUTTON = 6;
     private static final int CLOSE_BUTTON = 7;
+    private static final int HUSBANDRY_BUTTON = 8;
 
     private final GuiScreen parent;
     private final ProfileAssetEditorProvider editorProvider;
@@ -140,6 +141,8 @@ public final class GuiSavedAreaEditor extends GuiScreen {
                 22,
                 "Schedule farm"));
         buttonList.add(new GuiHorizonwrightButton(CLOSE_BUTTON, left + 18, top + 332, 64, 20, "Close"));
+        buttonList
+            .add(new GuiHorizonwrightButton(HUSBANDRY_BUTTON, left + 94, top + 332, 168, 20, "Livestock settings"));
         buttonList.add(new GuiHorizonwrightButton(BACK_BUTTON, left + panelWidth - 82, top + 332, 64, 20, "Back"));
     }
 
@@ -156,6 +159,10 @@ public final class GuiSavedAreaEditor extends GuiScreen {
         }
         if (button.id == CLOSE_BUTTON) {
             mc.displayGuiScreen(null);
+            return;
+        }
+        if (button.id == HUSBANDRY_BUTTON) {
+            mc.displayGuiScreen(new GuiHusbandrySetup(this, runtimeProvider, original));
             return;
         }
         try {

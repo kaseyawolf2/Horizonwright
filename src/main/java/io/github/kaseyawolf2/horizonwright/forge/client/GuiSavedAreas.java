@@ -173,7 +173,7 @@ public final class GuiSavedAreas extends GuiScreen {
             editor.deleteArea(removed);
             CurrentRuntimeUiResolver.Resolution runtime = CurrentRuntimeUiResolver.resolve(runtimeProvider);
             int cancelled = runtime.isAvailable() ? runtime.getRuntime()
-                .cancelFarmAutomationForPlot(removed) : 0;
+                .cancelAreaAutomation(removed) : 0;
             selectedAreaId = null;
             pendingDeleteAreaId = null;
             reload();
