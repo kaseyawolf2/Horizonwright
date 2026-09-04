@@ -19,7 +19,7 @@ import io.github.kaseyawolf2.horizonwright.core.container.ItemFingerprint;
 import io.github.kaseyawolf2.horizonwright.forge.client.MinecraftRuntimeAccess;
 import io.github.kaseyawolf2.horizonwright.forge.client.container.MinecraftContainerSnapshotter;
 
-/** Bounded client-thread observer for exact vanilla and CropsNH crop state. */
+/** Bounded client-thread observer for exact vanilla, Pam HarvestCraft, and CropsNH crop state. */
 public final class MinecraftVanillaFarmObserver {
 
     private static final long MAX_SCANNED_BLOCKS = 65_536L;
@@ -27,6 +27,7 @@ public final class MinecraftVanillaFarmObserver {
     private final Minecraft minecraft;
     private final ProfileFarmConfiguration configuration;
     private final VanillaCropClassifier classifier = new VanillaCropClassifier();
+    private final PamHarvestCraftCropAdapter pam = new PamHarvestCraftCropAdapter();
     private final CropsNhCropAdapter cropsNh = new CropsNhCropAdapter();
     private final MinecraftContainerSnapshotter items = new MinecraftContainerSnapshotter();
 
@@ -155,6 +156,21 @@ public final class MinecraftVanillaFarmObserver {
                 true,
                 cropsNhDescriptor.isMature(),
                 cropsNhDescriptor.isProtected());
+        }
+        PamHarvestCraftCropAdapter.Descriptor pamDescriptor = pam
+            .read(block, registryName == null ? null : registryName.toString(), metadata)
+            .orElse(null);
+        if (pamDescriptor != null) {
+            return new CropObservation(
+                position,
+                pamDescriptor.getFamily(),
+                pamDescriptor.getObservationFingerprint() + (tile == null ? "|tile=none"
+                    : "|tile=" + tile.getClass()
+                        .getName()),
+                pamDescriptor.getHarvestIdentity(),
+                true,
+                pamDescriptor.isMature(),
+                tile != null);
         }
         VanillaCropClassifier.Descriptor descriptor = classifier
             .classify(block, registryName == null ? null : registryName.toString(), metadata);

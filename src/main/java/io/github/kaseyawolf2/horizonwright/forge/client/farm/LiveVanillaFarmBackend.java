@@ -84,7 +84,9 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
         }
         BackendAvailability status = navigation.availability();
         Availability result = status.isAvailable()
-            ? Availability.available("Exact vanilla and CropsNH farm actions ready through " + status.getDiagnostic())
+            ? Availability.available(
+                "Exact vanilla, Pam HarvestCraft 1.3.11-GTNH, and CropsNH farm actions ready through "
+                    + status.getDiagnostic())
             : Availability.unavailable("Farm navigation unavailable: " + status.getDiagnostic());
         DevelopmentTrace.event(
             "farm-live",

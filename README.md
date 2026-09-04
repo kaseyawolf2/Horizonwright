@@ -122,24 +122,29 @@ verified-mutation count, and next observation index. Restored checkpoints must
 match the task's plot and revision exactly; changed or cross-task evidence is
 rejected instead of replayed. The resumable runner freezes one bounded scan,
 advances non-mutating decisions without a gameplay lease, grants only the
-movement/look/dig/place or movement/look/use capabilities required by a planned
-mutation, and advances only after a changed, verified immature crop is observed.
+movement/look/dig/place/held-use or movement/look/use/container/held-use
+capabilities required by a planned mutation, and advances only after a changed,
+verified immature crop is observed.
 Pause cancels an unconfirmed action at the same crop. A version-isolated backend
 contract now carries all scan, target, seed-reserve, action, and confirmation
 authority. The live observation half now resolves only an exact identity-bound
 named area, refuses cross-dimension, oversized, or partially unloaded plots,
-and recognizes only pinned vanilla wheat, carrots, potatoes, and nether wart.
-Its finite scan order, block/meta fingerprint, exact replant item identity, full
-inventory digest, current count, and configured reserve cross the backend
-boundary without mod objects. Unknown mod crops are never guessed. The live
-mutation half approaches under the same task lease, waits for the navigation
-packet drain, revalidates the crop and complete seed snapshot, and requires the
-exact approved seed in a stable hotbar slot. It breaks one mature crop, selects
-that slot only while the action session is active, performs one normal replant
-interaction, restores the prior selected slot, and ends its packet-producing
-session before waiting for synchronization. Only a changed, same-family,
-same-seed, unprotected, visibly immature replacement confirms the action. The
-backend identity-binds to one world runtime and is removed on retirement.
+and recognizes pinned vanilla wheat, carrots, potatoes, and nether wart;
+CropsNH 2.0.91 crop sticks; and the exact Pam HarvestCraft 1.3.11-GTNH crop,
+hanging-fruit, and fruiting-log classes. Pam crop and fruit support is enabled
+only when their pinned right-click configuration flags are active. Maturity is
+bound to each adapter's exact metadata/API state, and fruiting logs receive only
+a non-destructive right-click action. Its finite scan order, crop-state
+fingerprint, material identity, full inventory digest, current count, and
+configured reserve cross the backend boundary without mod objects. Unknown mod
+crops are never guessed. The live mutation half approaches under the same task
+lease, waits for the navigation packet drain, revalidates the crop and complete
+inventory snapshot, establishes an authorized safe hand, performs one normal
+right-click interaction, restores the prior selected slot, and ends its
+packet-producing session before waiting for synchronization. Only a changed,
+same-family, same-material, unprotected, visibly immature state confirms the
+action. The backend identity-binds to one world runtime and is removed on
+retirement.
 Operators can queue one pass from **Profile assets > Work areas** or with
 `/hw farm <task-id> <plot-id> [seed-reserve]`. This live path is automated-test
 covered at its planner, runner, authority, classifier, and proof boundaries but

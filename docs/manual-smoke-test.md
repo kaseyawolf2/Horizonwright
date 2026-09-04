@@ -223,6 +223,15 @@ The long approach must not retry at 30 seconds. If a CropsNH spade is selected,
 the server must receive the held-slot change without an action-guard block; the
 crop must reset to immature and the pass must continue normally.
 
+For Pam HarvestCraft 1.3.11-GTNH, separately test one mature ground crop, one
+mature hanging fruit, and one mature fruiting log while the pack's right-click
+harvest settings are enabled. Each must receive one normal right click and
+return to its exact immature metadata. The fruiting log must remain in place and
+must never receive a dig action. Disable Pam's right-click crop or fruit setting
+in a disposable instance and confirm the corresponding class is ignored rather
+than guessed or broken. An unknown subclass or similarly named addon block must
+also remain untouched.
+
 ## Pending ordinary-tree farm checkpoint
 
 Create a small saved 3D work area containing the entire trunk and branches of
