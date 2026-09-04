@@ -215,6 +215,14 @@ runs once, and lets the exact excavation frontier resume. Disconnect for longer
 than two minutes: offline time must not create a burst of runs after rejoin, and
 at most one occurrence for this schedule may be queued or active at once.
 
+For CropsNH, include one mature crop-sticks target and begin once from beside
+the plot and once from more than 30 seconds of travel away. Ordinary travel may
+sprint, but the player must stop sprinting before entering the protected crop
+radius, walk throughout harvesting, and avoid jumping down onto crop sticks.
+The long approach must not retry at 30 seconds. If a CropsNH spade is selected,
+the server must receive the held-slot change without an action-guard block; the
+crop must reset to immature and the pass must continue normally.
+
 ## Pending ordinary-tree farm checkpoint
 
 Create a small saved 3D work area containing the entire trunk and branches of

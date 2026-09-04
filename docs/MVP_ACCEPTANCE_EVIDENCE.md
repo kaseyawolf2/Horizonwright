@@ -9,7 +9,7 @@ but cannot replace the disposable-world observation run required by the plan.
 | Requirement | Current evidence | Status |
 | --- | --- | --- |
 | Radius-250 excavation | Geometry, bounded scan, checkpoint, cache refresh, missed-layer recovery, navigation, breaking, unloading, repair, and reconnect tests; the orchestration scenario now carries a persisted managed-quarry material policy; substantial physical clean-volume testing | Partially proven; live managed infrastructure and complete observation run pending |
-| Recurring crop chore preempts excavation | Real scheduler/task-spec/checkpoint synthetic scenario plus physical one-pass and scheduled farming tests | Automated orchestration proven; latest long-distance deadline fix awaits physical confirmation |
+| Recurring crop chore preempts excavation | Real scheduler/task-spec/checkpoint synthetic scenario plus physical one-pass and scheduled farming tests; CropsNH walking inside the protected crop radius was physically observed for both long and near starts | Automated orchestration and crop-zone sprint suppression proven; installed travel-deadline and held-slot authorization fixes await physical confirmation |
 | Recurring tree chore preempts excavation | Real tree task spec participates in the radius-250 scheduler/preemption/reconnect scenario; live bounded adapter and restart-safe fell/replant tests | Automated orchestration proven; physical tree pass pending |
 | Recurring livestock chore preempts excavation | Real husbandry task contract and scheduler scenario; live vanilla feeding/drop collection adapter with explicit culling denial | Non-destructive execution automated-build proven; physical test and authorized culling pending |
 | Night sleep preempts fallback | Real sleep task/schedule and scheduler synthetic scenario; nearby, far, and nightly physical sleep were confirmed | Proven for current tested bed workflow |
@@ -48,8 +48,10 @@ but cannot replace the disposable-world observation run required by the plan.
   schedule editing, and deletion cleanup are connected. Physical validation
   remains pending.
 - Physical confirmation of the separated long-distance farm travel/action
-  deadlines in commit `0853c61`.
-- Installation and physical validation of the livestock pen scan and new
+  deadlines in commit `0853c61` and authorized harvest-slot changes in commit
+  `d4f29eb`. The prior physical run entered the protected crop radius and walked
+  through harvesting, but it used the build that still retried at 30 seconds.
+- Physical validation of the installed livestock pen scan and new
   non-destructive action executor.
 - The final configured-duration disposable-world observation run combining
   radius-250 excavation, recurring crops and livestock, nightly sleep, unloading,
