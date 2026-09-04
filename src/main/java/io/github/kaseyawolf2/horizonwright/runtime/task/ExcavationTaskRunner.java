@@ -48,8 +48,7 @@ import io.github.kaseyawolf2.horizonwright.core.task.TaskStepContext;
 final class ExcavationTaskRunner implements TaskRunner {
 
     private static final int TARGETS_PER_SCAN = CylinderExcavationGeometry.MAX_BATCH_SIZE;
-    private static final int RANDOM_AUDIT_INTERVAL_ACTIONS = 64;
-    private static final int RANDOM_AUDIT_SAMPLES = 16;
+    private static final int CLEARED_CACHE_AUDIT_BATCH = CylinderExcavationGeometry.MAX_BATCH_SIZE;
     private static final long POLL_DELAY_MILLIS = 0L;
     private static final Set<ActionCapability> REQUIRED_CAPABILITIES = Collections.unmodifiableSet(
         EnumSet.of(ActionCapability.MOVEMENT, ActionCapability.LOOK, ActionCapability.DIG, ActionCapability.HELD_USE));
@@ -71,10 +70,10 @@ final class ExcavationTaskRunner implements TaskRunner {
     private Integer verificationLayerY;
     private boolean verificationChanged;
     private boolean activeVerification;
-    private boolean randomVerification;
-    private boolean randomAuditPending;
-    private int primaryActionsSinceRandomAudit;
-    private long randomAuditState;
+    private boolean cacheAuditVerification;
+    private boolean cacheAuditPending;
+    private ExcavationFrontier cacheAuditFrontier;
+    private long cacheAuditOffset;
 
     ExcavationTaskRunner(TaskSpec spec, TaskCheckpoint checkpoint, ExcavationRuntimeAccess runtime) {
         if (checkpoint == null || runtime == null) {
@@ -85,12 +84,7 @@ final class ExcavationTaskRunner implements TaskRunner {
         this.runtime = runtime;
         this.taskCheckpoint = checkpoint;
         this.excavationCheckpoint = ExcavationTaskCheckpointCodec.decode(cylinder, checkpoint);
-        long restoredProgress = excavationCheckpoint == null ? 0L
-            : excavationCheckpoint.getProgress()
-                .getProcessed();
-        this.randomAuditState = mixAuditSeed(
-            cylinder.getGeometryKey()
-                .hashCode() ^ restoredProgress);
+        this.cacheAuditFrontier = CylinderExcavationGeometry.initialFrontier(cylinder);
         if (excavationCheckpoint != null && excavationCheckpoint.isComplete()) {
             throw new IllegalArgumentException("completed excavation checkpoint cannot be resumed");
         }
@@ -173,10 +167,10 @@ final class ExcavationTaskRunner implements TaskRunner {
             return observeAction(context, backend);
         }
         if (verificationFrontier != null) {
-            return randomVerification ? verifyRandomAuditTarget(context, backend)
+            return cacheAuditVerification ? verifyCacheAuditTarget(context, backend)
                 : verifyCompletedVolume(context, backend);
         }
-        if (randomAuditPending) return performRandomAudit(context, backend);
+        if (cacheAuditPending) return performCacheAudit(context, backend);
         return observeAndSubmit(context, backend);
     }
 
@@ -601,8 +595,7 @@ final class ExcavationTaskRunner implements TaskRunner {
             if (application.getDisposition() != ExcavationResultDisposition.APPLIED) {
                 throw new IllegalStateException("excavation reducer returned an inconsistent disposition");
             }
-            primaryActionsSinceRandomAudit++;
-            if (primaryActionsSinceRandomAudit >= RANDOM_AUDIT_INTERVAL_ACTIONS) randomAuditPending = true;
+            cacheAuditPending = true;
             RuntimeException releaseFailure = releaseConfirmed();
             if (releaseFailure != null) {
                 throw releaseFailure;
@@ -778,19 +771,18 @@ final class ExcavationTaskRunner implements TaskRunner {
             if (result.getOutcome() != ExcavationTargetOutcome.COMPLETED) {
                 throw new IllegalStateException("rediscovered block was not confirmed clear: " + result.getOutcome());
             }
-            if (randomVerification) {
+            if (cacheAuditVerification) {
                 RuntimeException releaseFailure = releaseConfirmed();
                 if (releaseFailure != null) throw releaseFailure;
                 excavationCheckpoint = completionCandidate;
                 taskCheckpoint = ExcavationTaskCheckpointCodec.encode(cylinder, excavationCheckpoint);
                 BlockPosition cleared = result.getPosition();
                 clearVerification();
-                primaryActionsSinceRandomAudit = 0;
-                randomAuditPending = false;
+                cacheAuditPending = false;
                 return StepResult.progress(
                     context.getActionEpoch(),
                     taskCheckpoint,
-                    "Cleared randomly rediscovered block " + cleared + "; resuming primary excavation");
+                    "Cleared cache-audit block " + cleared + "; resuming primary excavation");
             }
             ExcavationFrontier next = activePlan.getNextFrontier();
             RuntimeException releaseFailure = releaseConfirmed();
@@ -828,6 +820,7 @@ final class ExcavationTaskRunner implements TaskRunner {
         taskCheckpoint = ExcavationTaskCheckpointCodec.encode(cylinder, excavationCheckpoint);
         Integer completedLayer = verificationLayerY;
         clearVerification();
+        cacheAuditPending = false;
         if (!excavationCheckpoint.isComplete()) {
             return StepResult.progress(
                 context.getActionEpoch(),
@@ -960,7 +953,7 @@ final class ExcavationTaskRunner implements TaskRunner {
         verificationLayerY = null;
         verificationChanged = false;
         activeVerification = false;
-        randomVerification = false;
+        cacheAuditVerification = false;
     }
 
     private StepResult acceptPrimaryCheckpoint(TaskStepContext context, ExcavationCheckpoint appliedCheckpoint,
@@ -1003,37 +996,26 @@ final class ExcavationTaskRunner implements TaskRunner {
             || verificationLayerY != null && verificationFrontier.getLayerY() != verificationLayerY.intValue();
     }
 
-    private StepResult performRandomAudit(TaskStepContext context, ExcavationBackend backend) {
-        randomAuditPending = false;
-        if (excavationCheckpoint.getFrontier()
-            .isComplete()) return observeAndSubmit(context, backend);
-        int completedLayers = cylinder.getTopY() - excavationCheckpoint.getFrontier()
-            .getLayerY();
-        if (completedLayers <= 0) {
-            primaryActionsSinceRandomAudit = 0;
+    private StepResult performCacheAudit(TaskStepContext context, ExcavationBackend backend) {
+        cacheAuditPending = false;
+        ExcavationFrontier primaryFrontier = excavationCheckpoint.getFrontier();
+        if (primaryFrontier.isComplete()) return observeAndSubmit(context, backend);
+        long clearedPositions = excavationCheckpoint.getProgress()
+            .getProcessed();
+        if (clearedPositions == 0L) {
             return StepResult.progress(
                 context.getActionEpoch(),
                 taskCheckpoint,
-                "Deferred cleared-area sampling until a complete layer exists");
+                "Deferred cleared-cache audit until a processed position exists");
         }
 
-        Set<BlockPosition> sampled = new java.util.LinkedHashSet<>();
-        long availablePositions = cylinder.getColumnCount() * completedLayers;
-        int desiredSamples = (int) Math.min(RANDOM_AUDIT_SAMPLES, availablePositions);
-        for (int attempt = 0; sampled.size() < desiredSamples && attempt < RANDOM_AUDIT_SAMPLES * 16; attempt++) {
-            int y = cylinder.getTopY() - nextAuditInt(completedLayers);
-            int deltaX;
-            int deltaZ;
-            do {
-                deltaX = nextAuditInt(cylinder.getRadius() * 2 + 1) - cylinder.getRadius();
-                deltaZ = nextAuditInt(cylinder.getRadius() * 2 + 1) - cylinder.getRadius();
-            } while ((long) deltaX * deltaX + (long) deltaZ * deltaZ
-                > (long) cylinder.getRadius() * cylinder.getRadius());
-            sampled.add(new BlockPosition(cylinder.getCenterX() + deltaX, y, cylinder.getCenterZ() + deltaZ));
-        }
+        if (cacheAuditFrontier.isComplete() || cacheAuditOffset >= clearedPositions) resetCacheAuditCursor();
+        int desiredChecks = (int) Math.min(CLEARED_CACHE_AUDIT_BATCH, clearedPositions - cacheAuditOffset);
+        ExcavationTargetBatch batch = CylinderExcavationGeometry.nextBatch(cylinder, cacheAuditFrontier, desiredChecks);
 
         int checked = 0;
-        for (BlockPosition position : sampled) {
+        for (ExcavationTarget target : batch.getTargets()) {
+            BlockPosition position = target.getPosition();
             ExcavationFrontier targetFrontier = CylinderExcavationGeometry.atPosition(cylinder, position);
             ExcavationObservationRequest request = new ExcavationObservationRequest(
                 spec.getId(),
@@ -1049,20 +1031,22 @@ final class ExcavationTaskRunner implements TaskRunner {
                 observed = backend.observe(request);
                 validateObservation(request, observed);
             } catch (RuntimeException failure) {
-                randomAuditPending = true;
+                cacheAuditPending = true;
                 return StepResult.failed(
                     context.getActionEpoch(),
                     taskCheckpoint,
-                    "Random cleared-area observation failed: " + describe(failure),
+                    "Cleared-cache observation failed: " + describe(failure),
                     true);
             }
             if (!isLiveAuthority(context, backend)) {
                 return StepResult.failed(
                     context.getActionEpoch(),
                     taskCheckpoint,
-                    "Excavation authority changed during random cleared-area sampling",
+                    "Excavation authority changed during cleared-cache auditing",
                     false);
             }
+            cacheAuditFrontier = target.getNextFrontier();
+            cacheAuditOffset++;
             checked++;
             if (observed.getObservation()
                 .getClassification() != ExcavationBlockClassification.BREAKABLE) continue;
@@ -1070,17 +1054,17 @@ final class ExcavationTaskRunner implements TaskRunner {
             verificationFrontier = targetFrontier;
             verificationLayerY = null;
             verificationChanged = false;
-            randomVerification = true;
-            return verifyRandomAuditTarget(context, backend);
+            cacheAuditVerification = true;
+            return verifyCacheAuditTarget(context, backend);
         }
-        primaryActionsSinceRandomAudit = 0;
+        if (cacheAuditFrontier.isComplete() || cacheAuditOffset >= clearedPositions) resetCacheAuditCursor();
         return StepResult.progress(
             context.getActionEpoch(),
             taskCheckpoint,
-            "Randomly checked " + checked + " positions in previously cleared layers");
+            "Checked " + checked + " cached positions in the previously cleared excavation volume");
     }
 
-    private StepResult verifyRandomAuditTarget(TaskStepContext context, ExcavationBackend backend) {
+    private StepResult verifyCacheAuditTarget(TaskStepContext context, ExcavationBackend backend) {
         BlockPosition position = verificationFrontier.getPosition();
         ExcavationObservationRequest request = new ExcavationObservationRequest(
             spec.getId(),
@@ -1099,32 +1083,23 @@ final class ExcavationTaskRunner implements TaskRunner {
             return StepResult.failed(
                 context.getActionEpoch(),
                 taskCheckpoint,
-                "Random cleared-area target observation failed: " + describe(failure),
+                "Cleared-cache target observation failed: " + describe(failure),
                 true);
         }
         if (observed.getObservation()
             .getClassification() != ExcavationBlockClassification.BREAKABLE) {
             clearVerification();
-            primaryActionsSinceRandomAudit = 0;
             return StepResult.progress(
                 context.getActionEpoch(),
                 taskCheckpoint,
-                "Randomly rediscovered position changed before cleanup; resuming excavation");
+                "Cache-audit position changed before cleanup; resuming excavation");
         }
         return submitVerificationAction(context, backend, observed);
     }
 
-    private int nextAuditInt(int bound) {
-        if (bound <= 0) throw new IllegalArgumentException("audit bound must be positive");
-        randomAuditState = randomAuditState * 6364136223846793005L + 1442695040888963407L;
-        return (int) Math.floorMod(randomAuditState >>> 1, (long) bound);
-    }
-
-    private static long mixAuditSeed(long seed) {
-        long mixed = seed + 0x9E3779B97F4A7C15L;
-        mixed = (mixed ^ mixed >>> 30) * 0xBF58476D1CE4E5B9L;
-        mixed = (mixed ^ mixed >>> 27) * 0x94D049BB133111EBL;
-        return mixed ^ mixed >>> 31;
+    private void resetCacheAuditCursor() {
+        cacheAuditFrontier = CylinderExcavationGeometry.initialFrontier(cylinder);
+        cacheAuditOffset = 0L;
     }
 
     private static RuntimeException cancelAndClose(ExcavationActionHandle handle, ActionLease lease) {

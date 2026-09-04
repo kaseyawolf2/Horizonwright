@@ -246,19 +246,16 @@ public class ExcavationTaskRunnerTest {
     }
 
     @Test
-    public void slowRandomAuditRediscoversBlocksInOlderClearedLayers() {
+    public void everyBreakSystematicallyAuditsAndRediscoversProcessedBlocks() {
         harness = new Harness();
-        TaskSpec spec = ExcavationTask.cleanVolumeCylinder("random-reconcile", 0, 8, 8, 0, 0, 64);
+        TaskSpec spec = ExcavationTask.cleanVolumeCylinder("cache-reconcile", 0, 8, 8, 1, 64, 64);
         harness.controller.submit(spec);
         harness.controller.tick();
 
-        for (int action = 0; action < 64; action++) {
-            harness.controller.tick();
-            harness.backend.confirm();
-            harness.controller.tick();
-            harness.controller.tick();
-        }
-        assertEquals(64, harness.backend.submissions);
+        harness.controller.tick();
+        harness.backend.confirm();
+        harness.controller.tick();
+        assertEquals(1, harness.backend.submissions);
         harness.backend.confirmedClear.clear();
 
         TaskSnapshot rediscovered = task(harness.controller.tick(), spec.getId());
@@ -266,11 +263,11 @@ public class ExcavationTaskRunnerTest {
         assertTrue(
             rediscovered.getDetail()
                 .contains("Rediscovered block"));
-        assertEquals(65, harness.backend.submissions);
+        assertEquals(2, harness.backend.submissions);
         assertTrue(
             harness.backend.lastRequest.getIntent()
                 .getPosition()
-                .getY() > 0);
+                .getY() == 64);
     }
 
     @Test
