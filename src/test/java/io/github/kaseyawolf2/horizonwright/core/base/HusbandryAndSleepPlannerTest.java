@@ -86,6 +86,28 @@ public class HusbandryAndSleepPlannerTest {
     }
 
     @Test
+    public void cullingNeverTargetsBreedingEngagedAdults() {
+        List<AnimalObservation> animals = Arrays.asList(
+            animal("a", LivestockSpecies.COW, true, false, false, false, false, false),
+            animal("b", LivestockSpecies.COW, true, false, false, false, false, false),
+            animal("c", LivestockSpecies.COW, true, false, false, false, false, false),
+            animal("d", LivestockSpecies.COW, true, false, false, false, false, false),
+            animal("z-engaged", LivestockSpecies.COW, true, false, false, false, false, true));
+
+        HusbandryPlan plan = husbandry.plan(cows, observation(12L, "engaged", animals, noDrops(), true, true));
+        assertSingleAnimalAction(plan, HusbandryActionKind.CULL_EXCESS_ADULT, "d");
+
+        List<AnimalObservation> allEngaged = Arrays.asList(
+            animal("a", LivestockSpecies.COW, true, false, false, false, false, true),
+            animal("b", LivestockSpecies.COW, true, false, false, false, false, true),
+            animal("c", LivestockSpecies.COW, true, false, false, false, false, true),
+            animal("d", LivestockSpecies.COW, true, false, false, false, false, true),
+            animal("e", LivestockSpecies.COW, true, false, false, false, false, true));
+        HusbandryPlan held = husbandry.plan(cows, observation(13L, "all-engaged", allEngaged, noDrops(), true, true));
+        assertHeldWithoutToken(held);
+    }
+
+    @Test
     public void dropCollectionTargetsOneTypedDropStrictlyInsideNamedPen() {
         HusbandryDropObservation outside = new HusbandryDropObservation(
             "outside-drop",

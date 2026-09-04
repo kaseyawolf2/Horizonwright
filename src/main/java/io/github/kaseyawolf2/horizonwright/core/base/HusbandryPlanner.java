@@ -21,6 +21,7 @@ public final class HusbandryPlanner {
         }
         List<AnimalObservation> adults = new ArrayList<AnimalObservation>();
         List<AnimalObservation> eligible = new ArrayList<AnimalObservation>();
+        List<AnimalObservation> cullable = new ArrayList<AnimalObservation>();
         for (AnimalObservation animal : observation.getAnimals()) {
             if (!policy.getPen()
                 .contains(animal.getPosition()) || animal.getSpecies() != policy.getSpecies()) {
@@ -31,9 +32,11 @@ public final class HusbandryPlanner {
             }
             if (animal.isEligibleTarget()) {
                 eligible.add(animal);
+                if (!animal.isBreedingEngaged()) cullable.add(animal);
             }
         }
         Collections.sort(eligible, Comparator.comparing(AnimalObservation::getIdentity));
+        Collections.sort(cullable, Comparator.comparing(AnimalObservation::getIdentity));
 
         if (adults.size() < policy.getMinimumAdults()) {
             List<AnimalObservation> ready = new ArrayList<AnimalObservation>();
@@ -91,11 +94,12 @@ public final class HusbandryPlanner {
         }
         int maximumSafeCullByPopulation = adults.size() - Math.max(2, policy.getMinimumAdults());
         int maximumSafeCullByBreedingPair = eligible.size() - 2;
-        int maximumSafeCull = Math.max(0, Math.min(maximumSafeCullByPopulation, maximumSafeCullByBreedingPair));
+        int maximumSafeCull = Math
+            .max(0, Math.min(Math.min(maximumSafeCullByPopulation, maximumSafeCullByBreedingPair), cullable.size()));
         if (excess > maximumSafeCull) {
             return held(policy, observation, adults.size(), "protected population prevents a safe bounded cull");
         }
-        AnimalObservation target = eligible.get(eligible.size() - 1);
+        AnimalObservation target = cullable.get(cullable.size() - 1);
         return action(
             policy,
             observation,

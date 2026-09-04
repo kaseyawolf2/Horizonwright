@@ -18,7 +18,7 @@ but cannot replace the disposable-world observation run required by the plan.
 | Excavation resumes after each interruption | Real scheduler synthetic scenario and physical excavation/farm/sleep interruption testing | Partially proven; combined observation run pending |
 | Excavation resumes after reconnect | Export/restore tests preserve exact checkpoint and reject stale epochs; physical excavation rejoin was confirmed | Proven for current tested workflow |
 | Reserved items are not lost | Container transition tokens, cursor/slot postconditions, staged repair-material return, and physical repair testing | Partially proven; full observation run pending |
-| Population bounds are never violated | Pure planner preserves breeding pair and excludes babies/named/tamed/protected; live boundary refuses all culls pending authorization | Non-destructive actions cannot reduce population; authorized live culling and physical evidence missing |
+| Population bounds are never violated | Pure planner preserves breeding pair; excludes babies/named/tamed/protected and currently breeding-engaged adults; live boundary refuses all culls pending authorization | Non-destructive actions cannot reduce population; authorized live culling and physical evidence missing |
 | Excavation checkpoint is not lost | Persistence and reconnect tests plus physical rejoin testing | Proven for current tested workflow |
 
 ## Milestone 4 functionality still missing or incomplete
@@ -66,9 +66,9 @@ specification. It verifies the following sequence:
 2. A recurring farm occurrence safely suspends the excavation without changing
    its frontier evidence.
 3. The farm completes and excavation resumes from the preserved checkpoint.
-4. Night sleep, the next farm occurrence, and livestock work become due while
+4. Night sleep, the next farm occurrence, tree work, and livestock work become due while
    excavation is active.
-5. The three chores execute in configured relative order while the fallback
+5. The four chores execute in configured relative order while the fallback
    remains suspended.
 6. Excavation resumes and advances from the exact prior checkpoint.
 7. Controller and scheduler state are exported, restored into a fresh runtime,
