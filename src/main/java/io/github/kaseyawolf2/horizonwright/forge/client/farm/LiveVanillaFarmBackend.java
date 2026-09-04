@@ -15,6 +15,7 @@ import io.github.kaseyawolf2.horizonwright.core.action.ActionCapability;
 import io.github.kaseyawolf2.horizonwright.core.action.ActionLease;
 import io.github.kaseyawolf2.horizonwright.core.action.ActionSessionGuard;
 import io.github.kaseyawolf2.horizonwright.core.base.BasePosition;
+import io.github.kaseyawolf2.horizonwright.core.base.CropFamily;
 import io.github.kaseyawolf2.horizonwright.core.base.CropObservation;
 import io.github.kaseyawolf2.horizonwright.core.base.FarmActionKind;
 import io.github.kaseyawolf2.horizonwright.core.base.NamedArea;
@@ -30,7 +31,7 @@ import io.github.kaseyawolf2.horizonwright.forge.client.MinecraftRuntimeAccess;
 import io.github.kaseyawolf2.horizonwright.forge.client.network.ActionPacketDispatch;
 import io.github.kaseyawolf2.horizonwright.runtime.task.FarmBackend;
 
-/** Exact vanilla crop approach, non-destructive harvest, and immutable postcondition backend. */
+/** Exact vanilla/CropsNH approach, non-destructive harvest, and immutable postcondition backend. */
 public final class LiveVanillaFarmBackend implements FarmBackend {
 
     public interface NavigationSource {
@@ -45,7 +46,9 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
         ActionCapability.PLACE,
         ActionCapability.HELD_USE);
     private static final EnumSet<ActionCapability> RIGHT_CLICK_HARVEST = EnumSet
-        .of(ActionCapability.MOVEMENT, ActionCapability.LOOK, ActionCapability.USE);
+        .of(ActionCapability.MOVEMENT, ActionCapability.LOOK, ActionCapability.USE, ActionCapability.CONTAINER);
+    private static final String CROPS_NH_SPADE = "com.gtnewhorizon.cropsnh.items.tools.ItemSpade";
+    private static final String CROPS_NH_REINFORCED_SPADE = "com.gtnewhorizon.cropsnh.items.tools.ItemReinforcedSpade";
     private static final long ACTION_TIMEOUT_NANOS = TimeUnit.SECONDS.toNanos(30L);
 
     private final Minecraft minecraft;
@@ -75,7 +78,7 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
         }
         BackendAvailability status = navigation.availability();
         Availability result = status.isAvailable()
-            ? Availability.available("Exact vanilla farm actions ready through " + status.getDiagnostic())
+            ? Availability.available("Exact vanilla and CropsNH farm actions ready through " + status.getDiagnostic())
             : Availability.unavailable("Farm navigation unavailable: " + status.getDiagnostic());
         DevelopmentTrace.event(
             "farm-live",
@@ -212,13 +215,21 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
             : -1;
         if (action == FarmActionKind.BREAK_AND_REPLANT && seedSlot < 0)
             throw new IllegalStateException("an exact approved replant seed must be present in the hotbar");
-        int emptyHandSlot = action == FarmActionKind.RIGHT_CLICK_HARVEST ? findEmptyHotbarSlot() : -1;
+        boolean cropsNhHarvest = action == FarmActionKind.RIGHT_CLICK_HARVEST
+            && current.getFamily() == CropFamily.CROPS_NH;
+        int spadeHotbarSlot = cropsNhHarvest ? findCropsNhSpade(0, 9) : -1;
+        int stagedSpadeInventorySlot = cropsNhHarvest && spadeHotbarSlot < 0 ? findCropsNhSpade(9, 36) : -1;
+        boolean requiresEmptyHand = action == FarmActionKind.RIGHT_CLICK_HARVEST && spadeHotbarSlot < 0
+            && stagedSpadeInventorySlot < 0;
+        int harvestHandSlot = spadeHotbarSlot >= 0 ? spadeHotbarSlot
+            : stagedSpadeInventorySlot >= 0 ? chooseEvacuationHotbarSlot()
+                : action == FarmActionKind.RIGHT_CLICK_HARVEST ? findEmptyHotbarSlot() : -1;
         int emptyInventorySlot = -1;
-        if (action == FarmActionKind.RIGHT_CLICK_HARVEST && emptyHandSlot < 0) {
+        if (requiresEmptyHand && harvestHandSlot < 0) {
             emptyInventorySlot = findEmptyMainInventorySlot();
             if (emptyInventorySlot < 0) throw new IllegalStateException(
                 "right-click crop harvesting requires an empty hotbar slot or main-inventory space");
-            emptyHandSlot = chooseEvacuationHotbarSlot();
+            harvestHandSlot = chooseEvacuationHotbarSlot();
         }
         verifier.requireCurrent(
             request.getDecision(),
@@ -234,8 +245,10 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
             lease,
             navigation,
             seedSlot,
-            emptyHandSlot,
+            harvestHandSlot,
             emptyInventorySlot,
+            stagedSpadeInventorySlot,
+            requiresEmptyHand,
             current,
             System.nanoTime());
         DevelopmentTrace.event(
@@ -245,10 +258,14 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
             request.getRequestId(),
             "seedSlot",
             seedSlot,
-            "emptyHandSlot",
-            emptyHandSlot,
+            "harvestHandSlot",
+            harvestHandSlot,
             "emptyInventorySlot",
             emptyInventorySlot,
+            "stagedSpadeInventorySlot",
+            stagedSpadeInventorySlot,
+            "requiresEmptyHand",
+            requiresEmptyHand,
             "priorSlot",
             minecraft.thePlayer.inventory.currentItem,
             "playerX",
@@ -303,14 +320,50 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
         return selected;
     }
 
+    private int findCropsNhSpade(int startInclusive, int endExclusive) {
+        int reinforced = findExactItemClass(CROPS_NH_REINFORCED_SPADE, startInclusive, endExclusive);
+        return reinforced >= 0 ? reinforced : findExactItemClass(CROPS_NH_SPADE, startInclusive, endExclusive);
+    }
+
+    private int findExactItemClass(String className, int startInclusive, int endExclusive) {
+        for (int slot = startInclusive; slot < endExclusive; slot++) {
+            ItemStack stack = minecraft.thePlayer.inventory.mainInventory[slot];
+            if (stack != null && stack.getItem() != null
+                && className.equals(
+                    stack.getItem()
+                        .getClass()
+                        .getName()))
+                return slot;
+        }
+        return -1;
+    }
+
+    private boolean isCropsNhSpadeAt(int slot) {
+        return slot >= 0 && slot < 36 && isCropsNhSpade(minecraft.thePlayer.inventory.mainInventory[slot]);
+    }
+
+    static boolean isCropsNhSpade(ItemStack stack) {
+        if (stack == null || stack.getItem() == null) return false;
+        String className = stack.getItem()
+            .getClass()
+            .getName();
+        return isCropsNhSpadeClassName(className);
+    }
+
+    static boolean isCropsNhSpadeClassName(String className) {
+        return CROPS_NH_SPADE.equals(className) || CROPS_NH_REINFORCED_SPADE.equals(className);
+    }
+
     private final class LiveHandle implements ActionHandle {
 
         private final ActionRequest request;
         private final ActionLease lease;
         private final NavigationBackend navigation;
         private final int seedSlot;
-        private final int emptyHandSlot;
+        private final int harvestHandSlot;
         private final int emptyInventorySlot;
+        private final int stagedSpadeInventorySlot;
+        private final boolean requiresEmptyHand;
         private final CropObservation plannedBefore;
         private final int priorHotbarSlot;
         private final long deadlineNanos;
@@ -323,18 +376,22 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
         private boolean replantDispatched;
         private boolean harvestDispatched;
         private boolean emptyHandPrepared;
+        private boolean spadeStaged;
         private boolean slotChanged;
         private int collectionSettleTicks;
         private volatile boolean cancellationRequested;
 
         private LiveHandle(ActionRequest request, ActionLease lease, NavigationBackend navigation, int seedSlot,
-            int emptyHandSlot, int emptyInventorySlot, CropObservation plannedBefore, long startedAtNanos) {
+            int harvestHandSlot, int emptyInventorySlot, int stagedSpadeInventorySlot, boolean requiresEmptyHand,
+            CropObservation plannedBefore, long startedAtNanos) {
             this.request = request;
             this.lease = lease;
             this.navigation = navigation;
             this.seedSlot = seedSlot;
-            this.emptyHandSlot = emptyHandSlot;
+            this.harvestHandSlot = harvestHandSlot;
             this.emptyInventorySlot = emptyInventorySlot;
+            this.stagedSpadeInventorySlot = stagedSpadeInventorySlot;
+            this.requiresEmptyHand = requiresEmptyHand;
             this.plannedBefore = plannedBefore;
             this.priorHotbarSlot = minecraft.thePlayer.inventory.currentItem;
             this.deadlineNanos = saturatingAdd(startedAtNanos, ACTION_TIMEOUT_NANOS);
@@ -497,14 +554,20 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
                 fail("Seed inventory changed after approach");
                 return;
             }
-            if (action == FarmActionKind.RIGHT_CLICK_HARVEST && emptyInventorySlot < 0
-                && minecraft.thePlayer.inventory.mainInventory[emptyHandSlot] != null) {
+            if (action == FarmActionKind.RIGHT_CLICK_HARVEST && requiresEmptyHand
+                && emptyInventorySlot < 0
+                && minecraft.thePlayer.inventory.mainInventory[harvestHandSlot] != null) {
                 fail("The reserved empty hotbar slot was filled before crop harvesting");
                 return;
             }
-            if (action == FarmActionKind.RIGHT_CLICK_HARVEST && emptyInventorySlot >= 0
+            if (action == FarmActionKind.RIGHT_CLICK_HARVEST && requiresEmptyHand
+                && emptyInventorySlot >= 0
                 && minecraft.thePlayer.inventory.mainInventory[emptyInventorySlot] != null) {
                 fail("The reserved main-inventory slot was filled before crop harvesting");
+                return;
+            }
+            if (stagedSpadeInventorySlot >= 0 && !isCropsNhSpadeAt(stagedSpadeInventorySlot)) {
+                fail("The reserved CropsNH spade moved before crop harvesting");
                 return;
             }
             try {
@@ -521,7 +584,9 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
             guard.begin(lease);
             ownsActionSession = true;
             if (action == FarmActionKind.RIGHT_CLICK_HARVEST) {
-                if (minecraft.thePlayer.inventory.mainInventory[emptyHandSlot] == null) rightClickHarvest();
+                if (stagedSpadeInventorySlot >= 0) prepareSpadeHand();
+                else if (!requiresEmptyHand || minecraft.thePlayer.inventory.mainInventory[harvestHandSlot] == null)
+                    rightClickHarvest();
                 else prepareEmptyHand();
                 return;
             }
@@ -557,7 +622,7 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
                 return;
             }
             int windowId = minecraft.thePlayer.openContainer.windowId;
-            int hotbarContainerSlot = 36 + emptyHandSlot;
+            int hotbarContainerSlot = 36 + harvestHandSlot;
             minecraft.playerController.windowClick(windowId, hotbarContainerSlot, 0, 0, minecraft.thePlayer);
             minecraft.playerController.windowClick(windowId, emptyInventorySlot, 0, 0, minecraft.thePlayer);
             if (minecraft.thePlayer.inventory.getItemStack() != null) {
@@ -570,7 +635,7 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
             trace(
                 "empty-hand-move",
                 "hotbarSlot",
-                emptyHandSlot,
+                harvestHandSlot,
                 "inventorySlot",
                 emptyInventorySlot,
                 "windowId",
@@ -586,12 +651,56 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
             }
         }
 
+        private void prepareSpadeHand() {
+            if (!guard.isActiveLease(lease)) {
+                fail("Farm inventory session lost packet authority");
+                return;
+            }
+            if (!isCropsNhSpadeAt(stagedSpadeInventorySlot) || minecraft.thePlayer.inventory.getItemStack() != null
+                || minecraft.thePlayer.openContainer != minecraft.thePlayer.inventoryContainer) {
+                fail("Cannot safely stage the reserved CropsNH spade");
+                return;
+            }
+            int windowId = minecraft.thePlayer.openContainer.windowId;
+            minecraft.playerController
+                .windowClick(windowId, stagedSpadeInventorySlot, harvestHandSlot, 2, minecraft.thePlayer);
+            if (!isCropsNhSpadeAt(harvestHandSlot)) {
+                fail("Could not move the CropsNH spade into the hotbar");
+                return;
+            }
+            spadeStaged = true;
+            phase = Phase.WAITING_FOR_EMPTY_HAND;
+            detail = "Moving the CropsNH spade into the hotbar for seed-aware harvesting";
+            trace(
+                "spade-stage",
+                "hotbarSlot",
+                harvestHandSlot,
+                "inventorySlot",
+                stagedSpadeInventorySlot,
+                "windowId",
+                windowId);
+            try {
+                ActionPacketDispatch.afterPendingWrites(minecraft, () -> {
+                    synchronized (LiveHandle.this) {
+                        emptyHandPrepared = true;
+                    }
+                });
+            } catch (RuntimeException failure) {
+                fail("Could not synchronize the CropsNH spade move: " + failure.getMessage());
+            }
+        }
+
         private void awaitEmptyHandPreparation() {
             if (!emptyHandPrepared) {
                 detail = "Waiting for the empty-hand inventory move to drain";
                 return;
             }
-            if (minecraft.thePlayer.inventory.mainInventory[emptyHandSlot] != null) {
+            if (spadeStaged && !isCropsNhSpadeAt(harvestHandSlot)) {
+                fail("CropsNH spade was not present after its inventory move");
+                return;
+            }
+            if (!spadeStaged && requiresEmptyHand
+                && minecraft.thePlayer.inventory.mainInventory[harvestHandSlot] != null) {
                 fail("Hotbar slot remained occupied after the empty-hand inventory move");
                 return;
             }
@@ -601,12 +710,16 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
         private void rightClickHarvest() {
             BasePosition target = request.getDecision()
                 .getTarget();
-            minecraft.thePlayer.inventory.currentItem = emptyHandSlot;
-            slotChanged = emptyHandSlot != priorHotbarSlot;
+            minecraft.thePlayer.inventory.currentItem = harvestHandSlot;
+            slotChanged = harvestHandSlot != priorHotbarSlot;
             minecraft.playerController.updateController();
             ItemStack held = MinecraftRuntimeAccess.heldItem(minecraft.thePlayer);
-            if (held != null) {
+            if (requiresEmptyHand && held != null) {
                 fail("Could not establish an empty hand for crop harvesting");
+                return;
+            }
+            if (!requiresEmptyHand && !isCropsNhSpade(held)) {
+                fail("Could not establish the CropsNH spade for crop harvesting");
                 return;
             }
             aimAt(target);
@@ -626,6 +739,13 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
                 accepted,
                 "held",
                 held == null ? "empty" : observer.hotbarMaterialIdentity(minecraft.thePlayer.inventory.currentItem));
+            try {
+                restoreSlot();
+                returnStagedSpade();
+            } catch (RuntimeException failure) {
+                fail("Crop was harvested, but the CropsNH spade could not be returned: " + failure.getMessage());
+                return;
+            }
             phase = Phase.DISPATCHING_HARVEST;
             detail = accepted ? "Dispatching the non-destructive crop harvest"
                 : "Crop right-click packet sent; waiting for its verified result";
@@ -922,8 +1042,38 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
             slotChanged = false;
         }
 
+        private void returnStagedSpade() {
+            if (!spadeStaged) return;
+            if (minecraft.thePlayer.inventory.getItemStack() != null
+                || minecraft.thePlayer.openContainer != minecraft.thePlayer.inventoryContainer
+                || !isCropsNhSpadeAt(harvestHandSlot)) {
+                throw new IllegalStateException("Cannot safely return the staged CropsNH spade");
+            }
+            minecraft.playerController.windowClick(
+                minecraft.thePlayer.openContainer.windowId,
+                stagedSpadeInventorySlot,
+                harvestHandSlot,
+                2,
+                minecraft.thePlayer);
+            spadeStaged = false;
+            trace("spade-return", "hotbarSlot", harvestHandSlot, "inventorySlot", stagedSpadeInventorySlot);
+        }
+
         private void stopActionSession() {
             restoreSlot();
+            if (spadeStaged) {
+                try {
+                    returnStagedSpade();
+                } catch (RuntimeException failure) {
+                    DevelopmentTrace.event(
+                        "farm-live",
+                        "spade-return-failed",
+                        "request",
+                        request.getRequestId(),
+                        "failure",
+                        failure.getMessage());
+                }
+            }
             stopBreakingInput();
             if (ownsActionSession) {
                 guard.quarantine(lease);

@@ -19,7 +19,7 @@ import io.github.kaseyawolf2.horizonwright.core.container.ItemFingerprint;
 import io.github.kaseyawolf2.horizonwright.forge.client.MinecraftRuntimeAccess;
 import io.github.kaseyawolf2.horizonwright.forge.client.container.MinecraftContainerSnapshotter;
 
-/** Bounded client-thread observer for exact vanilla 1.7.10 crop blocks and seed inventory. */
+/** Bounded client-thread observer for exact vanilla and CropsNH crop state. */
 public final class MinecraftVanillaFarmObserver {
 
     private static final long MAX_SCANNED_BLOCKS = 65_536L;
@@ -27,6 +27,7 @@ public final class MinecraftVanillaFarmObserver {
     private final Minecraft minecraft;
     private final ProfileFarmConfiguration configuration;
     private final VanillaCropClassifier classifier = new VanillaCropClassifier();
+    private final CropsNhCropAdapter cropsNh = new CropsNhCropAdapter();
     private final MinecraftContainerSnapshotter items = new MinecraftContainerSnapshotter();
 
     public MinecraftVanillaFarmObserver(Minecraft minecraft, ProfileFarmConfiguration configuration) {
@@ -73,8 +74,7 @@ public final class MinecraftVanillaFarmObserver {
             throw new IllegalStateException("farm target is not loaded in the current dimension");
         }
         CropObservation observation = observeIfCrop(position);
-        if (observation == null)
-            throw new IllegalStateException("frozen farm target is no longer a supported vanilla crop");
+        if (observation == null) throw new IllegalStateException("frozen farm target is no longer a supported crop");
         return observation;
     }
 
@@ -141,11 +141,24 @@ public final class MinecraftVanillaFarmObserver {
         Object registryName = Block.blockRegistry.getNameForObject(block);
         int metadata = MinecraftRuntimeAccess
             .blockMetadata(minecraft.theWorld, position.getX(), position.getY(), position.getZ());
+        TileEntity tile = MinecraftRuntimeAccess
+            .tileEntity(minecraft.theWorld, position.getX(), position.getY(), position.getZ());
+        CropsNhCropAdapter.Descriptor cropsNhDescriptor = cropsNh
+            .read(registryName == null ? null : registryName.toString(), tile)
+            .orElse(null);
+        if (cropsNhDescriptor != null) {
+            return new CropObservation(
+                position,
+                cropsNhDescriptor.getFamily(),
+                cropsNhDescriptor.getObservationFingerprint(),
+                cropsNhDescriptor.getCropIdentity(),
+                true,
+                cropsNhDescriptor.isMature(),
+                cropsNhDescriptor.isProtected());
+        }
         VanillaCropClassifier.Descriptor descriptor = classifier
             .classify(block, registryName == null ? null : registryName.toString(), metadata);
         if (descriptor == null) return null;
-        TileEntity tile = MinecraftRuntimeAccess
-            .tileEntity(minecraft.theWorld, position.getX(), position.getY(), position.getZ());
         return new CropObservation(
             position,
             descriptor.getFamily(),
