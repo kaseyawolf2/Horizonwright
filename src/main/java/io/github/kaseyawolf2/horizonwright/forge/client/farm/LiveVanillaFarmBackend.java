@@ -597,7 +597,9 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
             }
             BasePosition target = request.getDecision()
                 .getTarget();
-            int playerY = target.getY() == NavigationRequest.MAX_Y ? target.getY() : target.getY() + 1;
+            // Baritone's player block position is the non-solid crop layer, not the
+            // rendered/eye-height position reported by EntityPlayer.posY.
+            int playerY = target.getY();
             long now = System.nanoTime();
             long remaining = deadlineNanos - now;
             if (remaining <= 0L) {
