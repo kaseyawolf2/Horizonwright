@@ -143,6 +143,9 @@ public final class RuntimeTaskRunnerFactory implements TaskRunnerFactory {
         if (FarmTask.TYPE.equals(spec.getType())) {
             return new FarmTaskRunner(spec, checkpoint, farm);
         }
+        if (TreeTask.TYPE.equals(spec.getType())) {
+            return new TreeTaskRunner(spec, checkpoint, farm);
+        }
         if (SleepTask.TYPE.equals(spec.getType())) {
             return new SleepTaskRunner(spec, checkpoint, sleep);
         }

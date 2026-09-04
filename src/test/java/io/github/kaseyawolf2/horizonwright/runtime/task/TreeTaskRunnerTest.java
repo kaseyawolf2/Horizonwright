@@ -1,0 +1,357 @@
+package io.github.kaseyawolf2.horizonwright.runtime.task;
+
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertTrue;
+
+import java.util.Arrays;
+import java.util.Collections;
+
+import org.junit.After;
+import org.junit.Test;
+
+import io.github.kaseyawolf2.horizonwright.core.action.ActionCapability;
+import io.github.kaseyawolf2.horizonwright.core.action.ActionLease;
+import io.github.kaseyawolf2.horizonwright.core.action.InMemoryActionBroker;
+import io.github.kaseyawolf2.horizonwright.core.base.BasePosition;
+import io.github.kaseyawolf2.horizonwright.core.base.NamedArea;
+import io.github.kaseyawolf2.horizonwright.core.base.SaplingReserveEvidence;
+import io.github.kaseyawolf2.horizonwright.core.base.TreeObservation;
+import io.github.kaseyawolf2.horizonwright.core.base.TreeObservationState;
+import io.github.kaseyawolf2.horizonwright.core.navigation.NavigationBackend;
+import io.github.kaseyawolf2.horizonwright.core.navigation.NavigationProgress;
+import io.github.kaseyawolf2.horizonwright.core.task.BlockedCause;
+import io.github.kaseyawolf2.horizonwright.core.task.ControllerSnapshot;
+import io.github.kaseyawolf2.horizonwright.core.task.MonotonicClock;
+import io.github.kaseyawolf2.horizonwright.core.task.TaskOrchestrator;
+import io.github.kaseyawolf2.horizonwright.core.task.TaskSnapshot;
+import io.github.kaseyawolf2.horizonwright.core.task.TaskSpec;
+import io.github.kaseyawolf2.horizonwright.core.task.TaskState;
+
+public class TreeTaskRunnerTest {
+
+    private Harness harness;
+
+    @After
+    public void closeHarness() {
+        if (harness != null) harness.close();
+    }
+
+    @Test
+    public void fellAndReplantAdvanceOnlyAfterSeparateConfirmedPostconditions() {
+        harness = new Harness(standing(), 4);
+        TaskSpec spec = TreeTask.finitePass("trees", "woodlot", 2);
+        harness.controller.submit(spec);
+
+        assertEquals(TaskState.RUNNING, task(harness.controller.tick(), spec.getId()).getState());
+        TaskSnapshot fellSubmitted = task(harness.controller.tick(), spec.getId());
+        assertEquals(1, harness.backend.actions);
+        assertTrue(
+            harness.backend.lease.getCapabilities()
+                .contains(ActionCapability.DIG));
+        assertTrue(
+            harness.backend.lease.getCapabilities()
+                .contains(ActionCapability.PLACE));
+        assertEquals(
+            "READY_TO_FELL",
+            fellSubmitted.getCheckpoint()
+                .getValues()
+                .get("work.stage"));
+
+        harness.backend.confirm(clear());
+        TaskSnapshot clearConfirmed = task(harness.controller.tick(), spec.getId());
+        assertEquals(
+            "READY_TO_REPLANT",
+            clearConfirmed.getCheckpoint()
+                .getValues()
+                .get("work.stage"));
+        assertEquals(
+            "0",
+            clearConfirmed.getCheckpoint()
+                .getValues()
+                .get("nextIndex"));
+
+        task(harness.controller.tick(), spec.getId());
+        assertEquals(2, harness.backend.actions);
+        assertFalse(
+            harness.backend.lease.getCapabilities()
+                .contains(ActionCapability.DIG));
+        assertTrue(
+            harness.backend.lease.getCapabilities()
+                .contains(ActionCapability.PLACE));
+
+        harness.backend.confirm(planted());
+        TaskSnapshot completed = task(harness.controller.tick(), spec.getId());
+        assertEquals(TaskState.COMPLETED, completed.getState());
+        assertEquals(
+            "1",
+            completed.getCheckpoint()
+                .getValues()
+                .get("nextIndex"));
+        assertEquals(
+            "1",
+            completed.getCheckpoint()
+                .getValues()
+                .get("verifiedTrees"));
+        assertTrue(
+            harness.broker.snapshot()
+                .getActiveOwners()
+                .isEmpty());
+    }
+
+    @Test
+    public void pauseDuringReplantCancelsWithoutLosingDurableClearFrontier() {
+        harness = new Harness(standing(), 4);
+        TaskSpec spec = TreeTask.finitePass("trees", "woodlot", 2);
+        harness.controller.submit(spec);
+        harness.controller.tick();
+        harness.controller.tick();
+        harness.backend.confirm(clear());
+        harness.controller.tick();
+        TaskSnapshot replantSubmitted = task(harness.controller.tick(), spec.getId());
+        RecordingBackend.Handle firstReplant = harness.backend.handle;
+
+        harness.controller.pause(spec.getId());
+        TaskSnapshot suspended = task(harness.controller.tick(), spec.getId());
+        assertEquals(TaskState.SUSPENDED, suspended.getState());
+        assertEquals(replantSubmitted.getCheckpoint(), suspended.getCheckpoint());
+        assertEquals(TreeBackend.ActionState.CANCELLED, firstReplant.state);
+        assertEquals(
+            "READY_TO_REPLANT",
+            suspended.getCheckpoint()
+                .getValues()
+                .get("work.stage"));
+
+        harness.controller.resume(spec.getId());
+        task(harness.controller.tick(), spec.getId());
+        assertEquals(3, harness.backend.actions);
+    }
+
+    @Test
+    public void reserveShortageBlocksBeforeFellingAuthorityIsAcquired() {
+        harness = new Harness(standing(), 2);
+        TaskSpec spec = TreeTask.finitePass("trees", "woodlot", 2);
+        harness.controller.submit(spec);
+        harness.controller.tick();
+
+        TaskSnapshot blocked = task(harness.controller.tick(), spec.getId());
+        assertEquals(TaskState.BLOCKED, blocked.getState());
+        assertEquals(
+            BlockedCause.MISSING_REQUIREMENT,
+            blocked.getBlockedReason()
+                .get()
+                .getCause());
+        assertEquals(0, harness.backend.actions);
+        assertTrue(
+            harness.broker.snapshot()
+                .getActiveOwners()
+                .isEmpty());
+    }
+
+    private static TaskSnapshot task(ControllerSnapshot snapshot, String id) {
+        return snapshot.findTask(id)
+            .orElseThrow(() -> new AssertionError("missing task " + id));
+    }
+
+    private static TreeObservation standing() {
+        return new TreeObservation(
+            "oak@2,64,4",
+            10L,
+            "oak-standing",
+            "minecraft:sapling:0",
+            Arrays.asList(new BasePosition(0, 2, 64, 4), new BasePosition(0, 2, 65, 4)),
+            new BasePosition(0, 2, 64, 4),
+            TreeObservationState.STANDING,
+            true,
+            false);
+    }
+
+    private static TreeObservation clear() {
+        return new TreeObservation(
+            "oak@2,64,4",
+            11L,
+            "oak-clear",
+            "minecraft:sapling:0",
+            Collections.<BasePosition>emptyList(),
+            new BasePosition(0, 2, 64, 4),
+            TreeObservationState.FELLED_CLEAR,
+            false,
+            false);
+    }
+
+    private static TreeObservation planted() {
+        return new TreeObservation(
+            "oak@2,64,4",
+            12L,
+            "oak-planted",
+            "minecraft:sapling:0",
+            Collections.<BasePosition>emptyList(),
+            new BasePosition(0, 2, 64, 4),
+            TreeObservationState.SAPLING_PLANTED,
+            false,
+            false);
+    }
+
+    private static final class Harness implements AutoCloseable {
+
+        private final InMemoryActionBroker broker = new InMemoryActionBroker();
+        private final RecordingBackend backend;
+        private final TaskOrchestrator controller;
+
+        private Harness(TreeObservation initial, int saplings) {
+            backend = new RecordingBackend(initial, saplings);
+            controller = new TaskOrchestrator(
+                new FixedClock(),
+                new RuntimeTaskRunnerFactory(UnusedNavigationAccess.INSTANCE, new Access(backend)),
+                broker);
+        }
+
+        @Override
+        public void close() {
+            controller.close();
+        }
+    }
+
+    private static final class Access implements FarmRuntimeAccess {
+
+        private final TreeBackend backend;
+
+        private Access(TreeBackend backend) {
+            this.backend = backend;
+        }
+
+        @Override
+        public FarmBackend getFarmBackend() {
+            return null;
+        }
+
+        @Override
+        public TreeBackend getTreeBackend() {
+            return backend;
+        }
+
+        @Override
+        public boolean isDryRun() {
+            return false;
+        }
+    }
+
+    private static final class RecordingBackend implements TreeBackend {
+
+        private final NamedArea area = new NamedArea(
+            "woodlot",
+            "Woodlot",
+            new BasePosition(0, 0, 60, 0),
+            new BasePosition(0, 8, 72, 8));
+        private final int saplings;
+        private TreeObservation current;
+        private int actions;
+        private ActionLease lease;
+        private Handle handle;
+
+        private RecordingBackend(TreeObservation initial, int saplings) {
+            current = initial;
+            this.saplings = saplings;
+        }
+
+        @Override
+        public FarmBackend.Availability availability() {
+            return FarmBackend.Availability.available("recording tree backend ready");
+        }
+
+        @Override
+        public PassSnapshot scan(ScanRequest request) {
+            return new PassSnapshot(
+                request.getTaskId(),
+                request.getActionEpoch(),
+                area,
+                Collections.singletonList(current));
+        }
+
+        @Override
+        public TargetSnapshot observe(TargetRequest request) {
+            return new TargetSnapshot(
+                request.getTaskId(),
+                request.getPassRevision(),
+                request.getActionEpoch(),
+                request.getIndex(),
+                current,
+                new SaplingReserveEvidence(
+                    1L,
+                    "inventory",
+                    "minecraft:sapling:0",
+                    saplings,
+                    request.getMinimumSaplingReserve()));
+        }
+
+        @Override
+        public ActionHandle execute(ActionRequest request, ActionLease actionLease) {
+            assertTrue(actionLease.isValid());
+            actions++;
+            lease = actionLease;
+            handle = new Handle(request);
+            return handle;
+        }
+
+        private void confirm(TreeObservation after) {
+            assertNotNull(handle);
+            current = after;
+            handle.after = after;
+            handle.state = ActionState.CONFIRMED;
+        }
+
+        private static final class Handle implements ActionHandle {
+
+            private final ActionRequest request;
+            private ActionState state = ActionState.SUBMITTED;
+            private TreeObservation after;
+
+            private Handle(ActionRequest request) {
+                this.request = request;
+            }
+
+            @Override
+            public String getRequestId() {
+                return request.getRequestId();
+            }
+
+            @Override
+            public ActionProgress progress() {
+                return new ActionProgress(request.getRequestId(), state, state.name(), after);
+            }
+
+            @Override
+            public void cancel() {
+                state = ActionState.CANCELLED;
+                after = null;
+            }
+        }
+    }
+
+    private enum UnusedNavigationAccess implements NavigationRuntimeAccess {
+
+        INSTANCE;
+
+        @Override
+        public NavigationBackend getNavigationBackend() {
+            return null;
+        }
+
+        @Override
+        public boolean isDryRun() {
+            return false;
+        }
+
+        @Override
+        public void publishNavigationProgress(NavigationProgress progress) {}
+    }
+
+    private static final class FixedClock implements MonotonicClock {
+
+        @Override
+        public long nowMillis() {
+            return 0L;
+        }
+    }
+}

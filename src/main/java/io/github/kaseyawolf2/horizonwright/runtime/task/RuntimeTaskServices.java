@@ -22,6 +22,7 @@ public final class RuntimeTaskServices implements ExcavationRuntimeAccess, Unloa
     private volatile UnloadBackend unloadBackend;
     private volatile RepairBackend repairBackend;
     private volatile FarmBackend farmBackend;
+    private volatile TreeBackend treeBackend;
     private volatile SleepBackend sleepBackend;
     private volatile HusbandryBackend husbandryBackend;
 
@@ -100,6 +101,20 @@ public final class RuntimeTaskServices implements ExcavationRuntimeAccess, Unloa
         return true;
     }
 
+    public synchronized void bindTreeBackend(TreeBackend backend) {
+        if (backend == null) throw new IllegalArgumentException("tree backend must not be null");
+        if (treeBackend != null && treeBackend != backend) {
+            throw new IllegalStateException("another tree backend is already bound to this runtime session");
+        }
+        treeBackend = backend;
+    }
+
+    public synchronized boolean unbindTreeBackend(TreeBackend expected) {
+        if (expected == null || treeBackend != expected) return false;
+        treeBackend = null;
+        return true;
+    }
+
     public synchronized void bindSleepBackend(SleepBackend backend) {
         if (backend == null) throw new IllegalArgumentException("sleep backend must not be null");
         if (sleepBackend != null && sleepBackend != backend) {
@@ -133,6 +148,7 @@ public final class RuntimeTaskServices implements ExcavationRuntimeAccess, Unloa
         unloadBackend = null;
         repairBackend = null;
         farmBackend = null;
+        treeBackend = null;
         sleepBackend = null;
         husbandryBackend = null;
     }
@@ -155,6 +171,11 @@ public final class RuntimeTaskServices implements ExcavationRuntimeAccess, Unloa
     @Override
     public FarmBackend getFarmBackend() {
         return farmBackend;
+    }
+
+    @Override
+    public TreeBackend getTreeBackend() {
+        return treeBackend;
     }
 
     @Override

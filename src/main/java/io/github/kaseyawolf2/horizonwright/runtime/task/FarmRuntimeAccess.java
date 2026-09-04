@@ -5,5 +5,10 @@ public interface FarmRuntimeAccess {
 
     FarmBackend getFarmBackend();
 
+    /** Optional ordinary-tree adapter sharing the named farm-area service. */
+    default TreeBackend getTreeBackend() {
+        return null;
+    }
+
     boolean isDryRun();
 }

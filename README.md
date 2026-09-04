@@ -144,6 +144,20 @@ Operators can queue one pass from **Profile assets > Work areas** or with
 `/hw farm <task-id> <plot-id> [seed-reserve]`. This live path is automated-test
 covered at its planner, runner, authority, classifier, and proof boundaries but
 remains physically unverified.
+An ordinary-tree CHORE contract now complements crop farming. A finite tree
+pass freezes only trees wholly contained by one named area, binds the exact
+root/replant position, captured block set, sapling identity, observation
+revision, and minimum reserve, and persists felling and replanting as separate
+frontiers. Felling may request movement/look/dig/place authority (placement is
+reserved for backend-controlled reach support), while replanting cannot acquire
+dig authority. Neither frontier advances until a newer exact-tree observation
+proves the expected clear root or planted sapling. Pausing an unconfirmed action
+keeps the current frontier, and a sapling shortage blocks before felling.
+Commands and connected-time schedules are available as
+`/hw trees <task-id> <area-id> [sapling-reserve]` and
+`/hw treeschedule <id> <area-id> <minutes> [sapling-reserve]`. The runtime
+contract intentionally remains unavailable in-world until the version-tested
+Minecraft observer and mutation adapter are bound.
 Registered-bed sleep is now a finite CHORE-lane task and a once-per-world-night
 schedule, so it can safely preempt FALLBACK excavation. The task records no
 completion until daytime is freshly observed or the live backend confirms the

@@ -32,6 +32,7 @@ import io.github.kaseyawolf2.horizonwright.runtime.task.NavigationRuntimeAccess;
 import io.github.kaseyawolf2.horizonwright.runtime.task.RuntimeTaskRunnerFactory;
 import io.github.kaseyawolf2.horizonwright.runtime.task.RuntimeTaskServices;
 import io.github.kaseyawolf2.horizonwright.runtime.task.SleepTask;
+import io.github.kaseyawolf2.horizonwright.runtime.task.TreeTask;
 
 /** Session-scoped composition root for action authority, tasks, and optional navigation. */
 public final class HorizonwrightRuntime implements AutoCloseable {
@@ -290,6 +291,44 @@ public final class HorizonwrightRuntime implements AutoCloseable {
             ScheduleRule.connectedInterval(
                 scheduleId,
                 FarmTask.scheduledPass(plotId, minimumSeedReserve),
+                intervalMillis,
+                intervalMillis,
+                java.util.Collections.<String>emptySet(),
+                0));
+    }
+
+    public TaskSnapshot submitTreePass(TaskSpec spec) {
+        ensureOpen();
+        if (spec == null || !TreeTask.TYPE.equals(spec.getType())) {
+            throw new IllegalArgumentException("a tree-pass task specification is required");
+        }
+        requireAutomationAvailable("submitting new work");
+        return controller.submit(spec);
+    }
+
+    public ScheduleSnapshot scheduleTreePass(String scheduleId, String areaId, int minimumSaplingReserve,
+        long intervalMillis) {
+        ensureOpen();
+        if (intervalMillis < 1L) throw new IllegalArgumentException("tree schedule interval must be positive");
+        requireAutomationAvailable("scheduling new work");
+        return controller.submitSchedule(
+            ScheduleRule.connectedInterval(
+                scheduleId,
+                TreeTask.scheduledPass(areaId, minimumSaplingReserve),
+                intervalMillis,
+                intervalMillis,
+                java.util.Collections.<String>emptySet(),
+                0));
+    }
+
+    public ScheduleSnapshot updateTreeSchedule(String scheduleId, String areaId, int minimumSaplingReserve,
+        long intervalMillis) {
+        ensureOpen();
+        if (intervalMillis < 1L) throw new IllegalArgumentException("tree schedule interval must be positive");
+        return controller.updateSchedule(
+            ScheduleRule.connectedInterval(
+                scheduleId,
+                TreeTask.scheduledPass(areaId, minimumSaplingReserve),
                 intervalMillis,
                 intervalMillis,
                 java.util.Collections.<String>emptySet(),

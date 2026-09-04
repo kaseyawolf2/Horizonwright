@@ -38,8 +38,11 @@ but cannot replace the disposable-world observation run required by the plan.
 - Managed-quarry source and flowing-fluid containment is connected through the
   configured filler, full-inventory staging, and server-confirmed placement;
   physical validation is pending. Clean-volume excavation remains conservative.
-- Ordinary tree farming/replanting as a recurring base chore. Excavation tree
-  recovery exists but is not a tree-farm task.
+- The ordinary-tree finite/scheduled CHORE contract is implemented with bounded
+  area captures, sapling-reserve enforcement, separately durable fell/replant
+  frontiers, exact postcondition confirmation, and interruption tests. The live
+  Minecraft tree observer and mutation adapter, GUI entry points, and physical
+  validation remain incomplete; the exposed commands therefore block safely.
 - Physical confirmation of the separated long-distance farm travel/action
   deadlines in commit `0853c61`.
 - Installation and physical validation of the read-only livestock pen scan.

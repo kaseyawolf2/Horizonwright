@@ -41,6 +41,7 @@ import io.github.kaseyawolf2.horizonwright.runtime.task.ExcavationTaskSubmission
 import io.github.kaseyawolf2.horizonwright.runtime.task.FarmTask;
 import io.github.kaseyawolf2.horizonwright.runtime.task.HusbandryTask;
 import io.github.kaseyawolf2.horizonwright.runtime.task.SleepTask;
+import io.github.kaseyawolf2.horizonwright.runtime.task.TreeTask;
 
 public final class HorizonwrightClientCommand extends CommandBase {
 
@@ -75,7 +76,7 @@ public final class HorizonwrightClientCommand extends CommandBase {
 
     @Override
     public String getCommandUsage(ICommandSender sender) {
-        return "/hw [panel|profile [status|enroll|recover|reassociate <id>]|debug [on|off|status]|status|task [id]|goto <x> <y> <z> [tolerance]|excavate cylinder <id> <radius> <bottom-y> <top-y> [<loadout> <storage> <station> <tool-slot> <work-damage>]|excavate managed <id> <radius> <bottom-y> <top-y> <ramp-block> <light-block> <filler-block> <light-interval> [<loadout> <storage> <station> <tool-slot> <work-damage>]|farm <task-id> <plot-id> [seed-reserve]|farmschedule <id> <plot-id> <minutes> [seed-reserve]|husbandryscan <pen-id>|husbandry <task-id> <pen-id> <species> <minimum> <maximum> [max-actions]|husbandryschedule <id> <pen-id> <species> <minimum> <maximum> <minutes> [max-actions]|sleep <task-id> <bed-location>|sleepschedule <id> <bed-location>|pause [id]|resume [id]|cancel <id>|navcancel|dryrun [on|off]|stop|reset]";
+        return "/hw [panel|profile [status|enroll|recover|reassociate <id>]|debug [on|off|status]|status|task [id]|goto <x> <y> <z> [tolerance]|excavate cylinder <id> <radius> <bottom-y> <top-y> [<loadout> <storage> <station> <tool-slot> <work-damage>]|excavate managed <id> <radius> <bottom-y> <top-y> <ramp-block> <light-block> <filler-block> <light-interval> [<loadout> <storage> <station> <tool-slot> <work-damage>]|farm <task-id> <plot-id> [seed-reserve]|farmschedule <id> <plot-id> <minutes> [seed-reserve]|trees <task-id> <area-id> [sapling-reserve]|treeschedule <id> <area-id> <minutes> [sapling-reserve]|husbandryscan <pen-id>|husbandry <task-id> <pen-id> <species> <minimum> <maximum> [max-actions]|husbandryschedule <id> <pen-id> <species> <minimum> <maximum> <minutes> [max-actions]|sleep <task-id> <bed-location>|sleepschedule <id> <bed-location>|pause [id]|resume [id]|cancel <id>|navcancel|dryrun [on|off]|stop|reset]";
     }
 
     @Override
@@ -136,6 +137,14 @@ public final class HorizonwrightClientCommand extends CommandBase {
         }
         if ("farmschedule".equals(subcommand)) {
             scheduleFarm(sender, arguments, runtime);
+            return;
+        }
+        if ("trees".equals(subcommand)) {
+            startTrees(sender, arguments, runtime);
+            return;
+        }
+        if ("treeschedule".equals(subcommand)) {
+            scheduleTrees(sender, arguments, runtime);
             return;
         }
         if ("husbandryscan".equals(subcommand)) {
@@ -214,6 +223,8 @@ public final class HorizonwrightClientCommand extends CommandBase {
             || "excavate".equals(subcommand)
             || "farm".equals(subcommand)
             || "farmschedule".equals(subcommand)
+            || "trees".equals(subcommand)
+            || "treeschedule".equals(subcommand)
             || "husbandryscan".equals(subcommand)
             || "husbandry".equals(subcommand)
             || "husbandryschedule".equals(subcommand)
@@ -268,6 +279,8 @@ public final class HorizonwrightClientCommand extends CommandBase {
                 "excavate",
                 "farm",
                 "farmschedule",
+                "trees",
+                "treeschedule",
                 "husbandryscan",
                 "husbandry",
                 "husbandryschedule",
@@ -299,6 +312,10 @@ public final class HorizonwrightClientCommand extends CommandBase {
                     .getReassociationCandidateProfileIds());
         }
         if (arguments.length == 2 && "husbandryscan".equalsIgnoreCase(arguments[0])) {
+            return getListOfStringsFromIterableMatchingLastWord(arguments, namedAreaIds());
+        }
+        if (arguments.length == 3
+            && ("trees".equalsIgnoreCase(arguments[0]) || "treeschedule".equalsIgnoreCase(arguments[0]))) {
             return getListOfStringsFromIterableMatchingLastWord(arguments, namedAreaIds());
         }
         if (arguments.length == 3
@@ -580,6 +597,65 @@ public final class HorizonwrightClientCommand extends CommandBase {
         } catch (RuntimeException failure) {
             sender.addChatMessage(
                 new ChatComponentText(EnumChatFormatting.RED + "Farm schedule not created: " + safeMessage(failure)));
+        }
+    }
+
+    private void startTrees(ICommandSender sender, String[] arguments, HorizonwrightRuntime runtime) {
+        if (arguments.length != 3 && arguments.length != 4) {
+            sender.addChatMessage(new ChatComponentText(EnumChatFormatting.RED + getCommandUsage(sender)));
+            return;
+        }
+        try {
+            String taskId = ProfileAssetInput.stableId(arguments[1], "tree task name");
+            String areaId = ProfileAssetInput.stableId(arguments[2], "tree-farm area name");
+            int reserve = arguments.length == 4 ? ProfileAssetInput.nonNegativeInteger(arguments[3], "sapling reserve")
+                : 2;
+            requireNamedArea(areaId);
+            TaskSnapshot submitted = runtime.submitTreePass(TreeTask.finitePass(taskId, areaId, reserve));
+            sender.addChatMessage(
+                new ChatComponentText(
+                    EnumChatFormatting.AQUA + "Horizonwright queued tree pass '"
+                        + submitted.getSpec()
+                            .getId()
+                        + "' for area '"
+                        + areaId
+                        + "' with sapling reserve "
+                        + reserve
+                        + "."));
+        } catch (RuntimeException failure) {
+            sender.addChatMessage(
+                new ChatComponentText(EnumChatFormatting.RED + "Tree pass not started: " + safeMessage(failure)));
+        }
+    }
+
+    private void scheduleTrees(ICommandSender sender, String[] arguments, HorizonwrightRuntime runtime) {
+        if (arguments.length != 4 && arguments.length != 5) {
+            sender.addChatMessage(new ChatComponentText(EnumChatFormatting.RED + getCommandUsage(sender)));
+            return;
+        }
+        try {
+            String scheduleId = ProfileAssetInput.stableId(arguments[1], "tree schedule name");
+            String areaId = ProfileAssetInput.stableId(arguments[2], "tree-farm area name");
+            int minutes = ProfileAssetInput.positiveInteger(arguments[3], "tree interval minutes");
+            int reserve = arguments.length == 5 ? ProfileAssetInput.nonNegativeInteger(arguments[4], "sapling reserve")
+                : 2;
+            requireNamedArea(areaId);
+            long intervalMillis = Math.multiplyExact((long) minutes, 60_000L);
+            io.github.kaseyawolf2.horizonwright.core.task.ScheduleSnapshot scheduled = runtime
+                .scheduleTreePass(scheduleId, areaId, reserve, intervalMillis);
+            sender.addChatMessage(
+                new ChatComponentText(
+                    EnumChatFormatting.AQUA + "Horizonwright scheduled tree pass '"
+                        + scheduled.getRule()
+                            .getId()
+                        + "' every "
+                        + minutes
+                        + " connected minute(s) for area '"
+                        + areaId
+                        + "'."));
+        } catch (RuntimeException failure) {
+            sender.addChatMessage(
+                new ChatComponentText(EnumChatFormatting.RED + "Tree schedule not created: " + safeMessage(failure)));
         }
     }
 
