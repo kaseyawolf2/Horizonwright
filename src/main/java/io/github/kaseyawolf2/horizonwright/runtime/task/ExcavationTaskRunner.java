@@ -14,6 +14,7 @@ import io.github.kaseyawolf2.horizonwright.core.excavation.CylinderExcavationSpe
 import io.github.kaseyawolf2.horizonwright.core.excavation.ExcavationBlockClassification;
 import io.github.kaseyawolf2.horizonwright.core.excavation.ExcavationCheckpoint;
 import io.github.kaseyawolf2.horizonwright.core.excavation.ExcavationExecutionResult;
+import io.github.kaseyawolf2.horizonwright.core.excavation.ExcavationFrontier;
 import io.github.kaseyawolf2.horizonwright.core.excavation.ExcavationIntent;
 import io.github.kaseyawolf2.horizonwright.core.excavation.ExcavationObservation;
 import io.github.kaseyawolf2.horizonwright.core.excavation.ExcavationPlan;
@@ -62,6 +63,10 @@ final class ExcavationTaskRunner implements TaskRunner {
     private ExcavationActionRequest activeRequest;
     private ExcavationActionHandle activeHandle;
     private ActionLease activeLease;
+    private ExcavationCheckpoint completionCandidate;
+    private ExcavationFrontier verificationFrontier;
+    private boolean verificationChanged;
+    private boolean activeVerification;
 
     ExcavationTaskRunner(TaskSpec spec, TaskCheckpoint checkpoint, ExcavationRuntimeAccess runtime) {
         if (checkpoint == null || runtime == null) {
@@ -153,6 +158,9 @@ final class ExcavationTaskRunner implements TaskRunner {
         if (activeHandle != null) {
             return observeAction(context, backend);
         }
+        if (verificationFrontier != null) {
+            return verifyCompletedVolume(context, backend);
+        }
         return observeAndSubmit(context, backend);
     }
 
@@ -162,6 +170,7 @@ final class ExcavationTaskRunner implements TaskRunner {
             throw new IllegalArgumentException("interruption must not be null");
         }
         RuntimeException failure = stopActive();
+        clearVerification();
         restoredAuthorityNeedsRebind = true;
         if (failure != null) {
             throw failure;
@@ -170,6 +179,7 @@ final class ExcavationTaskRunner implements TaskRunner {
 
     private StepResult suspend(TaskStepContext context) {
         RuntimeException stopFailure = stopActive();
+        clearVerification();
         if (stopFailure != null) {
             return StepResult.failed(
                 context.getActionEpoch(),
@@ -557,6 +567,9 @@ final class ExcavationTaskRunner implements TaskRunner {
 
     private StepResult applyConfirmation(TaskStepContext context, ExcavationBackend backend,
         ExcavationActionProgress progress) {
+        if (activeVerification) {
+            return applyVerificationConfirmation(context, backend, progress);
+        }
         ConfirmedExcavationTargetResult confirmation = progress.getConfirmation()
             .orElseThrow(() -> new IllegalStateException("confirmed action omitted its result"));
         try {
@@ -581,14 +594,19 @@ final class ExcavationTaskRunner implements TaskRunner {
             if (releaseFailure != null) {
                 throw releaseFailure;
             }
-            excavationCheckpoint = application.getCheckpoint();
-            taskCheckpoint = ExcavationTaskCheckpointCodec.encode(cylinder, excavationCheckpoint);
-            if (excavationCheckpoint.isComplete()) {
-                return StepResult.completed(
+            ExcavationCheckpoint appliedCheckpoint = application.getCheckpoint();
+            if (appliedCheckpoint.isComplete()) {
+                completionCandidate = appliedCheckpoint;
+                verificationFrontier = CylinderExcavationGeometry.initialFrontier(cylinder);
+                verificationChanged = false;
+                return StepResult.progress(
                     context.getActionEpoch(),
                     taskCheckpoint,
-                    "Clean-volume excavation completed after confirmed target " + targetResult.getPosition());
+                    "Primary excavation pass finished at " + targetResult.getPosition()
+                        + "; verifying the entire cleared volume against fresh world state");
             }
+            excavationCheckpoint = appliedCheckpoint;
+            taskCheckpoint = ExcavationTaskCheckpointCodec.encode(cylinder, excavationCheckpoint);
             return StepResult.progress(
                 context.getActionEpoch(),
                 taskCheckpoint,
@@ -608,6 +626,191 @@ final class ExcavationTaskRunner implements TaskRunner {
                 "Excavation confirmation rejected: " + describe(failure),
                 false);
         }
+    }
+
+    private StepResult verifyCompletedVolume(TaskStepContext context, ExcavationBackend backend) {
+        ExcavationTargetBatch batch = CylinderExcavationGeometry
+            .nextBatch(cylinder, verificationFrontier, TARGETS_PER_SCAN);
+        if (batch.isEmpty()) {
+            return finishOrRepeatVerification(context);
+        }
+        int verified = 0;
+        for (ExcavationTarget target : batch.getTargets()) {
+            ExcavationObservationRequest request = new ExcavationObservationRequest(
+                spec.getId(),
+                cylinder.getDimensionId(),
+                completionCandidate.getTaskRevision(),
+                context.getActionEpoch(),
+                cylinder.getGeometryKey(),
+                verificationFrontier,
+                target.getPosition(),
+                ExcavationServiceRequirements.none());
+            ExcavationObservationResult observed;
+            try {
+                observed = backend.observe(request);
+                validateObservation(request, observed);
+            } catch (RuntimeException failure) {
+                return StepResult.failed(
+                    context.getActionEpoch(),
+                    taskCheckpoint,
+                    "Excavation verification observation failed: " + describe(failure),
+                    true);
+            }
+            if (!isLiveAuthority(context, backend)) {
+                return StepResult.failed(
+                    context.getActionEpoch(),
+                    taskCheckpoint,
+                    "Excavation authority changed during cleared-volume verification",
+                    false);
+            }
+            ExcavationBlockClassification classification = observed.getObservation()
+                .getClassification();
+            if (requiresGameplayAction(classification)) {
+                if (verified > 0) {
+                    verificationFrontier = frontierAfter(batch, verified);
+                    return StepResult.progress(
+                        context.getActionEpoch(),
+                        taskCheckpoint,
+                        "Freshly verified " + verified + " previously processed excavation positions");
+                }
+                return submitVerificationAction(context, backend, observed);
+            }
+            verified++;
+        }
+        verificationFrontier = batch.getNextFrontier();
+        if (verificationFrontier.isComplete()) {
+            return finishOrRepeatVerification(context);
+        }
+        return StepResult.progress(
+            context.getActionEpoch(),
+            taskCheckpoint,
+            "Freshly verified " + verified + " previously processed excavation positions");
+    }
+
+    private ExcavationFrontier frontierAfter(ExcavationTargetBatch batch, int targetCount) {
+        return batch.getTargets()
+            .get(targetCount - 1)
+            .getNextFrontier();
+    }
+
+    private StepResult submitVerificationAction(TaskStepContext context, ExcavationBackend backend,
+        ExcavationObservationResult observed) {
+        ExcavationTargetBatch actionBatch = CylinderExcavationGeometry.nextBatch(cylinder, verificationFrontier, 1);
+        ExcavationPlan plan = ExcavationPlanner.calculate(
+            cylinder,
+            new ExcavationPlanningWindow(
+                completionCandidate.getTaskRevision(),
+                context.getActionEpoch(),
+                actionBatch,
+                Collections.singletonList(observed.getObservation())),
+            null);
+        if (plan.getIntents()
+            .size() != 1
+            || !plan.getManagedIntents()
+                .isEmpty()) {
+            return StepResult.failed(
+                context.getActionEpoch(),
+                taskCheckpoint,
+                "Cleared-volume verification found an unsupported actionable target",
+                false);
+        }
+        Optional<ActionLease> acquired = context.getActions()
+            .tryAcquire(REQUIRED_CAPABILITIES);
+        if (!acquired.isPresent()) {
+            return StepResult.waitFor(
+                context.getActionEpoch(),
+                taskCheckpoint,
+                POLL_DELAY_MILLIS,
+                "waiting for excavation capabilities during cleared-volume verification");
+        }
+        ActionLease lease = acquired.get();
+        ExcavationIntent intent = plan.getIntents()
+            .get(0);
+        long verificationIndex = CylinderExcavationGeometry.processedBefore(cylinder, verificationFrontier);
+        String requestId = spec.getId() + "-verify-" + verificationIndex;
+        ExcavationActionRequest actionRequest = new ExcavationActionRequest(
+            requestId,
+            spec.getId(),
+            cylinder.getDimensionId(),
+            plan.getTaskRevision(),
+            plan.getActionEpoch(),
+            plan.getGeometryKey(),
+            plan.getStartFrontier(),
+            intent,
+            -1);
+        ExcavationActionHandle handle = null;
+        try {
+            handle = backend.execute(actionRequest, lease);
+            if (handle == null || !requestId.equals(handle.getRequestId())) {
+                throw new IllegalStateException("excavation backend returned a mismatched verification handle");
+            }
+            activeBackend = backend;
+            activePlan = plan;
+            activeRequest = actionRequest;
+            activeHandle = handle;
+            activeLease = lease;
+            activeVerification = true;
+            return StepResult.progress(
+                context.getActionEpoch(),
+                taskCheckpoint,
+                "Rediscovered block in previously processed area at " + intent.getPosition());
+        } catch (RuntimeException failure) {
+            RuntimeException cleanupFailure = cancelAndClose(handle, lease);
+            if (cleanupFailure != null) failure.addSuppressed(cleanupFailure);
+            return StepResult.failed(
+                context.getActionEpoch(),
+                taskCheckpoint,
+                "Excavation verification action failed: " + describe(failure),
+                true);
+        }
+    }
+
+    private StepResult applyVerificationConfirmation(TaskStepContext context, ExcavationBackend backend,
+        ExcavationActionProgress progress) {
+        ConfirmedExcavationTargetResult confirmation = progress.getConfirmation()
+            .orElseThrow(() -> new IllegalStateException("confirmed verification action omitted its result"));
+        try {
+            validateConfirmation(confirmation);
+            ExcavationTargetResult result = confirmation.getTargetResult();
+            if (result.getOutcome() != ExcavationTargetOutcome.COMPLETED) {
+                throw new IllegalStateException("rediscovered block was not confirmed clear: " + result.getOutcome());
+            }
+            ExcavationFrontier next = activePlan.getNextFrontier();
+            RuntimeException releaseFailure = releaseConfirmed();
+            if (releaseFailure != null) throw releaseFailure;
+            verificationFrontier = next;
+            verificationChanged = true;
+            return StepResult.progress(
+                context.getActionEpoch(),
+                taskCheckpoint,
+                "Cleared rediscovered block " + result.getPosition() + "; continuing full-volume verification");
+        } catch (RuntimeException failure) {
+            RuntimeException cleanupFailure = stopActive();
+            if (cleanupFailure != null) failure.addSuppressed(cleanupFailure);
+            return StepResult.failed(
+                context.getActionEpoch(),
+                taskCheckpoint,
+                "Excavation verification confirmation rejected: " + describe(failure),
+                false);
+        }
+    }
+
+    private StepResult finishOrRepeatVerification(TaskStepContext context) {
+        if (verificationChanged) {
+            verificationFrontier = CylinderExcavationGeometry.initialFrontier(cylinder);
+            verificationChanged = false;
+            return StepResult.progress(
+                context.getActionEpoch(),
+                taskCheckpoint,
+                "Rediscovered blocks were cleared; starting the required final clean verification pass");
+        }
+        excavationCheckpoint = completionCandidate;
+        taskCheckpoint = ExcavationTaskCheckpointCodec.encode(cylinder, excavationCheckpoint);
+        clearVerification();
+        return StepResult.completed(
+            context.getActionEpoch(),
+            taskCheckpoint,
+            "Clean-volume excavation completed after a fresh full-volume verification pass");
     }
 
     private boolean needsAuthorityBinding(TaskStepContext context) {
@@ -721,6 +924,14 @@ final class ExcavationTaskRunner implements TaskRunner {
         activeRequest = null;
         activeHandle = null;
         activeLease = null;
+        activeVerification = false;
+    }
+
+    private void clearVerification() {
+        completionCandidate = null;
+        verificationFrontier = null;
+        verificationChanged = false;
+        activeVerification = false;
     }
 
     private static RuntimeException cancelAndClose(ExcavationActionHandle handle, ActionLease lease) {

@@ -5,8 +5,10 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
 
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Set;
 
 import org.junit.After;
 import org.junit.Test;
@@ -125,6 +127,12 @@ public class ExcavationTaskRunnerTest {
         assertEquals(1, harness.backend.submissions);
 
         harness.backend.confirm();
+        TaskSnapshot verifying = task(harness.controller.tick(), spec.getId());
+        assertEquals(TaskState.RUNNING, verifying.getState());
+        assertTrue(
+            verifying.getDetail()
+                .contains("verifying the entire cleared volume"));
+
         TaskSnapshot completed = task(harness.controller.tick(), spec.getId());
 
         assertEquals(TaskState.COMPLETED, completed.getState());
@@ -151,6 +159,48 @@ public class ExcavationTaskRunnerTest {
             harness.broker.snapshot()
                 .getActiveOwners()
                 .isEmpty());
+    }
+
+    @Test
+    public void rediscoveredBlockMustBeClearedBeforeACompletelyCleanVerificationPassCompletes() {
+        harness = new Harness();
+        TaskSpec spec = ExcavationTask.cleanVolumeCylinder("reconcile", 0, 8, 8, 0, 12, 12);
+        harness.controller.submit(spec);
+        harness.controller.tick();
+        harness.controller.tick();
+        harness.backend.confirm();
+
+        TaskSnapshot verifying = task(harness.controller.tick(), spec.getId());
+        assertEquals(TaskState.RUNNING, verifying.getState());
+        harness.backend.confirmedClear.clear();
+
+        TaskSnapshot rediscovered = task(harness.controller.tick(), spec.getId());
+        assertEquals(TaskState.RUNNING, rediscovered.getState());
+        assertTrue(
+            rediscovered.getDetail()
+                .contains("Rediscovered block"));
+        assertEquals(2, harness.backend.submissions);
+
+        harness.backend.confirm();
+        TaskSnapshot cleared = task(harness.controller.tick(), spec.getId());
+        assertEquals(TaskState.RUNNING, cleared.getState());
+        assertTrue(
+            cleared.getDetail()
+                .contains("continuing full-volume verification"));
+
+        TaskSnapshot repeating = task(harness.controller.tick(), spec.getId());
+        assertEquals(TaskState.RUNNING, repeating.getState());
+        assertTrue(
+            repeating.getDetail()
+                .contains("final clean verification pass"));
+
+        TaskSnapshot completed = task(harness.controller.tick(), spec.getId());
+        assertEquals(TaskState.COMPLETED, completed.getState());
+        assertEquals(
+            "completed",
+            completed.getCheckpoint()
+                .getValues()
+                .get("phase"));
     }
 
     @Test
@@ -557,6 +607,7 @@ public class ExcavationTaskRunnerTest {
         private ExcavationActionRequest lastRequest;
         private ActionLease lastLease;
         private Handle active;
+        private final Set<io.github.kaseyawolf2.horizonwright.core.excavation.BlockPosition> confirmedClear = new HashSet<>();
 
         @Override
         public ExcavationBackendAvailability availability() {
@@ -568,8 +619,10 @@ public class ExcavationTaskRunnerTest {
         public ExcavationObservationResult observe(ExcavationObservationRequest request) {
             int observationIndex = observations++;
             lastObservationRequest = request;
-            ExcavationBlockClassification observedClassification = airObservationsBeforeBreakable >= 0
-                && observationIndex < airObservationsBeforeBreakable ? ExcavationBlockClassification.AIR
+            ExcavationBlockClassification observedClassification = confirmedClear.contains(request.getPosition())
+                ? ExcavationBlockClassification.AIR
+                : airObservationsBeforeBreakable >= 0 && observationIndex < airObservationsBeforeBreakable
+                    ? ExcavationBlockClassification.AIR
                     : classification;
             ExcavationObservation observation = new ExcavationObservation(
                 request.getPosition(),
@@ -610,6 +663,9 @@ public class ExcavationTaskRunnerTest {
                     ExcavationTargetOutcome.COMPLETED));
             active.state = ExcavationActionState.CONFIRMED;
             active.detail = "server-confirmed post-action observation";
+            confirmedClear.add(
+                active.request.getIntent()
+                    .getPosition());
         }
 
         private static final class Handle implements ExcavationActionHandle {
