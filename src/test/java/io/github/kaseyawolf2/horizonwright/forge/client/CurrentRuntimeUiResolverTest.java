@@ -150,6 +150,9 @@ public class CurrentRuntimeUiResolverTest {
                 command.addTabCompletionOptions(sender, new String[] { "" })
                     .contains("profile"));
             assertTrue(
+                command.addTabCompletionOptions(sender, new String[] { "" })
+                    .contains("husbandryscan"));
+            assertTrue(
                 command.addTabCompletionOptions(sender, new String[] { "resume", "" })
                     .isEmpty());
         } finally {

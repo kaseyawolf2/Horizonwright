@@ -6,6 +6,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 
+import net.minecraft.client.Minecraft;
 import net.minecraft.command.CommandBase;
 import net.minecraft.command.ICommandSender;
 import net.minecraft.event.ClickEvent;
@@ -18,12 +19,17 @@ import net.minecraft.util.IChatComponent;
 import io.github.kaseyawolf2.horizonwright.DevelopmentTrace;
 import io.github.kaseyawolf2.horizonwright.HorizonwrightRuntime;
 import io.github.kaseyawolf2.horizonwright.HorizonwrightRuntime.RuntimeSnapshot;
+import io.github.kaseyawolf2.horizonwright.core.base.AnimalObservation;
+import io.github.kaseyawolf2.horizonwright.core.base.HusbandryObservation;
+import io.github.kaseyawolf2.horizonwright.core.base.LivestockSpecies;
 import io.github.kaseyawolf2.horizonwright.core.navigation.NavigationProgress;
 import io.github.kaseyawolf2.horizonwright.core.task.ControllerSnapshot;
 import io.github.kaseyawolf2.horizonwright.core.task.TaskLane;
 import io.github.kaseyawolf2.horizonwright.core.task.TaskResumeCandidates;
 import io.github.kaseyawolf2.horizonwright.core.task.TaskSnapshot;
 import io.github.kaseyawolf2.horizonwright.core.task.TaskSpec;
+import io.github.kaseyawolf2.horizonwright.forge.client.husbandry.MinecraftHusbandryObserver;
+import io.github.kaseyawolf2.horizonwright.forge.client.husbandry.ProfileHusbandryConfiguration;
 import io.github.kaseyawolf2.horizonwright.runtime.persistence.profile.ProfileAssetEditor;
 import io.github.kaseyawolf2.horizonwright.runtime.persistence.profile.ProfileAssetEditorProvider;
 import io.github.kaseyawolf2.horizonwright.runtime.persistence.session.ClientProfileBindingCoordinator;
@@ -32,6 +38,7 @@ import io.github.kaseyawolf2.horizonwright.runtime.persistence.session.ClientPro
 import io.github.kaseyawolf2.horizonwright.runtime.persistence.session.CurrentRuntimeProvider;
 import io.github.kaseyawolf2.horizonwright.runtime.task.ExcavationTaskSubmission;
 import io.github.kaseyawolf2.horizonwright.runtime.task.FarmTask;
+import io.github.kaseyawolf2.horizonwright.runtime.task.HusbandryTask;
 import io.github.kaseyawolf2.horizonwright.runtime.task.SleepTask;
 
 public final class HorizonwrightClientCommand extends CommandBase {
@@ -67,7 +74,7 @@ public final class HorizonwrightClientCommand extends CommandBase {
 
     @Override
     public String getCommandUsage(ICommandSender sender) {
-        return "/hw [panel|profile [status|enroll|recover|reassociate <id>]|debug [on|off|status]|status|task [id]|goto <x> <y> <z> [tolerance]|excavate cylinder <id> <radius> <bottom-y> <top-y> [<loadout> <storage> <station> <tool-slot> <work-damage>]|farm <task-id> <plot-id> [seed-reserve]|farmschedule <id> <plot-id> <minutes> [seed-reserve]|sleep <task-id> <bed-location>|sleepschedule <id> <bed-location>|pause [id]|resume [id]|cancel <id>|navcancel|dryrun [on|off]|stop|reset]";
+        return "/hw [panel|profile [status|enroll|recover|reassociate <id>]|debug [on|off|status]|status|task [id]|goto <x> <y> <z> [tolerance]|excavate cylinder <id> <radius> <bottom-y> <top-y> [<loadout> <storage> <station> <tool-slot> <work-damage>]|farm <task-id> <plot-id> [seed-reserve]|farmschedule <id> <plot-id> <minutes> [seed-reserve]|husbandryscan <pen-id>|husbandry <task-id> <pen-id> <species> <minimum> <maximum> [max-actions]|husbandryschedule <id> <pen-id> <species> <minimum> <maximum> <minutes> [max-actions]|sleep <task-id> <bed-location>|sleepschedule <id> <bed-location>|pause [id]|resume [id]|cancel <id>|navcancel|dryrun [on|off]|stop|reset]";
     }
 
     @Override
@@ -128,6 +135,18 @@ public final class HorizonwrightClientCommand extends CommandBase {
         }
         if ("farmschedule".equals(subcommand)) {
             scheduleFarm(sender, arguments, runtime);
+            return;
+        }
+        if ("husbandryscan".equals(subcommand)) {
+            scanHusbandryPen(sender, arguments);
+            return;
+        }
+        if ("husbandry".equals(subcommand)) {
+            startHusbandry(sender, arguments, runtime);
+            return;
+        }
+        if ("husbandryschedule".equals(subcommand)) {
+            scheduleHusbandry(sender, arguments, runtime);
             return;
         }
         if ("sleep".equals(subcommand)) {
@@ -194,6 +213,9 @@ public final class HorizonwrightClientCommand extends CommandBase {
             || "excavate".equals(subcommand)
             || "farm".equals(subcommand)
             || "farmschedule".equals(subcommand)
+            || "husbandryscan".equals(subcommand)
+            || "husbandry".equals(subcommand)
+            || "husbandryschedule".equals(subcommand)
             || "sleep".equals(subcommand)
             || "sleepschedule".equals(subcommand)
             || "navcancel".equals(subcommand)
@@ -245,6 +267,9 @@ public final class HorizonwrightClientCommand extends CommandBase {
                 "excavate",
                 "farm",
                 "farmschedule",
+                "husbandryscan",
+                "husbandry",
+                "husbandryschedule",
                 "sleep",
                 "sleepschedule",
                 "pause",
@@ -271,6 +296,17 @@ public final class HorizonwrightClientCommand extends CommandBase {
                 arguments,
                 profileBindings.getSnapshot()
                     .getReassociationCandidateProfileIds());
+        }
+        if (arguments.length == 2 && "husbandryscan".equalsIgnoreCase(arguments[0])) {
+            return getListOfStringsFromIterableMatchingLastWord(arguments, namedAreaIds());
+        }
+        if (arguments.length == 3
+            && ("husbandry".equalsIgnoreCase(arguments[0]) || "husbandryschedule".equalsIgnoreCase(arguments[0]))) {
+            return getListOfStringsFromIterableMatchingLastWord(arguments, namedAreaIds());
+        }
+        if (arguments.length == 4
+            && ("husbandry".equalsIgnoreCase(arguments[0]) || "husbandryschedule".equalsIgnoreCase(arguments[0]))) {
+            return getListOfStringsMatchingLastWord(arguments, "cow", "sheep", "pig", "chicken");
         }
         CurrentRuntimeUiResolver.Resolution resolution = CurrentRuntimeUiResolver.resolve(runtimeProvider);
         if (!resolution.isAvailable()) {
@@ -515,6 +551,169 @@ public final class HorizonwrightClientCommand extends CommandBase {
                 .equals(plotId)) return;
         }
         throw new IllegalStateException("active profile has no named area '" + plotId + "'");
+    }
+
+    private void scanHusbandryPen(ICommandSender sender, String[] arguments) {
+        if (arguments.length != 2) {
+            MinecraftRuntimeAccess
+                .addChatMessage(sender, new ChatComponentText(EnumChatFormatting.RED + getCommandUsage(sender)));
+            return;
+        }
+        try {
+            String penId = ProfileAssetInput.stableId(arguments[1], "livestock pen name");
+            requireNamedArea(penId);
+            HusbandryObservation observation = new MinecraftHusbandryObserver(
+                Minecraft.getMinecraft(),
+                new ProfileHusbandryConfiguration(profileEditorProvider)).observe(penId);
+            MinecraftRuntimeAccess.addChatMessage(
+                sender,
+                new ChatComponentText(
+                    EnumChatFormatting.AQUA + "Horizonwright read-only pen scan '"
+                        + penId
+                        + "': "
+                        + observation.getAnimals()
+                            .size()
+                        + " supported animal(s), "
+                        + observation.getDrops()
+                            .size()
+                        + " drop(s)."));
+            for (LivestockSpecies species : LivestockSpecies.values()) {
+                int total = 0;
+                int adults = 0;
+                int ready = 0;
+                int engaged = 0;
+                int excluded = 0;
+                for (AnimalObservation animal : observation.getAnimals()) {
+                    if (animal.getSpecies() != species) continue;
+                    total++;
+                    if (animal.isAdult()) adults++;
+                    if (animal.isReadyToBreed()) ready++;
+                    if (animal.isBreedingEngaged()) engaged++;
+                    if (!animal.isEligibleTarget()) excluded++;
+                }
+                if (total > 0) {
+                    MinecraftRuntimeAccess.addChatMessage(
+                        sender,
+                        new ChatComponentText(
+                            EnumChatFormatting.GRAY + species.name()
+                                + ": total "
+                                + total
+                                + ", adults "
+                                + adults
+                                + ", ready "
+                                + ready
+                                + ", breeding "
+                                + engaged
+                                + ", excluded "
+                                + excluded));
+                }
+            }
+        } catch (RuntimeException failure) {
+            MinecraftRuntimeAccess.addChatMessage(
+                sender,
+                new ChatComponentText(
+                    EnumChatFormatting.RED + "Livestock pen scan failed safely: " + safeMessage(failure)));
+        }
+    }
+
+    private void startHusbandry(ICommandSender sender, String[] arguments, HorizonwrightRuntime runtime) {
+        if (arguments.length != 6 && arguments.length != 7) {
+            MinecraftRuntimeAccess
+                .addChatMessage(sender, new ChatComponentText(EnumChatFormatting.RED + getCommandUsage(sender)));
+            return;
+        }
+        try {
+            String taskId = ProfileAssetInput.stableId(arguments[1], "husbandry task name");
+            String penId = ProfileAssetInput.stableId(arguments[2], "livestock pen name");
+            LivestockSpecies species = livestockSpecies(arguments[3]);
+            int minimum = ProfileAssetInput.positiveInteger(arguments[4], "minimum adults");
+            int maximum = ProfileAssetInput.positiveInteger(arguments[5], "maximum adults");
+            int maximumActions = arguments.length == 7
+                ? ProfileAssetInput.positiveInteger(arguments[6], "maximum actions")
+                : 16;
+            requireNamedArea(penId);
+            TaskSnapshot submitted = runtime
+                .submitHusbandry(HusbandryTask.finitePass(taskId, penId, species, minimum, maximum, maximumActions));
+            MinecraftRuntimeAccess.addChatMessage(
+                sender,
+                new ChatComponentText(
+                    EnumChatFormatting.AQUA + "Horizonwright configured husbandry pass '"
+                        + submitted.getSpec()
+                            .getId()
+                        + "' for "
+                        + species
+                        + " in '"
+                        + penId
+                        + "'. Live animal actions remain disabled."));
+        } catch (RuntimeException failure) {
+            MinecraftRuntimeAccess.addChatMessage(
+                sender,
+                new ChatComponentText(
+                    EnumChatFormatting.RED + "Husbandry pass not configured: " + safeMessage(failure)));
+        }
+    }
+
+    private void scheduleHusbandry(ICommandSender sender, String[] arguments, HorizonwrightRuntime runtime) {
+        if (arguments.length != 7 && arguments.length != 8) {
+            MinecraftRuntimeAccess
+                .addChatMessage(sender, new ChatComponentText(EnumChatFormatting.RED + getCommandUsage(sender)));
+            return;
+        }
+        try {
+            String scheduleId = ProfileAssetInput.stableId(arguments[1], "husbandry schedule name");
+            String penId = ProfileAssetInput.stableId(arguments[2], "livestock pen name");
+            LivestockSpecies species = livestockSpecies(arguments[3]);
+            int minimum = ProfileAssetInput.positiveInteger(arguments[4], "minimum adults");
+            int maximum = ProfileAssetInput.positiveInteger(arguments[5], "maximum adults");
+            int minutes = ProfileAssetInput.positiveInteger(arguments[6], "husbandry interval minutes");
+            int maximumActions = arguments.length == 8
+                ? ProfileAssetInput.positiveInteger(arguments[7], "maximum actions")
+                : 16;
+            requireNamedArea(penId);
+            runtime.scheduleHusbandry(
+                scheduleId,
+                penId,
+                species,
+                minimum,
+                maximum,
+                maximumActions,
+                Math.multiplyExact((long) minutes, 60_000L));
+            MinecraftRuntimeAccess.addChatMessage(
+                sender,
+                new ChatComponentText(
+                    EnumChatFormatting.AQUA + "Horizonwright configured husbandry schedule '"
+                        + scheduleId
+                        + "' every "
+                        + minutes
+                        + " connected minute(s). Live animal actions remain disabled."));
+        } catch (RuntimeException failure) {
+            MinecraftRuntimeAccess.addChatMessage(
+                sender,
+                new ChatComponentText(
+                    EnumChatFormatting.RED + "Husbandry schedule not configured: " + safeMessage(failure)));
+        }
+    }
+
+    private List<String> namedAreaIds() {
+        ProfileAssetEditor editor = profileEditorProvider.getCurrentProfileAssetEditor()
+            .orElse(null);
+        if (editor == null) return Collections.emptyList();
+        List<String> ids = new ArrayList<>();
+        for (io.github.kaseyawolf2.horizonwright.core.base.NamedArea area : editor.load()
+            .getNamedAreas()) {
+            ids.add(area.getId());
+        }
+        return ids;
+    }
+
+    private static LivestockSpecies livestockSpecies(String value) {
+        try {
+            return LivestockSpecies.valueOf(
+                value.trim()
+                    .toUpperCase());
+        } catch (RuntimeException failure) {
+            throw new IllegalArgumentException("species must be cow, sheep, pig, or chicken", failure);
+        }
     }
 
     private void startSleep(ICommandSender sender, String[] arguments, HorizonwrightRuntime runtime) {
