@@ -368,8 +368,12 @@ final class FarmTaskRunner implements TaskRunner {
                     ActionCapability.HELD_USE));
         }
         if (action == FarmActionKind.RIGHT_CLICK_HARVEST) {
-            return Collections
-                .unmodifiableSet(EnumSet.of(ActionCapability.MOVEMENT, ActionCapability.LOOK, ActionCapability.USE));
+            return Collections.unmodifiableSet(
+                EnumSet.of(
+                    ActionCapability.MOVEMENT,
+                    ActionCapability.LOOK,
+                    ActionCapability.USE,
+                    ActionCapability.CONTAINER));
         }
         throw new IllegalArgumentException("farm decision does not require an action: " + action);
     }

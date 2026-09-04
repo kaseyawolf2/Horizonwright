@@ -213,8 +213,13 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
         if (action == FarmActionKind.BREAK_AND_REPLANT && seedSlot < 0)
             throw new IllegalStateException("an exact approved replant seed must be present in the hotbar");
         int emptyHandSlot = action == FarmActionKind.RIGHT_CLICK_HARVEST ? findEmptyHotbarSlot() : -1;
-        if (action == FarmActionKind.RIGHT_CLICK_HARVEST && emptyHandSlot < 0)
-            throw new IllegalStateException("right-click crop harvesting requires an empty hotbar slot");
+        int emptyInventorySlot = -1;
+        if (action == FarmActionKind.RIGHT_CLICK_HARVEST && emptyHandSlot < 0) {
+            emptyInventorySlot = findEmptyMainInventorySlot();
+            if (emptyInventorySlot < 0) throw new IllegalStateException(
+                "right-click crop harvesting requires an empty hotbar slot or main-inventory space");
+            emptyHandSlot = chooseEvacuationHotbarSlot();
+        }
         verifier.requireCurrent(
             request.getDecision(),
             current,
@@ -230,6 +235,7 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
             navigation,
             seedSlot,
             emptyHandSlot,
+            emptyInventorySlot,
             current,
             System.nanoTime());
         DevelopmentTrace.event(
@@ -241,6 +247,8 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
             seedSlot,
             "emptyHandSlot",
             emptyHandSlot,
+            "emptyInventorySlot",
+            emptyInventorySlot,
             "priorSlot",
             minecraft.thePlayer.inventory.currentItem,
             "playerX",
@@ -280,6 +288,21 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
         return -1;
     }
 
+    private int findEmptyMainInventorySlot() {
+        for (int slot = 9; slot < 36; slot++) {
+            if (minecraft.thePlayer.inventory.mainInventory[slot] == null) return slot;
+        }
+        return -1;
+    }
+
+    private int chooseEvacuationHotbarSlot() {
+        int selected = minecraft.thePlayer.inventory.currentItem;
+        for (int slot = 8; slot >= 0; slot--) {
+            if (slot != selected) return slot;
+        }
+        return selected;
+    }
+
     private final class LiveHandle implements ActionHandle {
 
         private final ActionRequest request;
@@ -287,6 +310,7 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
         private final NavigationBackend navigation;
         private final int seedSlot;
         private final int emptyHandSlot;
+        private final int emptyInventorySlot;
         private final CropObservation plannedBefore;
         private final int priorHotbarSlot;
         private final long deadlineNanos;
@@ -298,17 +322,19 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
         private boolean ownsActionSession;
         private boolean replantDispatched;
         private boolean harvestDispatched;
+        private boolean emptyHandPrepared;
         private boolean slotChanged;
         private int collectionSettleTicks;
         private volatile boolean cancellationRequested;
 
         private LiveHandle(ActionRequest request, ActionLease lease, NavigationBackend navigation, int seedSlot,
-            int emptyHandSlot, CropObservation plannedBefore, long startedAtNanos) {
+            int emptyHandSlot, int emptyInventorySlot, CropObservation plannedBefore, long startedAtNanos) {
             this.request = request;
             this.lease = lease;
             this.navigation = navigation;
             this.seedSlot = seedSlot;
             this.emptyHandSlot = emptyHandSlot;
+            this.emptyInventorySlot = emptyInventorySlot;
             this.plannedBefore = plannedBefore;
             this.priorHotbarSlot = minecraft.thePlayer.inventory.currentItem;
             this.deadlineNanos = saturatingAdd(startedAtNanos, ACTION_TIMEOUT_NANOS);
@@ -384,6 +410,7 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
             else if (phase == Phase.BREAKING) breakOneTick();
             else if (phase == Phase.PLANTING) plantOnce();
             else if (phase == Phase.DISPATCHING_REPLANT) awaitReplantDispatch();
+            else if (phase == Phase.WAITING_FOR_EMPTY_HAND) awaitEmptyHandPreparation();
             else if (phase == Phase.DISPATCHING_HARVEST) awaitHarvestDispatch();
             else if (phase == Phase.CONFIRMING) confirmReplacement();
             else if (phase == Phase.WAITING_FOR_COLLECTION_SESSION) beginCollectionWhenReady();
@@ -470,9 +497,14 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
                 fail("Seed inventory changed after approach");
                 return;
             }
-            if (action == FarmActionKind.RIGHT_CLICK_HARVEST
+            if (action == FarmActionKind.RIGHT_CLICK_HARVEST && emptyInventorySlot < 0
                 && minecraft.thePlayer.inventory.mainInventory[emptyHandSlot] != null) {
                 fail("The reserved empty hotbar slot was filled before crop harvesting");
+                return;
+            }
+            if (action == FarmActionKind.RIGHT_CLICK_HARVEST && emptyInventorySlot >= 0
+                && minecraft.thePlayer.inventory.mainInventory[emptyInventorySlot] != null) {
+                fail("The reserved main-inventory slot was filled before crop harvesting");
                 return;
             }
             try {
@@ -489,7 +521,8 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
             guard.begin(lease);
             ownsActionSession = true;
             if (action == FarmActionKind.RIGHT_CLICK_HARVEST) {
-                rightClickHarvest();
+                if (minecraft.thePlayer.inventory.mainInventory[emptyHandSlot] == null) rightClickHarvest();
+                else prepareEmptyHand();
                 return;
             }
             ClientBootstrap.blockDamageShield()
@@ -503,6 +536,66 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
                 .getTarget();
             minecraft.playerController.clickBlock(target.getX(), target.getY(), target.getZ(), targetSide());
             trace("break-start", "target", target);
+        }
+
+        private void prepareEmptyHand() {
+            if (!guard.isActiveLease(lease)) {
+                fail("Farm inventory session lost packet authority");
+                return;
+            }
+            if (emptyInventorySlot < 9 || emptyInventorySlot >= 36
+                || minecraft.thePlayer.inventory.mainInventory[emptyInventorySlot] != null) {
+                fail("Reserved main-inventory space is no longer available");
+                return;
+            }
+            if (minecraft.thePlayer.inventory.getItemStack() != null) {
+                fail("Cannot prepare an empty hand while the player is carrying an inventory stack");
+                return;
+            }
+            if (minecraft.thePlayer.openContainer != minecraft.thePlayer.inventoryContainer) {
+                fail("Cannot empty a hotbar slot while another container is open");
+                return;
+            }
+            int windowId = minecraft.thePlayer.openContainer.windowId;
+            int hotbarContainerSlot = 36 + emptyHandSlot;
+            minecraft.playerController.windowClick(windowId, hotbarContainerSlot, 0, 0, minecraft.thePlayer);
+            minecraft.playerController.windowClick(windowId, emptyInventorySlot, 0, 0, minecraft.thePlayer);
+            if (minecraft.thePlayer.inventory.getItemStack() != null) {
+                minecraft.playerController.windowClick(windowId, hotbarContainerSlot, 0, 0, minecraft.thePlayer);
+                fail("Could not safely move a hotbar stack into main inventory");
+                return;
+            }
+            phase = Phase.WAITING_FOR_EMPTY_HAND;
+            detail = "Moving one hotbar stack into main inventory to empty the hand";
+            trace(
+                "empty-hand-move",
+                "hotbarSlot",
+                emptyHandSlot,
+                "inventorySlot",
+                emptyInventorySlot,
+                "windowId",
+                windowId);
+            try {
+                ActionPacketDispatch.afterPendingWrites(minecraft, () -> {
+                    synchronized (LiveHandle.this) {
+                        emptyHandPrepared = true;
+                    }
+                });
+            } catch (RuntimeException failure) {
+                fail("Could not synchronize the empty-hand inventory move: " + failure.getMessage());
+            }
+        }
+
+        private void awaitEmptyHandPreparation() {
+            if (!emptyHandPrepared) {
+                detail = "Waiting for the empty-hand inventory move to drain";
+                return;
+            }
+            if (minecraft.thePlayer.inventory.mainInventory[emptyHandSlot] != null) {
+                fail("Hotbar slot remained occupied after the empty-hand inventory move");
+                return;
+            }
+            rightClickHarvest();
         }
 
         private void rightClickHarvest() {
@@ -928,6 +1021,7 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
         BREAKING,
         PLANTING,
         DISPATCHING_REPLANT,
+        WAITING_FOR_EMPTY_HAND,
         DISPATCHING_HARVEST,
         CONFIRMING,
         WAITING_FOR_COLLECTION_SESSION,
