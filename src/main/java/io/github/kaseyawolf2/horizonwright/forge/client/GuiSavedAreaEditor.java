@@ -162,7 +162,7 @@ public final class GuiSavedAreaEditor extends GuiScreen {
             return;
         }
         if (button.id == HUSBANDRY_BUTTON) {
-            mc.displayGuiScreen(new GuiHusbandrySetup(this, runtimeProvider, original));
+            mc.displayGuiScreen(new GuiHusbandrySetup(this, runtimeProvider, editorProvider, original));
             return;
         }
         try {

@@ -182,7 +182,11 @@ interval. One finite pass or one species-specific recurring schedule can be
 created there. The scheduled-jobs screen can pause, resume, delete, or edit the
 pen, interval, and compact `minimum/maximum/actions` policy. Deleting the saved
 area cancels both farm and husbandry schedules and unfinished occurrences bound
-to it before removing the area.
+to it before removing the area. **Scan loaded pen** runs only the read-only
+observer and reports the selected species' total adults, breeding-ready and
+already-engaged animals, protected/excluded targets, and item drops. It is the
+physical-validation path for pen bounds and exact entity classification before
+the action executor is enabled.
 Clean-volume excavation is now attached to a live, session-owned backend. Every
 observation and action carries the explicit dimension as well as the existing
 geometry, frontier, revision, epoch, and block fingerprint. The observer treats

@@ -7,11 +7,16 @@ import net.minecraft.client.gui.GuiTextField;
 import org.lwjgl.input.Keyboard;
 
 import io.github.kaseyawolf2.horizonwright.HorizonwrightRuntime;
+import io.github.kaseyawolf2.horizonwright.core.base.AnimalObservation;
+import io.github.kaseyawolf2.horizonwright.core.base.HusbandryObservation;
 import io.github.kaseyawolf2.horizonwright.core.base.LivestockSpecies;
 import io.github.kaseyawolf2.horizonwright.core.base.NamedArea;
 import io.github.kaseyawolf2.horizonwright.core.task.ScheduleSnapshot;
 import io.github.kaseyawolf2.horizonwright.core.task.ScheduleState;
 import io.github.kaseyawolf2.horizonwright.core.task.TaskSnapshot;
+import io.github.kaseyawolf2.horizonwright.forge.client.husbandry.MinecraftHusbandryObserver;
+import io.github.kaseyawolf2.horizonwright.forge.client.husbandry.ProfileHusbandryConfiguration;
+import io.github.kaseyawolf2.horizonwright.runtime.persistence.profile.ProfileAssetEditorProvider;
 import io.github.kaseyawolf2.horizonwright.runtime.persistence.session.CurrentRuntimeProvider;
 import io.github.kaseyawolf2.horizonwright.runtime.task.HusbandryTask;
 
@@ -23,9 +28,11 @@ public final class GuiHusbandrySetup extends GuiScreen {
     private static final int SPECIES_BUTTON = 3;
     private static final int QUEUE_BUTTON = 4;
     private static final int SCHEDULE_BUTTON = 5;
+    private static final int SCAN_BUTTON = 6;
 
     private final GuiScreen parent;
     private final CurrentRuntimeProvider runtimeProvider;
+    private final ProfileAssetEditorProvider editorProvider;
     private final NamedArea pen;
     private LivestockSpecies species = LivestockSpecies.COW;
     private GuiTextField minimumAdults;
@@ -38,12 +45,14 @@ public final class GuiHusbandrySetup extends GuiScreen {
     private int panelWidth;
     private String status = "Choose a species and conservative population bounds.";
 
-    public GuiHusbandrySetup(GuiScreen parent, CurrentRuntimeProvider runtimeProvider, NamedArea pen) {
-        if (parent == null || runtimeProvider == null || pen == null) {
-            throw new IllegalArgumentException("parent, runtime provider, and named pen are required");
+    public GuiHusbandrySetup(GuiScreen parent, CurrentRuntimeProvider runtimeProvider,
+        ProfileAssetEditorProvider editorProvider, NamedArea pen) {
+        if (parent == null || runtimeProvider == null || editorProvider == null || pen == null) {
+            throw new IllegalArgumentException("parent, runtime/profile providers, and named pen are required");
         }
         this.parent = parent;
         this.runtimeProvider = runtimeProvider;
+        this.editorProvider = editorProvider;
         this.pen = pen;
     }
 
@@ -56,6 +65,7 @@ public final class GuiHusbandrySetup extends GuiScreen {
         top = Math.max(8, (height - 300) / 2);
         speciesButton = new GuiHorizonwrightButton(SPECIES_BUTTON, left + 148, top + 54, 180, 20, "");
         buttonList.add(speciesButton);
+        buttonList.add(new GuiHorizonwrightButton(SCAN_BUTTON, left + 336, top + 54, 106, 20, "Scan loaded pen"));
         minimumAdults = field(left + 148, top + 92, 72, "2");
         maximumAdults = field(left + 148, top + 122, 72, "8");
         maximumActions = field(left + 148, top + 152, 72, "16");
@@ -98,11 +108,49 @@ public final class GuiHusbandrySetup extends GuiScreen {
             return;
         }
         try {
-            if (button.id == QUEUE_BUTTON) queuePass();
+            if (button.id == SCAN_BUTTON) scanPen();
+            else if (button.id == QUEUE_BUTTON) queuePass();
             else if (button.id == SCHEDULE_BUTTON) schedulePasses();
         } catch (RuntimeException failure) {
             status = "Nothing changed: " + safeMessage(failure);
         }
+    }
+
+    private void scanPen() {
+        if (mc == null || mc.theWorld == null || mc.thePlayer == null) {
+            throw new IllegalStateException("join the bound world first");
+        }
+        HusbandryObservation observation = new MinecraftHusbandryObserver(
+            mc,
+            new ProfileHusbandryConfiguration(editorProvider)).observe(pen.getId());
+        int total = 0;
+        int adults = 0;
+        int ready = 0;
+        int engaged = 0;
+        int excluded = 0;
+        for (AnimalObservation animal : observation.getAnimals()) {
+            if (animal.getSpecies() != species) continue;
+            total++;
+            if (animal.isAdult()) adults++;
+            if (animal.isReadyToBreed()) ready++;
+            if (animal.isBreedingEngaged()) engaged++;
+            if (!animal.isEligibleTarget()) excluded++;
+        }
+        status = "Scan " + species.name()
+            + ": total "
+            + total
+            + ", adults "
+            + adults
+            + ", ready "
+            + ready
+            + ", breeding "
+            + engaged
+            + ", excluded "
+            + excluded
+            + "; drops "
+            + observation.getDrops()
+                .size()
+            + ".";
     }
 
     private void queuePass() {
