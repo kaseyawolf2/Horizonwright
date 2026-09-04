@@ -332,15 +332,27 @@ public final class LiveExcavationBackend implements ExcavationBackend {
             BlockPosition position = request.getIntent()
                 .getPosition();
             approachAttempt++;
-            NavigationRequest approach = NavigationRequest.adjacentTo(
-                request.getRequestId() + "-approach-" + approachAttempt,
-                request.getActionEpoch(),
-                request.getDimensionId(),
-                position.getX(),
-                position.getY(),
-                position.getZ(),
-                System.nanoTime(),
-                APPROACH_TIMEOUT_NANOS);
+            long startedAtNanos = System.nanoTime();
+            NavigationRequest approach = approachAttempt == 1
+                ? NavigationRequest.adjacentTo(
+                    request.getRequestId() + "-approach-" + approachAttempt,
+                    request.getActionEpoch(),
+                    request.getDimensionId(),
+                    position.getX(),
+                    position.getY(),
+                    position.getZ(),
+                    startedAtNanos,
+                    APPROACH_TIMEOUT_NANOS)
+                : new NavigationRequest(
+                    request.getRequestId() + "-approach-" + approachAttempt,
+                    request.getActionEpoch(),
+                    request.getDimensionId(),
+                    position.getX(),
+                    position.getY(),
+                    position.getZ(),
+                    3,
+                    startedAtNanos,
+                    APPROACH_TIMEOUT_NANOS);
             navigationHandle = navigation.submit(approach, lease);
             phase = Phase.APPROACHING;
             deadlineNanos = saturatingAdd(System.nanoTime(), APPROACH_TIMEOUT_NANOS);
@@ -427,7 +439,15 @@ public final class LiveExcavationBackend implements ExcavationBackend {
                 deadlineNanos = saturatingAdd(System.nanoTime(), LOCAL_ACTION_TIMEOUT_NANOS);
                 detail = "Approach complete; waiting for the packet drain boundary";
             } else if (progress.getState() == NavigationState.FAILED) {
-                fail("Could not approach excavation target: " + progress.getDetail());
+                navigationHandle = null;
+                if (approachAttempt < MAX_APPROACH_ATTEMPTS) {
+                    submitApproach("Retrying another approach after " + progress.getDetail());
+                } else {
+                    fail(
+                        "Could not approach excavation target after " + approachAttempt
+                            + " attempts: "
+                            + progress.getDetail());
+                }
             } else if (progress.getState() == NavigationState.CANCELLED) {
                 state = ExcavationActionState.CANCELLED;
                 detail = "Excavation approach was cancelled";
