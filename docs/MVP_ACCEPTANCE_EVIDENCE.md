@@ -35,8 +35,9 @@ but cannot replace the disposable-world observation run required by the plan.
   action. The Minecraft backend performs a Baritone approach, normal right-click
   placement, transactional full-inventory material staging/return, packet-drain
   cleanup, and post-server material confirmation.
-- Fluid containment/removal integration; clean-volume excavation currently
-  refuses blind fluid work.
+- Managed-quarry source and flowing-fluid containment is connected through the
+  configured filler, full-inventory staging, and server-confirmed placement;
+  physical validation is pending. Clean-volume excavation remains conservative.
 - Ordinary tree farming/replanting as a recurring base chore. Excavation tree
   recovery exists but is not a tree-farm task.
 - Physical confirmation of the separated long-distance farm travel/action

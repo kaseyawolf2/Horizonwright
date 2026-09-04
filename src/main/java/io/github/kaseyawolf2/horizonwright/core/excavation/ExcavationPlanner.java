@@ -87,7 +87,12 @@ public final class ExcavationPlanner {
                 kind = ExcavationIntentKind.PROTECT_INFRASTRUCTURE;
                 break;
             case FLUID_SOURCE_REACHABLE:
-                kind = ExcavationIntentKind.CLEAR_FLUID_SOURCE;
+                if (spec.getMode() == ExcavationMode.MANAGED_QUARRY) {
+                    kind = ExcavationIntentKind.CONTAIN_FLUID;
+                    material = configuration.getFluidFillerMaterial();
+                } else {
+                    kind = ExcavationIntentKind.CLEAR_FLUID_SOURCE;
+                }
                 break;
             case FLUID_SOURCE_UNREACHABLE:
             case FLUID_FLOWING:

@@ -45,7 +45,7 @@ public class ExcavationPlannerTest {
                 ExcavationIntentKind.BREAK_BLOCK,
                 ExcavationIntentKind.PROTECT_GRAVE,
                 ExcavationIntentKind.PROTECT_INFRASTRUCTURE,
-                ExcavationIntentKind.CLEAR_FLUID_SOURCE,
+                ExcavationIntentKind.CONTAIN_FLUID,
                 ExcavationIntentKind.CONTAIN_FLUID,
                 ExcavationIntentKind.PROTECT_INFRASTRUCTURE,
                 ExcavationIntentKind.MARK_UNREACHABLE,

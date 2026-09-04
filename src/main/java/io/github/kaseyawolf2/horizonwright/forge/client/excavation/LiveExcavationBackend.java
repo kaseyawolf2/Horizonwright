@@ -314,7 +314,9 @@ public final class LiveExcavationBackend implements ExcavationBackend {
             "leaseCapabilities",
             lease == null ? "none" : lease.getCapabilities());
         if (request == null || lease == null) throw new IllegalArgumentException("request and lease are required");
-        if (active != null && !active.isTerminal()) throw new IllegalStateException("an excavation action is active");
+        if (active != null && !active.isTerminal() || activeManaged != null && !activeManaged.isTerminal()) {
+            throw new IllegalStateException("an excavation action is active");
+        }
         if (!lease.isValid() || lease.getEpoch() != request.getActionEpoch()
             || !lease.getCapabilities()
                 .containsAll(REQUIRED)) {
@@ -337,6 +339,37 @@ public final class LiveExcavationBackend implements ExcavationBackend {
             DevelopmentTrace
                 .event("excavation-live", "immediate", "request", request.getRequestId(), "outcome", immediate);
             return new ImmediateHandle(request, immediate);
+        }
+        if (request.getIntent()
+            .getKind() == ExcavationIntentKind.CONTAIN_FLUID) {
+            if (current.getClassification() != ExcavationBlockClassification.FLUID_SOURCE_REACHABLE
+                && current.getClassification() != ExcavationBlockClassification.FLUID_SOURCE_UNREACHABLE
+                && current.getClassification() != ExcavationBlockClassification.FLUID_FLOWING) {
+                throw new IllegalStateException("the containment target is no longer fluid");
+            }
+            String approvedMaterial = request.getIntent()
+                .getApprovedMaterial()
+                .orElseThrow(() -> new IllegalStateException("fluid containment omitted its approved filler"));
+            ManagedQuarryIntent placementIntent = new ManagedQuarryIntent(
+                ManagedQuarryIntentKind.CONTAIN_FLUID,
+                request.getIntent()
+                    .getPosition(),
+                approvedMaterial);
+            ManagedQuarryObservationRequest observationRequest = new ManagedQuarryObservationRequest(
+                request.getTaskId(),
+                request.getDimensionId(),
+                request.getTaskRevision(),
+                request.getActionEpoch(),
+                request.getGeometryKey(),
+                request.getStartFrontier(),
+                placementIntent);
+            ManagedQuarryActionRequest placementRequest = new ManagedQuarryActionRequest(
+                request.getRequestId() + "-contain",
+                observationRequest,
+                placementIntent,
+                request.getIntent()
+                    .getObservedFingerprint());
+            return new FluidContainmentHandle(request, executeManagedQuarry(placementRequest, lease));
         }
         if (request.getIntent()
             .getKind() != ExcavationIntentKind.BREAK_BLOCK) {
@@ -1967,6 +2000,60 @@ public final class LiveExcavationBackend implements ExcavationBackend {
         Object itemName = ItemStack.class.cast(stack)
             .getItem();
         return itemName + ":meta=" + stack.getItemDamage() + ":count=" + stack.stackSize;
+    }
+
+    private static final class FluidContainmentHandle implements ExcavationActionHandle {
+
+        private final ExcavationActionRequest request;
+        private final ManagedQuarryActionHandle placement;
+
+        private FluidContainmentHandle(ExcavationActionRequest request, ManagedQuarryActionHandle placement) {
+            this.request = request;
+            this.placement = placement;
+        }
+
+        @Override
+        public String getRequestId() {
+            return request.getRequestId();
+        }
+
+        @Override
+        public ExcavationActionProgress progress() {
+            ManagedQuarryActionProgress progress = placement.progress();
+            ConfirmedExcavationTargetResult confirmation = null;
+            if (progress.getState() == ExcavationActionState.CONFIRMED) {
+                ConfirmedManagedQuarryResult placementConfirmation = progress.getConfirmation()
+                    .orElseThrow(() -> new IllegalStateException("confirmed containment omitted placement evidence"));
+                confirmation = new ConfirmedExcavationTargetResult(
+                    request.getTaskRevision(),
+                    request.getActionEpoch(),
+                    request.getGeometryKey(),
+                    request.getStartFrontier(),
+                    request.getIntent()
+                        .getObservedFingerprint(),
+                    new ExcavationTargetResult(
+                        request.getIntent()
+                            .getPosition(),
+                        ExcavationTargetOutcome.FLUID_CONTAINED));
+                if (!placementConfirmation.getConfirmedMaterial()
+                    .equals(
+                        request.getIntent()
+                            .getApprovedMaterial()
+                            .get())) {
+                    throw new IllegalStateException("containment confirmation used another material");
+                }
+            }
+            return new ExcavationActionProgress(
+                request.getRequestId(),
+                progress.getState(),
+                progress.getDetail(),
+                confirmation);
+        }
+
+        @Override
+        public void cancel() {
+            placement.cancel();
+        }
     }
 
     private static final class ImmediateHandle implements ExcavationActionHandle {

@@ -618,6 +618,38 @@ public class ExcavationTaskRunnerTest {
     }
 
     @Test
+    public void managedFluidUsesApprovedContainmentAndRecordsTheExactOutcome() {
+        harness = new Harness();
+        harness.backend.classification = ExcavationBlockClassification.FLUID_FLOWING;
+        TaskSpec managed = ExcavationTask
+            .managedQuarryCylinder("fluid", 0, 8, 8, 2, 12, 12, ManagedQuarryConfiguration.defaults());
+        harness.controller.submit(managed);
+        harness.controller.tick();
+        harness.controller.tick();
+        harness.backend.confirmManaged();
+        harness.controller.tick();
+        harness.controller.tick();
+        harness.backend.confirmManaged();
+        harness.controller.tick();
+        harness.controller.tick();
+
+        assertEquals(
+            io.github.kaseyawolf2.horizonwright.core.excavation.ExcavationIntentKind.CONTAIN_FLUID,
+            harness.backend.lastRequest.getIntent()
+                .getKind());
+        assertTrue(
+            harness.backend.lastLease.getCapabilities()
+                .contains(ActionCapability.CONTAINER));
+        harness.backend.confirm();
+        TaskSnapshot contained = task(harness.controller.tick(), managed.getId());
+        assertEquals(
+            "1",
+            contained.getCheckpoint()
+                .getValues()
+                .get("progress.fluidContained"));
+    }
+
+    @Test
     public void unloadingRequirementBlocksAtExactFrontierAndResumeReobservesIt() {
         harness = new Harness();
         harness.backend.suspensionReason = ExcavationSuspensionReason.UNLOADING_REQUIRED;
@@ -889,7 +921,11 @@ public class ExcavationTaskRunnerTest {
                 new ExcavationTargetResult(
                     active.request.getIntent()
                         .getPosition(),
-                    ExcavationTargetOutcome.COMPLETED));
+                    active.request.getIntent()
+                        .getKind()
+                        == io.github.kaseyawolf2.horizonwright.core.excavation.ExcavationIntentKind.CONTAIN_FLUID
+                            ? ExcavationTargetOutcome.FLUID_CONTAINED
+                            : ExcavationTargetOutcome.COMPLETED));
             active.state = ExcavationActionState.CONFIRMED;
             active.detail = "server-confirmed post-action observation";
             confirmedClear.add(

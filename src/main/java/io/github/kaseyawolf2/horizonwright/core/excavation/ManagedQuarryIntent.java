@@ -9,7 +9,7 @@ public final class ManagedQuarryIntent {
     private final BlockPosition position;
     private final String approvedMaterial;
 
-    ManagedQuarryIntent(ManagedQuarryIntentKind kind, BlockPosition position, String approvedMaterial) {
+    public ManagedQuarryIntent(ManagedQuarryIntentKind kind, BlockPosition position, String approvedMaterial) {
         this.kind = Objects.requireNonNull(kind, "kind");
         this.position = Objects.requireNonNull(position, "position");
         if (approvedMaterial == null || approvedMaterial.trim()

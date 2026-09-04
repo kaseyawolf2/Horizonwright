@@ -342,8 +342,14 @@ final class ExcavationTaskRunner implements TaskRunner {
 
     private StepResult submitExcavationAction(TaskStepContext context, ExcavationBackend backend, ExcavationPlan plan) {
         ExcavationServicePolicy policy = ExcavationTask.servicePolicy(spec);
+        ExcavationIntent intent = plan.getIntents()
+            .get(0);
+        Set<ActionCapability> capabilities = intent.getKind()
+            == io.github.kaseyawolf2.horizonwright.core.excavation.ExcavationIntentKind.CONTAIN_FLUID
+                ? MANAGED_REQUIRED_CAPABILITIES
+                : REQUIRED_CAPABILITIES;
         Optional<ActionLease> acquired = context.getActions()
-            .tryAcquire(REQUIRED_CAPABILITIES);
+            .tryAcquire(capabilities);
         if (!acquired.isPresent()) {
             return StepResult.waitFor(
                 context.getActionEpoch(),
@@ -352,8 +358,6 @@ final class ExcavationTaskRunner implements TaskRunner {
                 "waiting for MOVEMENT, LOOK, DIG, and tool-selection capabilities");
         }
         ActionLease lease = acquired.get();
-        ExcavationIntent intent = plan.getIntents()
-            .get(0);
         String requestId = spec.getId() + "-excavate-" + plan.getTaskRevision();
         ExcavationActionRequest actionRequest = new ExcavationActionRequest(
             requestId,
@@ -682,9 +686,11 @@ final class ExcavationTaskRunner implements TaskRunner {
         return submitExcavationAction(context, backend, plan);
     }
 
-    private static boolean requiresGameplayAction(ExcavationBlockClassification classification) {
+    private boolean requiresGameplayAction(ExcavationBlockClassification classification) {
         return classification == ExcavationBlockClassification.BREAKABLE
-            || classification == ExcavationBlockClassification.FLUID_SOURCE_REACHABLE;
+            || classification == ExcavationBlockClassification.FLUID_SOURCE_REACHABLE
+            || managedConfiguration != null && (classification == ExcavationBlockClassification.FLUID_SOURCE_UNREACHABLE
+                || classification == ExcavationBlockClassification.FLUID_FLOWING);
     }
 
     private static ExcavationTargetResult passiveResult(ExcavationIntent intent) {
