@@ -246,6 +246,34 @@ public class ExcavationTaskRunnerTest {
     }
 
     @Test
+    public void slowRandomAuditRediscoversBlocksInOlderClearedLayers() {
+        harness = new Harness();
+        TaskSpec spec = ExcavationTask.cleanVolumeCylinder("random-reconcile", 0, 8, 8, 0, 0, 64);
+        harness.controller.submit(spec);
+        harness.controller.tick();
+
+        for (int action = 0; action < 64; action++) {
+            harness.controller.tick();
+            harness.backend.confirm();
+            harness.controller.tick();
+            harness.controller.tick();
+        }
+        assertEquals(64, harness.backend.submissions);
+        harness.backend.confirmedClear.clear();
+
+        TaskSnapshot rediscovered = task(harness.controller.tick(), spec.getId());
+
+        assertTrue(
+            rediscovered.getDetail()
+                .contains("Rediscovered block"));
+        assertEquals(65, harness.backend.submissions);
+        assertTrue(
+            harness.backend.lastRequest.getIntent()
+                .getPosition()
+                .getY() > 0);
+    }
+
+    @Test
     public void emptyMaximumRadiusLayerAdvancesByTheBoundedScanWithoutSubmittingActions() {
         harness = new Harness();
         harness.backend.classification = ExcavationBlockClassification.AIR;

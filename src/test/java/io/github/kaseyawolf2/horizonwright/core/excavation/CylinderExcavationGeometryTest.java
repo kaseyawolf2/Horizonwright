@@ -170,6 +170,20 @@ public class CylinderExcavationGeometryTest {
             () -> CylinderExcavationGeometry.nextBatch(spec, restored, CylinderExcavationGeometry.MAX_BATCH_SIZE + 1));
     }
 
+    @Test
+    public void arbitraryInCylinderPositionBecomesAnExactCanonicalFrontier() {
+        CylinderExcavationSpec spec = spec(-16, -16, 3, 4, 9, ExcavationMode.CLEAN_VOLUME);
+        BlockPosition position = new BlockPosition(-18, 7, -17);
+
+        ExcavationFrontier frontier = CylinderExcavationGeometry.atPosition(spec, position);
+
+        assertEquals(position, frontier.getPosition());
+        CylinderExcavationGeometry.validate(spec, frontier);
+        assertThrows(
+            IllegalArgumentException.class,
+            () -> CylinderExcavationGeometry.atPosition(spec, new BlockPosition(-30, 7, -17)));
+    }
+
     private static CylinderExcavationSpec spec(int centerX, int centerZ, int radius, int bottomY, int topY,
         ExcavationMode mode) {
         return new CylinderExcavationSpec(0, centerX, centerZ, radius, bottomY, topY, mode);

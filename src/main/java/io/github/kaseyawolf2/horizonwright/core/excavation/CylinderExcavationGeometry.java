@@ -24,6 +24,24 @@ public final class CylinderExcavationGeometry {
         return normalize(spec, rawLayerStart(spec, layerY));
     }
 
+    /** Canonical frontier whose current position is the supplied in-cylinder block. */
+    public static ExcavationFrontier atPosition(CylinderExcavationSpec spec, BlockPosition position) {
+        requireSpec(spec);
+        if (!spec.contains(position)) {
+            throw new IllegalArgumentException("position is outside the excavation cylinder");
+        }
+        ExcavationFrontier frontier = new ExcavationFrontier(
+            spec.getGeometryKey(),
+            position.getY(),
+            Math.floorDiv(position.getX(), 16),
+            Math.floorDiv(position.getZ(), 16),
+            Math.floorMod(position.getX(), 16),
+            Math.floorMod(position.getZ(), 16),
+            false);
+        validate(spec, frontier);
+        return frontier;
+    }
+
     public static ExcavationTargetBatch nextBatch(CylinderExcavationSpec spec, ExcavationFrontier frontier,
         int maximumTargets) {
         requireSpec(spec);

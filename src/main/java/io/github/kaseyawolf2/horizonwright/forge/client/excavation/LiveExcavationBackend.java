@@ -64,6 +64,7 @@ public final class LiveExcavationBackend implements ExcavationBackend {
     private static final long LOCAL_ACTION_TIMEOUT_NANOS = TimeUnit.SECONDS.toNanos(20L);
     private static final double TARGET_SAMPLE_INSET = 0.001D;
     private static final int MAX_APPROACH_ATTEMPTS = 4;
+    private static final int VERTICAL_PREFLIGHT_BLOCKS = 6;
 
     private final Minecraft minecraft;
     private final ActionSessionGuard guard;
@@ -326,16 +327,20 @@ public final class LiveExcavationBackend implements ExcavationBackend {
         }
 
         private void start() {
+            boolean clearingOverhead = prepareVerticalPreflight();
             ExcavationTargetOverlay.show(workingPosition);
             if (canReachTarget()) {
                 phase = Phase.WAITING_FOR_DIG_SESSION;
                 deadlineNanos = saturatingAdd(System.nanoTime(), LOCAL_ACTION_TIMEOUT_NANOS);
                 state = ExcavationActionState.EXECUTING;
-                detail = "Target is within confirmed reach";
+                detail = clearingOverhead ? "Overhead preflight target is within confirmed reach"
+                    : "Target is within confirmed reach";
                 trace("phase", "reach", true);
                 return;
             }
-            submitApproach("Approaching exact excavation target");
+            submitApproach(
+                clearingOverhead ? "Approaching overhead block before excavating the planned target"
+                    : "Approaching exact excavation target");
         }
 
         private void submitApproach(String reason) {
@@ -1067,12 +1072,42 @@ public final class LiveExcavationBackend implements ExcavationBackend {
             workingFingerprint = request.getIntent()
                 .getObservedFingerprint();
             approachAttempt = 0;
-            pendingApproachReason = "Reapproaching after clearing an in-volume obstruction";
+            boolean moreOverhead = prepareVerticalPreflight();
+            pendingApproachReason = moreOverhead ? "Approaching the next overhead preflight block"
+                : "Reapproaching after clearing an in-volume obstruction";
             phase = Phase.WAITING_FOR_APPROACH_SESSION;
             deadlineNanos = saturatingAdd(System.nanoTime(), LOCAL_ACTION_TIMEOUT_NANOS);
-            detail = "Obstruction cleared; waiting to reapproach the planned target";
+            detail = moreOverhead ? "Overhead block cleared; checking the next overhead target"
+                : "Obstruction cleared; waiting to reapproach the planned target";
             ExcavationTargetOverlay.show(workingPosition);
             trace("obstruction-cleared", "position", workingPosition);
+        }
+
+        private boolean prepareVerticalPreflight() {
+            BlockPosition planned = request.getIntent()
+                .getPosition();
+            int maximumY = Math.min(
+                request.getExcavationArea()
+                    .getTopY(),
+                planned.getY() + VERTICAL_PREFLIGHT_BLOCKS);
+            for (int y = maximumY; y > planned.getY(); y--) {
+                BlockPosition overhead = new BlockPosition(planned.getX(), y, planned.getZ());
+                ExcavationObservation observed = observer.observePosition(request.getDimensionId(), overhead);
+                if (observed.getClassification() != ExcavationBlockClassification.BREAKABLE) continue;
+                workingPosition = overhead;
+                workingFingerprint = observed.getBlockFingerprint();
+                clearingObstruction = true;
+                trace(
+                    "vertical-preflight-selected",
+                    "position",
+                    overhead,
+                    "blocksAboveTarget",
+                    y - planned.getY(),
+                    "fingerprint",
+                    workingFingerprint);
+                return true;
+            }
+            return false;
         }
 
         private boolean isTerminal() {
