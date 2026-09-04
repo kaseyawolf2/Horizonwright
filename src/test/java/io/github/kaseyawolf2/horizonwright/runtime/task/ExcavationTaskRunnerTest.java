@@ -572,7 +572,7 @@ public class ExcavationTaskRunnerTest {
         harness = new Harness();
         harness.backend.managedAvailable = false;
         TaskSpec managed = ExcavationTask
-            .managedQuarryCylinder("managed", 0, 8, 8, 1, 12, 12, ManagedQuarryConfiguration.defaults());
+            .managedQuarryCylinder("managed", 0, 8, 8, 2, 12, 12, ManagedQuarryConfiguration.defaults());
         harness.controller.submit(managed);
 
         TaskSnapshot blocked = task(harness.controller.tick(), managed.getId());
@@ -586,7 +586,7 @@ public class ExcavationTaskRunnerTest {
     public void managedInfrastructureIsConfirmedInOrderBeforeVolumeFrontierAdvances() {
         harness = new Harness();
         TaskSpec managed = ExcavationTask
-            .managedQuarryCylinder("managed", 0, 8, 8, 1, 12, 12, ManagedQuarryConfiguration.defaults());
+            .managedQuarryCylinder("managed", 0, 8, 8, 2, 12, 12, ManagedQuarryConfiguration.defaults());
         harness.controller.submit(managed);
         TaskSnapshot bound = task(harness.controller.tick(), managed.getId());
         String initialFrontier = frontierKey(bound.getCheckpoint());

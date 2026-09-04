@@ -59,6 +59,18 @@ public final class ExcavationPlanner {
 
     private static ExcavationIntent toIntent(CylinderExcavationSpec spec, ExcavationObservation observation,
         ExcavationFrontier nextFrontier, ManagedQuarryConfiguration configuration) {
+        if (spec.getMode() == ExcavationMode.MANAGED_QUARRY
+            && (ManagedQuarryGeometry.isRampStep(spec, observation.getPosition())
+                || ManagedQuarryGeometry.isScheduledLightPosition(spec, configuration, observation.getPosition())
+                    && observation.getBlockFingerprint()
+                        .startsWith(configuration.getLightMaterial() + '@'))) {
+            return new ExcavationIntent(
+                observation.getPosition(),
+                ExcavationIntentKind.PROTECT_INFRASTRUCTURE,
+                observation.getBlockFingerprint(),
+                null,
+                nextFrontier);
+        }
         ExcavationIntentKind kind;
         String material = null;
         switch (observation.getClassification()) {
@@ -111,7 +123,8 @@ public final class ExcavationPlanner {
                 ManagedQuarryIntentKind.MAINTAIN_PERIMETER_RAMP,
                 rampStep,
                 configuration.getRampMaterial()));
-        if ((spec.getTopY() - layerY) % configuration.getLightLayerInterval() == 0) {
+        if (layerY < CylinderExcavationSpec.MAX_Y
+            && (spec.getTopY() - layerY) % configuration.getLightLayerInterval() == 0) {
             managedIntents.add(
                 new ManagedQuarryIntent(
                     ManagedQuarryIntentKind.PLACE_APPROVED_LIGHT,

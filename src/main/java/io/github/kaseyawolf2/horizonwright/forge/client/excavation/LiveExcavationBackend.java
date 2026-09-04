@@ -12,12 +12,14 @@ import net.minecraft.block.Block;
 import net.minecraft.block.material.Material;
 import net.minecraft.client.Minecraft;
 import net.minecraft.entity.player.EntityPlayer;
+import net.minecraft.item.ItemBlock;
 import net.minecraft.item.ItemStack;
 import net.minecraft.util.AxisAlignedBB;
 import net.minecraft.util.MovingObjectPosition;
 import net.minecraft.util.Vec3;
 import net.minecraftforge.common.ForgeHooks;
 
+import cpw.mods.fml.common.registry.GameRegistry;
 import io.github.kaseyawolf2.horizonwright.DevelopmentTrace;
 import io.github.kaseyawolf2.horizonwright.core.action.ActionCapability;
 import io.github.kaseyawolf2.horizonwright.core.action.ActionLease;
@@ -28,6 +30,8 @@ import io.github.kaseyawolf2.horizonwright.core.excavation.ExcavationIntentKind;
 import io.github.kaseyawolf2.horizonwright.core.excavation.ExcavationObservation;
 import io.github.kaseyawolf2.horizonwright.core.excavation.ExcavationTargetOutcome;
 import io.github.kaseyawolf2.horizonwright.core.excavation.ExcavationTargetResult;
+import io.github.kaseyawolf2.horizonwright.core.excavation.ManagedQuarryIntent;
+import io.github.kaseyawolf2.horizonwright.core.excavation.ManagedQuarryIntentKind;
 import io.github.kaseyawolf2.horizonwright.core.navigation.BackendAvailability;
 import io.github.kaseyawolf2.horizonwright.core.navigation.NavigationBackend;
 import io.github.kaseyawolf2.horizonwright.core.navigation.NavigationHandle;
@@ -41,6 +45,7 @@ import io.github.kaseyawolf2.horizonwright.forge.client.MinecraftRuntimeAccess;
 import io.github.kaseyawolf2.horizonwright.forge.client.network.ActionPacketDispatch;
 import io.github.kaseyawolf2.horizonwright.forge.client.repair.TinkersInventoryToolReader;
 import io.github.kaseyawolf2.horizonwright.runtime.task.ConfirmedExcavationTargetResult;
+import io.github.kaseyawolf2.horizonwright.runtime.task.ConfirmedManagedQuarryResult;
 import io.github.kaseyawolf2.horizonwright.runtime.task.ExcavationActionHandle;
 import io.github.kaseyawolf2.horizonwright.runtime.task.ExcavationActionProgress;
 import io.github.kaseyawolf2.horizonwright.runtime.task.ExcavationActionRequest;
@@ -50,6 +55,11 @@ import io.github.kaseyawolf2.horizonwright.runtime.task.ExcavationBackendAvailab
 import io.github.kaseyawolf2.horizonwright.runtime.task.ExcavationObservationRequest;
 import io.github.kaseyawolf2.horizonwright.runtime.task.ExcavationObservationResult;
 import io.github.kaseyawolf2.horizonwright.runtime.task.ExcavationServiceRequirements;
+import io.github.kaseyawolf2.horizonwright.runtime.task.ManagedQuarryActionHandle;
+import io.github.kaseyawolf2.horizonwright.runtime.task.ManagedQuarryActionProgress;
+import io.github.kaseyawolf2.horizonwright.runtime.task.ManagedQuarryActionRequest;
+import io.github.kaseyawolf2.horizonwright.runtime.task.ManagedQuarryObservationRequest;
+import io.github.kaseyawolf2.horizonwright.runtime.task.ManagedQuarryObservationResult;
 
 /** Moves within reach, digs one fingerprint-bound ordinary block, then confirms the exact target is air. */
 public final class LiveExcavationBackend implements ExcavationBackend {
@@ -80,6 +90,7 @@ public final class LiveExcavationBackend implements ExcavationBackend {
         RepairPolicy.planDefaults());
     private final TinkersInventoryToolReader toolReader = new TinkersInventoryToolReader();
     private LiveHandle active;
+    private LiveManagedHandle activeManaged;
 
     public LiveExcavationBackend(Minecraft minecraft, ActionSessionGuard guard, NavigationSource navigationSource) {
         if (minecraft == null || guard == null || navigationSource == null) {
@@ -163,6 +174,94 @@ public final class LiveExcavationBackend implements ExcavationBackend {
             repairTool.isPresent() ? repairTool.get()
                 .getReservedInventorySlot() : "none");
         return result;
+    }
+
+    @Override
+    public synchronized ExcavationBackendAvailability managedQuarryAvailability() {
+        return availability();
+    }
+
+    @Override
+    public ManagedQuarryObservationResult observeManagedQuarry(ManagedQuarryObservationRequest request) {
+        if (request == null) throw new IllegalArgumentException("request is required");
+        requireClientThread();
+        ManagedQuarryIntent intent = request.getIntent();
+        boolean satisfied = intent.getKind() == ManagedQuarryIntentKind.MAINTAIN_PERIMETER_RAMP
+            ? observer.isStableSolid(request.getDimensionId(), intent.getPosition())
+            : intent.getApprovedMaterial()
+                .equals(observer.blockIdentity(request.getDimensionId(), intent.getPosition()));
+        ManagedQuarryObservationResult result = new ManagedQuarryObservationResult(
+            request.getTaskRevision(),
+            request.getActionEpoch(),
+            request.getGeometryKey(),
+            request.getStartFrontier(),
+            intent.getPosition(),
+            observer.blockFingerprint(request.getDimensionId(), intent.getPosition()),
+            satisfied);
+        DevelopmentTrace.event(
+            "excavation-managed-live",
+            "observed",
+            "kind",
+            intent.getKind(),
+            "position",
+            intent.getPosition(),
+            "approvedMaterial",
+            intent.getApprovedMaterial(),
+            "fingerprint",
+            result.getBlockFingerprint(),
+            "satisfied",
+            satisfied);
+        return result;
+    }
+
+    @Override
+    public synchronized ManagedQuarryActionHandle executeManagedQuarry(ManagedQuarryActionRequest request,
+        ActionLease lease) {
+        if (request == null || lease == null) throw new IllegalArgumentException("request and lease are required");
+        if (active != null && !active.isTerminal() || activeManaged != null && !activeManaged.isTerminal()) {
+            throw new IllegalStateException("an excavation action is active");
+        }
+        if (!lease.isValid() || lease.getEpoch() != request.getActionEpoch()
+            || !lease.getCapabilities()
+                .containsAll(REQUIRED)) {
+            throw new IllegalArgumentException("a matching excavation action lease is required");
+        }
+        requireClientThread();
+        String currentFingerprint = observer.blockFingerprint(
+            request.getDimensionId(),
+            request.getIntent()
+                .getPosition());
+        if (!request.getObservedFingerprint()
+            .equals(currentFingerprint)) {
+            throw new IllegalStateException("the managed-quarry position changed after observation");
+        }
+        if (!observer.isReplaceable(
+            request.getDimensionId(),
+            request.getIntent()
+                .getPosition())) {
+            throw new IllegalStateException("managed-quarry placement target is occupied by an unapproved block");
+        }
+        int materialSlot = approvedMaterialHotbarSlot(
+            request.getIntent()
+                .getApprovedMaterial());
+        if (materialSlot < 0) {
+            throw new IllegalStateException(
+                "approved managed-quarry material is not in the hotbar: " + request.getIntent()
+                    .getApprovedMaterial());
+        }
+        NavigationBackend navigation = navigationSource.getNavigationBackend();
+        ExcavationBackendAvailability available = availability();
+        if (navigation == null || !available.isAvailable()) throw new IllegalStateException(available.getDiagnostic());
+        LiveManagedHandle handle = new LiveManagedHandle(request, lease, navigation, materialSlot, System.nanoTime());
+        activeManaged = handle;
+        try {
+            handle.start();
+            return handle;
+        } catch (RuntimeException failure) {
+            activeManaged = null;
+            handle.cancel();
+            throw failure;
+        }
     }
 
     private List<RepairToolSnapshot> repairableTools() {
@@ -271,6 +370,33 @@ public final class LiveExcavationBackend implements ExcavationBackend {
 
     private synchronized void clearActive(LiveHandle handle) {
         if (active == handle) active = null;
+    }
+
+    private synchronized void clearActive(LiveManagedHandle handle) {
+        if (activeManaged == handle) activeManaged = null;
+    }
+
+    private int approvedMaterialHotbarSlot(String approvedMaterial) {
+        if (minecraft.thePlayer == null) return -1;
+        for (int slot = 0; slot < 9; slot++) {
+            ItemStack stack = minecraft.thePlayer.inventory.mainInventory[slot];
+            if (stack == null || stack.stackSize < 1 || !(stack.getItem() instanceof ItemBlock)) continue;
+            net.minecraft.block.Block block = ((ItemBlock) stack.getItem()).field_150939_a;
+            GameRegistry.UniqueIdentifier id = GameRegistry.findUniqueIdentifierFor(block);
+            String identity = id == null ? Block.blockRegistry.getNameForObject(block) : id.modId + ':' + id.name;
+            if (approvedMaterial.equals(identity)) return slot;
+        }
+        return -1;
+    }
+
+    private String hotbarMaterialIdentity(int slot) {
+        if (minecraft.thePlayer == null || slot < 0 || slot > 8) return "missing";
+        ItemStack stack = minecraft.thePlayer.inventory.mainInventory[slot];
+        if (stack == null || stack.stackSize < 1 || !(stack.getItem() instanceof ItemBlock)) return "missing";
+        Block block = ((ItemBlock) stack.getItem()).field_150939_a;
+        GameRegistry.UniqueIdentifier id = GameRegistry.findUniqueIdentifierFor(block);
+        String identity = id == null ? Block.blockRegistry.getNameForObject(block) : id.modId + ':' + id.name;
+        return identity == null ? "missing" : identity;
     }
 
     private void requireClientThread() {
@@ -1378,6 +1504,326 @@ public final class LiveExcavationBackend implements ExcavationBackend {
         }
     }
 
+    private final class LiveManagedHandle implements ManagedQuarryActionHandle {
+
+        private final ManagedQuarryActionRequest request;
+        private final ActionLease lease;
+        private final NavigationBackend navigation;
+        private final int materialSlot;
+        private final long deadlineNanos;
+        private NavigationHandle navigationHandle;
+        private ManagedPhase phase = ManagedPhase.APPROACHING;
+        private ExcavationActionState state = ExcavationActionState.SUBMITTED;
+        private String detail = "Preparing managed-quarry placement";
+        private ConfirmedManagedQuarryResult confirmation;
+        private boolean ownsActionSession;
+        private boolean placementDispatched;
+        private int priorHotbarSlot = -1;
+        private volatile boolean cancellationRequested;
+
+        private LiveManagedHandle(ManagedQuarryActionRequest request, ActionLease lease, NavigationBackend navigation,
+            int materialSlot, long startedAtNanos) {
+            this.request = request;
+            this.lease = lease;
+            this.navigation = navigation;
+            this.materialSlot = materialSlot;
+            this.deadlineNanos = saturatingAdd(startedAtNanos, APPROACH_TIMEOUT_NANOS);
+        }
+
+        private void start() {
+            if (canReach(
+                request.getIntent()
+                    .getPosition())) {
+                phase = ManagedPhase.WAITING_FOR_ACTION_SESSION;
+                state = ExcavationActionState.EXECUTING;
+                detail = "Managed-quarry target is within confirmed reach";
+                return;
+            }
+            BlockPosition position = request.getIntent()
+                .getPosition();
+            navigationHandle = navigation.submit(
+                NavigationRequest.adjacentToAllowingPlacement(
+                    request.getRequestId() + "-approach",
+                    request.getActionEpoch(),
+                    request.getDimensionId(),
+                    position.getX(),
+                    position.getY(),
+                    position.getZ(),
+                    System.nanoTime(),
+                    APPROACH_TIMEOUT_NANOS),
+                lease);
+            state = ExcavationActionState.EXECUTING;
+            detail = "Approaching managed-quarry infrastructure position";
+        }
+
+        @Override
+        public String getRequestId() {
+            return request.getRequestId();
+        }
+
+        @Override
+        public synchronized ManagedQuarryActionProgress progress() {
+            requireClientThread();
+            traceManaged("progress", "phase", phase, "state", state, "detail", detail);
+            if (isTerminal()) return snapshot();
+            if (cancellationRequested) {
+                cancelOnClientThread();
+                return snapshot();
+            }
+            if (!lease.isValid()) {
+                stopProducers();
+                fail("Managed-quarry action lease was revoked");
+                return snapshot();
+            }
+            if (System.nanoTime() - deadlineNanos >= 0L) {
+                stopProducers();
+                fail("Managed-quarry placement deadline exceeded");
+                return snapshot();
+            }
+            if (phase == ManagedPhase.APPROACHING) pollApproach();
+            else if (phase == ManagedPhase.WAITING_FOR_ACTION_SESSION) placeWhenReady();
+            else if (phase == ManagedPhase.DISPATCHING) awaitDispatch();
+            else if (phase == ManagedPhase.CONFIRMING) confirmPlacement();
+            return snapshot();
+        }
+
+        @Override
+        public void cancel() {
+            cancellationRequested = true;
+            NavigationHandle moving;
+            synchronized (this) {
+                moving = navigationHandle;
+            }
+            if (moving != null) moving.cancel();
+            if (minecraft.func_152345_ab()) cancelOnClientThread();
+            else minecraft.func_152344_a(this::cancelOnClientThread);
+        }
+
+        private void pollApproach() {
+            NavigationProgress progress = navigationHandle.progress();
+            if (progress.getState() == NavigationState.COMPLETED) {
+                navigationHandle = null;
+                phase = ManagedPhase.WAITING_FOR_ACTION_SESSION;
+                detail = "Infrastructure approach complete; waiting for packet drain";
+            } else if (progress.getState() == NavigationState.FAILED) {
+                fail("Could not approach managed-quarry position: " + progress.getDetail());
+            } else if (progress.getState() == NavigationState.CANCELLED) {
+                state = ExcavationActionState.CANCELLED;
+                detail = "Managed-quarry approach was cancelled";
+                clearActive(this);
+            } else {
+                detail = "Approaching managed-quarry position: " + progress.getDetail();
+            }
+        }
+
+        private void placeWhenReady() {
+            if (!guard.isReadyForSession()) {
+                detail = "Waiting for approach packets to drain";
+                return;
+            }
+            ManagedQuarryIntent intent = request.getIntent();
+            String fingerprint = observer.blockFingerprint(request.getDimensionId(), intent.getPosition());
+            if (!request.getObservedFingerprint()
+                .equals(fingerprint)) {
+                fail("Managed-quarry target changed after approach");
+                return;
+            }
+            if (!observer.isReplaceable(request.getDimensionId(), intent.getPosition())) {
+                fail("Managed-quarry placement target became occupied");
+                return;
+            }
+            PlacementFace face = findPlacementFace(intent.getPosition());
+            if (face == null) {
+                fail("Managed-quarry target has no solid placement face");
+                return;
+            }
+            if (!canReach(face.support)) {
+                fail("Managed-quarry placement face is outside confirmed reach after approach");
+                return;
+            }
+            if (!intent.getApprovedMaterial()
+                .equals(hotbarMaterialIdentity(materialSlot))) {
+                fail("Approved managed-quarry material left its selected hotbar slot");
+                return;
+            }
+            guard.begin(lease);
+            ownsActionSession = true;
+            priorHotbarSlot = minecraft.thePlayer.inventory.currentItem;
+            minecraft.thePlayer.inventory.currentItem = materialSlot;
+            minecraft.playerController.updateController();
+            ItemStack held = minecraft.thePlayer.getHeldItem();
+            boolean accepted = minecraft.playerController.onPlayerRightClick(
+                minecraft.thePlayer,
+                minecraft.theWorld,
+                held,
+                face.support.getX(),
+                face.support.getY(),
+                face.support.getZ(),
+                face.side,
+                face.hit);
+            minecraft.thePlayer.swingItem();
+            traceManaged("placement", "accepted", accepted, "support", face.support, "side", face.side);
+            if (!accepted) {
+                stopActionSession();
+                fail("Minecraft rejected the managed-quarry placement");
+                return;
+            }
+            phase = ManagedPhase.DISPATCHING;
+            detail = "Dispatching managed-quarry placement";
+            try {
+                ActionPacketDispatch.afterPendingWrites(minecraft, () -> {
+                    synchronized (LiveManagedHandle.this) {
+                        stopActionSession();
+                        placementDispatched = true;
+                    }
+                });
+            } catch (RuntimeException failure) {
+                stopActionSession();
+                fail("Could not dispatch managed-quarry placement: " + failure.getMessage());
+            }
+        }
+
+        private void awaitDispatch() {
+            if (!placementDispatched) return;
+            phase = ManagedPhase.CONFIRMING;
+            detail = "Waiting for server-confirmed managed-quarry material";
+        }
+
+        private void confirmPlacement() {
+            ManagedQuarryIntent intent = request.getIntent();
+            String identity = observer.blockIdentity(request.getDimensionId(), intent.getPosition());
+            if (!intent.getApprovedMaterial()
+                .equals(identity)) {
+                detail = "Waiting for approved material at managed-quarry position; observed " + identity;
+                return;
+            }
+            String fingerprint = observer.blockFingerprint(request.getDimensionId(), intent.getPosition());
+            confirmation = new ConfirmedManagedQuarryResult(
+                request.getTaskRevision(),
+                request.getActionEpoch(),
+                request.getGeometryKey(),
+                request.getStartFrontier(),
+                intent,
+                fingerprint,
+                identity);
+            state = ExcavationActionState.CONFIRMED;
+            detail = "Server-confirmed approved managed-quarry material";
+            clearActive(this);
+        }
+
+        private PlacementFace findPlacementFace(BlockPosition target) {
+            int[][] candidates = { { 0, -1, 0, 1 }, { 1, 0, 0, 4 }, { -1, 0, 0, 5 }, { 0, 0, 1, 2 }, { 0, 0, -1, 3 },
+                { 0, 1, 0, 0 } };
+            for (int[] candidate : candidates) {
+                BlockPosition support = new BlockPosition(
+                    target.getX() + candidate[0],
+                    target.getY() + candidate[1],
+                    target.getZ() + candidate[2]);
+                if (!observer.isStableSolid(request.getDimensionId(), support)) continue;
+                return new PlacementFace(support, candidate[3], hitVector(support, candidate[3]));
+            }
+            return null;
+        }
+
+        private Vec3 hitVector(BlockPosition support, int side) {
+            double x = support.getX() + 0.5D;
+            double y = support.getY() + 0.5D;
+            double z = support.getZ() + 0.5D;
+            if (side == 0) y = support.getY() + TARGET_SAMPLE_INSET;
+            else if (side == 1) y = support.getY() + 1.0D - TARGET_SAMPLE_INSET;
+            else if (side == 2) z = support.getZ() + TARGET_SAMPLE_INSET;
+            else if (side == 3) z = support.getZ() + 1.0D - TARGET_SAMPLE_INSET;
+            else if (side == 4) x = support.getX() + TARGET_SAMPLE_INSET;
+            else if (side == 5) x = support.getX() + 1.0D - TARGET_SAMPLE_INSET;
+            return Vec3.createVectorHelper(x, y, z);
+        }
+
+        private boolean canReach(BlockPosition position) {
+            EntityPlayer player = minecraft.thePlayer;
+            double eyeY = player.posY + MinecraftRuntimeAccess.eyeHeight(player);
+            double dx = position.getX() + 0.5D - player.posX;
+            double dy = position.getY() + 0.5D - eyeY;
+            double dz = position.getZ() + 0.5D - player.posZ;
+            double reach = minecraft.playerController.getBlockReachDistance();
+            return dx * dx + dy * dy + dz * dz <= reach * reach;
+        }
+
+        private void stopActionSession() {
+            restoreHotbar();
+            if (!ownsActionSession) return;
+            guard.quarantine(lease);
+            guard.end(lease);
+            ownsActionSession = false;
+        }
+
+        private void restoreHotbar() {
+            if (priorHotbarSlot < 0 || minecraft.thePlayer == null) return;
+            minecraft.thePlayer.inventory.currentItem = priorHotbarSlot;
+            minecraft.playerController.updateController();
+            priorHotbarSlot = -1;
+        }
+
+        private void stopProducers() {
+            if (navigationHandle != null) {
+                navigationHandle.cancel();
+                navigationHandle = null;
+            }
+            stopActionSession();
+        }
+
+        private synchronized void cancelOnClientThread() {
+            if (isTerminal()) return;
+            stopProducers();
+            state = ExcavationActionState.CANCELLED;
+            detail = "Managed-quarry action cancelled";
+            clearActive(this);
+        }
+
+        private void fail(String reason) {
+            stopProducers();
+            state = ExcavationActionState.FAILED;
+            detail = reason;
+            traceManaged("failed", "reason", reason);
+            clearActive(this);
+        }
+
+        private ManagedQuarryActionProgress snapshot() {
+            return new ManagedQuarryActionProgress(request.getRequestId(), state, detail, confirmation);
+        }
+
+        private boolean isTerminal() {
+            return state == ExcavationActionState.CONFIRMED || state == ExcavationActionState.CANCELLED
+                || state == ExcavationActionState.FAILED;
+        }
+
+        private void traceManaged(String event, Object... fields) {
+            Object[] expanded = new Object[fields.length + 6];
+            expanded[0] = "request";
+            expanded[1] = request.getRequestId();
+            expanded[2] = "kind";
+            expanded[3] = request.getIntent()
+                .getKind();
+            expanded[4] = "position";
+            expanded[5] = request.getIntent()
+                .getPosition();
+            System.arraycopy(fields, 0, expanded, 6, fields.length);
+            DevelopmentTrace.event("excavation-managed-live", event, expanded);
+        }
+    }
+
+    private static final class PlacementFace {
+
+        private final BlockPosition support;
+        private final int side;
+        private final Vec3 hit;
+
+        private PlacementFace(BlockPosition support, int side, Vec3 hit) {
+            this.support = support;
+            this.side = side;
+            this.hit = hit;
+        }
+    }
+
     private static String describeStack(ItemStack stack) {
         if (stack == null) return "empty";
         Object itemName = ItemStack.class.cast(stack)
@@ -1419,6 +1865,13 @@ public final class LiveExcavationBackend implements ExcavationBackend {
         WAITING_FOR_DIG_SESSION,
         DIGGING,
         FINISHING
+    }
+
+    private enum ManagedPhase {
+        APPROACHING,
+        WAITING_FOR_ACTION_SESSION,
+        DISPATCHING,
+        CONFIRMING
     }
 
     private static long saturatingAdd(long left, long right) {

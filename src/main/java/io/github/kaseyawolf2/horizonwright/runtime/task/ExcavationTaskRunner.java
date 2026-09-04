@@ -518,7 +518,7 @@ final class ExcavationTaskRunner implements TaskRunner {
                 "Managed-quarry infrastructure observation failed: " + describe(failure),
                 true);
         }
-        if (observation.isApprovedMaterialPresent()) {
+        if (observation.isInfrastructureSatisfied()) {
             pendingManagedIndex++;
             return StepResult.progress(
                 context.getActionEpoch(),

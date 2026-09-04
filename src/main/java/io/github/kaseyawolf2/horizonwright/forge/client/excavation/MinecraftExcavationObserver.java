@@ -70,6 +70,48 @@ final class MinecraftExcavationObserver {
                 breakable));
     }
 
+    String blockFingerprint(int dimensionId, BlockPosition position) {
+        return observePosition(dimensionId, position).getBlockFingerprint();
+    }
+
+    String blockIdentity(int dimensionId, BlockPosition position) {
+        requireClientWorld(dimensionId);
+        World world = minecraft.theWorld;
+        if (!world.blockExists(position.getX(), position.getY(), position.getZ())) return "unloaded";
+        Block block = world.getBlock(position.getX(), position.getY(), position.getZ());
+        if (block == null || block.isAir(world, position.getX(), position.getY(), position.getZ())) {
+            return "minecraft:air";
+        }
+        GameRegistry.UniqueIdentifier id = GameRegistry.findUniqueIdentifierFor(block);
+        String name = id == null ? Block.blockRegistry.getNameForObject(block) : id.modId + ':' + id.name;
+        return name == null || name.trim()
+            .isEmpty() ? block.getClass()
+                .getName() : name.trim();
+    }
+
+    boolean isStableSolid(int dimensionId, BlockPosition position) {
+        requireClientWorld(dimensionId);
+        World world = minecraft.theWorld;
+        if (!world.blockExists(position.getX(), position.getY(), position.getZ())) return false;
+        Block block = world.getBlock(position.getX(), position.getY(), position.getZ());
+        if (block == null || block.isAir(world, position.getX(), position.getY(), position.getZ())) return false;
+        Material material = block.getMaterial();
+        return material != null && !material.isLiquid()
+            && material.blocksMovement()
+            && !(block instanceof net.minecraft.block.BlockFalling);
+    }
+
+    boolean isReplaceable(int dimensionId, BlockPosition position) {
+        requireClientWorld(dimensionId);
+        World world = minecraft.theWorld;
+        if (!world.blockExists(position.getX(), position.getY(), position.getZ())) return false;
+        Block block = world.getBlock(position.getX(), position.getY(), position.getZ());
+        return block == null || block.isAir(world, position.getX(), position.getY(), position.getZ())
+            || block.isReplaceable(world, position.getX(), position.getY(), position.getZ())
+            || block.getMaterial()
+                .isLiquid();
+    }
+
     Optional<TreeLogRecoveryPlan> planTreeRecovery(CylinderExcavationSpec area, BlockPosition leaf) {
         if (area == null || leaf == null) throw new IllegalArgumentException("area and leaf are required");
         requireClientWorld(area.getDimensionId());

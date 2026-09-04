@@ -56,6 +56,8 @@ public final class ExcavationTask {
             bottomY,
             topY,
             ExcavationMode.MANAGED_QUARRY);
+        io.github.kaseyawolf2.horizonwright.core.excavation.ManagedQuarryGeometry
+            .rampStep(cylinder, cylinder.getTopY());
         Map<String, String> parameters = baseParameters(cylinder);
         parameters.put(RAMP_MATERIAL, configuration.getRampMaterial());
         parameters.put(LIGHT_MATERIAL, configuration.getLightMaterial());

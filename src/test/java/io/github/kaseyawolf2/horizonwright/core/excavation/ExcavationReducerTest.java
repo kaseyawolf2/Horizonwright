@@ -64,7 +64,7 @@ public class ExcavationReducerTest {
 
     @Test
     public void rejectsStaleTaskEpochFrontierAndGeometryWithoutMutation() {
-        CylinderExcavationSpec spec = managedSpec(1);
+        CylinderExcavationSpec spec = managedSpec(2);
         ExcavationCheckpoint checkpoint = ExcavationCheckpoint.start(spec, 7L, 11L);
         ExcavationPlan plan = breakablePlan(spec, checkpoint, 2);
         ExcavationExecutionResult result = completed(plan, 2);
@@ -93,7 +93,7 @@ public class ExcavationReducerTest {
             ExcavationSuspensionReason.NONE);
         assertRejected(newerFrontier, result, ExcavationResultDisposition.STALE_FRONTIER);
 
-        CylinderExcavationSpec other = new CylinderExcavationSpec(0, -15, -16, 1, 5, 5, ExcavationMode.MANAGED_QUARRY);
+        CylinderExcavationSpec other = new CylinderExcavationSpec(0, -15, -16, 2, 5, 5, ExcavationMode.MANAGED_QUARRY);
         ExcavationCheckpoint otherCheckpoint = ExcavationCheckpoint.start(other, 7L, 11L);
         ExcavationPlan otherPlan = breakablePlan(other, otherCheckpoint, 1);
         assertRejected(checkpoint, completed(otherPlan, 1), ExcavationResultDisposition.WRONG_GEOMETRY);
@@ -208,7 +208,7 @@ public class ExcavationReducerTest {
 
     @Test
     public void malformedOrDishonestExecutionResultsFailBeforeApplication() {
-        CylinderExcavationSpec spec = managedSpec(1);
+        CylinderExcavationSpec spec = managedSpec(2);
         ExcavationCheckpoint checkpoint = ExcavationCheckpoint.start(spec, 1L, 2L);
         ExcavationPlan protectedPlan = ExcavationPlanner.calculate(
             spec,

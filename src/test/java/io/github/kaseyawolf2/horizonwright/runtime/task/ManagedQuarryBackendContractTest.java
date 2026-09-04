@@ -129,7 +129,7 @@ public class ManagedQuarryBackendContractTest {
     }
 
     private static CylinderExcavationSpec spec() {
-        return new CylinderExcavationSpec(0, 8, 8, 1, 12, 12, ExcavationMode.MANAGED_QUARRY);
+        return new CylinderExcavationSpec(0, 8, 8, 2, 12, 12, ExcavationMode.MANAGED_QUARRY);
     }
 
     private static ManagedQuarryIntent managedIntent(CylinderExcavationSpec spec, ExcavationFrontier frontier) {

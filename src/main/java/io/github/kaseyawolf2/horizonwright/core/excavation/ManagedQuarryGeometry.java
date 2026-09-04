@@ -1,17 +1,18 @@
 package io.github.kaseyawolf2.horizonwright.core.excavation;
 
-/** Deterministic infrastructure positions outside a managed cylinder's excavated volume. */
+/** Deterministic retained infrastructure positions inside a managed cylinder. */
 public final class ManagedQuarryGeometry {
 
     private ManagedQuarryGeometry() {}
 
     /**
-     * Returns one step on a descending square perimeter staircase. Consecutive layers are horizontally adjacent and
-     * one block lower, including when the path wraps around a corner or completes a circuit.
+     * Returns one step on a descending square staircase inscribed near the cylinder perimeter. Consecutive layers are
+     * horizontally adjacent and one block lower, including when the path wraps around a corner or completes a circuit.
      */
     public static BlockPosition rampStep(CylinderExcavationSpec spec, int layerY) {
         requireManagedLayer(spec, layerY);
-        int distance = Math.addExact(spec.getRadius(), 1);
+        if (spec.getRadius() < 2) throw new IllegalArgumentException("managed quarry ramps require radius 2 or larger");
+        int distance = (int) Math.floor(spec.getRadius() / Math.sqrt(2.0D));
         int sideLength = Math.multiplyExact(distance, 2);
         int perimeterLength = Math.multiplyExact(sideLength, 4);
         int depth = spec.getTopY() - layerY;
@@ -34,8 +35,6 @@ public final class ManagedQuarryGeometry {
             x = spec.getCenterX() - distance + offset;
             z = spec.getCenterZ() - distance;
         }
-        requireWorldCoordinate(x, "ramp X");
-        requireWorldCoordinate(z, "ramp Z");
         return new BlockPosition(x, layerY, z);
     }
 
@@ -45,18 +44,30 @@ public final class ManagedQuarryGeometry {
         return new BlockPosition(ramp.getX(), Math.addExact(ramp.getY(), 1), ramp.getZ());
     }
 
+    /** True when the position is the retained stair step for its layer. */
+    public static boolean isRampStep(CylinderExcavationSpec spec, BlockPosition position) {
+        if (position == null) return false;
+        requireManagedLayer(spec, position.getY());
+        return rampStep(spec, position.getY()).equals(position);
+    }
+
+    /** True when the position is reserved for a light supported by the layer below it. */
+    public static boolean isScheduledLightPosition(CylinderExcavationSpec spec,
+        ManagedQuarryConfiguration configuration, BlockPosition position) {
+        if (configuration == null || position == null) return false;
+        requireManagedLayer(spec, position.getY());
+        int supportLayer = position.getY() - 1;
+        return supportLayer >= spec.getBottomY()
+            && (spec.getTopY() - supportLayer) % configuration.getLightLayerInterval() == 0
+            && lightPosition(spec, supportLayer).equals(position);
+    }
+
     private static void requireManagedLayer(CylinderExcavationSpec spec, int layerY) {
         if (spec == null || spec.getMode() != ExcavationMode.MANAGED_QUARRY) {
             throw new IllegalArgumentException("managed quarry geometry requires a managed cylinder");
         }
         if (layerY < spec.getBottomY() || layerY > spec.getTopY()) {
             throw new IllegalArgumentException("layerY is outside the managed cylinder");
-        }
-    }
-
-    private static void requireWorldCoordinate(int value, String field) {
-        if (Math.abs((long) value) > CylinderExcavationSpec.MAX_ABS_COORDINATE) {
-            throw new IllegalArgumentException(field + " exceeds the supported world coordinate range");
         }
     }
 }

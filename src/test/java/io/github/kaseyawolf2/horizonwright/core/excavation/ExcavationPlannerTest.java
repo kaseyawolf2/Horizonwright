@@ -47,7 +47,7 @@ public class ExcavationPlannerTest {
                 ExcavationIntentKind.PROTECT_INFRASTRUCTURE,
                 ExcavationIntentKind.CLEAR_FLUID_SOURCE,
                 ExcavationIntentKind.CONTAIN_FLUID,
-                ExcavationIntentKind.CONTAIN_FLUID,
+                ExcavationIntentKind.PROTECT_INFRASTRUCTURE,
                 ExcavationIntentKind.MARK_UNREACHABLE,
                 ExcavationIntentKind.MARK_FAILED),
             kinds(plan));
@@ -118,11 +118,11 @@ public class ExcavationPlannerTest {
 
     @Test
     public void managedInfrastructureIsEmittedOncePerLayerWithDeterministicLightCadence() {
-        CylinderExcavationSpec spec = spec(ExcavationMode.MANAGED_QUARRY, 0, 8, 9);
+        CylinderExcavationSpec spec = spec(ExcavationMode.MANAGED_QUARRY, 2, 8, 9);
         ExcavationPlanningWindow window = ExcavationTestSupport.uniformWindow(
             spec,
             CylinderExcavationGeometry.initialFrontier(spec),
-            2,
+            14,
             3L,
             4L,
             ExcavationBlockClassification.BREAKABLE);
@@ -158,7 +158,7 @@ public class ExcavationPlannerTest {
                 .get(3)
                 .getPosition()
                 .getY());
-        assertFalse(
+        assertTrue(
             spec.contains(
                 plan.getManagedIntents()
                     .get(0)
@@ -173,6 +173,45 @@ public class ExcavationPlannerTest {
             plan.getManagedIntents()
                 .get(3)
                 .getApprovedMaterial());
+    }
+
+    @Test
+    public void futureLightPositionIsClearedBeforeOnlyTheApprovedLightIsRetained() {
+        CylinderExcavationSpec spec = spec(ExcavationMode.MANAGED_QUARRY, 8, 60, 64);
+        ManagedQuarryConfiguration configuration = ManagedQuarryConfiguration.defaults();
+        BlockPosition light = ManagedQuarryGeometry.lightPosition(spec, 60);
+        ExcavationFrontier frontier = CylinderExcavationGeometry.atPosition(spec, light);
+        ExcavationTargetBatch batch = CylinderExcavationGeometry.nextBatch(spec, frontier, 1);
+
+        ExcavationPlan stone = ExcavationPlanner.calculate(
+            spec,
+            new ExcavationPlanningWindow(
+                1L,
+                2L,
+                batch,
+                Collections.singletonList(
+                    new ExcavationObservation(light, ExcavationBlockClassification.BREAKABLE, "minecraft:stone@0"))),
+            configuration);
+        ExcavationPlan torch = ExcavationPlanner.calculate(
+            spec,
+            new ExcavationPlanningWindow(
+                1L,
+                2L,
+                batch,
+                Collections.singletonList(
+                    new ExcavationObservation(light, ExcavationBlockClassification.BREAKABLE, "minecraft:torch@5"))),
+            configuration);
+
+        assertEquals(
+            ExcavationIntentKind.BREAK_BLOCK,
+            stone.getIntents()
+                .get(0)
+                .getKind());
+        assertEquals(
+            ExcavationIntentKind.PROTECT_INFRASTRUCTURE,
+            torch.getIntents()
+                .get(0)
+                .getKind());
     }
 
     @Test
