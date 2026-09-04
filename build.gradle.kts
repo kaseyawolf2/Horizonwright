@@ -29,11 +29,17 @@ abstract class VerifyPinnedArtifacts : DefaultTask() {
     @get:InputFile
     abstract val checksumManifest: RegularFileProperty
 
+    @get:InputFile
+    abstract val runtimeInspectorSource: RegularFileProperty
+
     @get:Input
     abstract val expectedHashes: MapProperty<String, String>
 
     @get:Input
     abstract val normalizedTextArtifacts: ListProperty<String>
+
+    @get:Input
+    abstract val runtimeBinaryArtifactName: org.gradle.api.provider.Property<String>
 
     @TaskAction
     fun verify() {
@@ -62,6 +68,22 @@ abstract class VerifyPinnedArtifacts : DefaultTask() {
         if (actualManifest != expectedManifest) {
             throw GradleException(
                 "${checksumManifest.get().asFile.name} does not match the hashes pinned in build.gradle.kts"
+            )
+        }
+
+        val runtimeArtifact = runtimeBinaryArtifactName.get()
+        val expectedRuntimeHash = expected[runtimeArtifact]
+            ?: throw GradleException("Runtime Baritone artifact is not pinned: $runtimeArtifact")
+        val inspectorSource = runtimeInspectorSource.get().asFile.readText(Charsets.UTF_8)
+        val inspectorHash = Regex("""REFERENCE_SHA256\s*=\s*\"([0-9A-Fa-f]{64})\"""")
+            .find(inspectorSource)
+            ?.groupValues
+            ?.get(1)
+            ?.lowercase()
+            ?: throw GradleException("Could not read REFERENCE_SHA256 from the runtime Baritone inspector")
+        if (inspectorHash != expectedRuntimeHash) {
+            throw GradleException(
+                "Runtime Baritone inspector SHA-256 mismatch: expected $expectedRuntimeHash but found $inspectorHash"
             )
         }
     }
@@ -254,7 +276,13 @@ val verifyBaritoneArtifacts by tasks.registering(VerifyPinnedArtifacts::class) {
     description = "Verifies the exact vendored Baritone binary, source, and license artifacts."
     artifactDirectory.set(layout.projectDirectory.dir("vendor/baritone"))
     checksumManifest.set(layout.projectDirectory.file("vendor/baritone/SHA256SUMS"))
+    runtimeInspectorSource.set(
+        layout.projectDirectory.file(
+            "src/main/java/io/github/kaseyawolf2/horizonwright/navigation/baritone/BaritoneInstallationInspector.java"
+        )
+    )
     expectedHashes.set(pinnedBaritoneHashes)
+    runtimeBinaryArtifactName.set("baritone-v1.2.19-mc1.7.10-1-7-10-forge+fcbbd4882c.jar")
     normalizedTextArtifacts.set(
         listOf(
             "COPYING-GPL-3.0",
