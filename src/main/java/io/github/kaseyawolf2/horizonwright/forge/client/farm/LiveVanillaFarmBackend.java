@@ -46,8 +46,12 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
         ActionCapability.DIG,
         ActionCapability.PLACE,
         ActionCapability.HELD_USE);
-    private static final EnumSet<ActionCapability> RIGHT_CLICK_HARVEST = EnumSet
-        .of(ActionCapability.MOVEMENT, ActionCapability.LOOK, ActionCapability.USE, ActionCapability.CONTAINER);
+    private static final EnumSet<ActionCapability> RIGHT_CLICK_HARVEST = EnumSet.of(
+        ActionCapability.MOVEMENT,
+        ActionCapability.LOOK,
+        ActionCapability.USE,
+        ActionCapability.CONTAINER,
+        ActionCapability.HELD_USE);
     private static final String CROPS_NH_SPADE = "com.gtnewhorizon.cropsnh.items.tools.ItemSpade";
     private static final String CROPS_NH_REINFORCED_SPADE = "com.gtnewhorizon.cropsnh.items.tools.ItemReinforcedSpade";
     private static final long ACTION_TIMEOUT_NANOS = TimeUnit.SECONDS.toNanos(30L);

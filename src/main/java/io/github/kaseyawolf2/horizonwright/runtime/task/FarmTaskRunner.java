@@ -373,7 +373,8 @@ final class FarmTaskRunner implements TaskRunner {
                     ActionCapability.MOVEMENT,
                     ActionCapability.LOOK,
                     ActionCapability.USE,
-                    ActionCapability.CONTAINER));
+                    ActionCapability.CONTAINER,
+                    ActionCapability.HELD_USE));
         }
         throw new IllegalArgumentException("farm decision does not require an action: " + action);
     }
