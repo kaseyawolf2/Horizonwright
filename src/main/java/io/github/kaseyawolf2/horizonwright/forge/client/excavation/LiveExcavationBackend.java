@@ -822,6 +822,8 @@ public final class LiveExcavationBackend implements ExcavationBackend {
                 for (double y : ys) {
                     for (double z : zs) {
                         Vec3 sample = Vec3.createVectorHelper(x, y, z);
+                        double sampleDistanceSquared = eyes.squareDistanceTo(sample);
+                        if (sampleDistanceSquared > reach * reach) continue;
                         MovingObjectPosition hit = MinecraftRuntimeAccess
                             .rayTraceBlocks(minecraft.theWorld, eyes, sample, false);
                         if (hit == null || hit.typeOfHit != MovingObjectPosition.MovingObjectType.BLOCK) continue;
@@ -830,11 +832,8 @@ public final class LiveExcavationBackend implements ExcavationBackend {
                             nearestMismatch = hit;
                             continue;
                         }
-                        double hitDistanceSquared = hit.hitVec == null ? eyes.squareDistanceTo(sample)
-                            : eyes.squareDistanceTo(hit.hitVec);
-                        if (hitDistanceSquared <= reach * reach
-                            && (best == null || hitDistanceSquared < best.distanceSquared)) {
-                            best = new TargetAim(sample, hit.sideHit, hitDistanceSquared);
+                        if (best == null || sampleDistanceSquared < best.distanceSquared) {
+                            best = new TargetAim(sample, hit.sideHit, sampleDistanceSquared);
                         }
                     }
                 }
