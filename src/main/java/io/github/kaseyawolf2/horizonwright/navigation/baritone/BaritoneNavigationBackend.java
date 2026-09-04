@@ -21,6 +21,7 @@ import baritone.api.pathing.goals.GoalGetToBlock;
 import baritone.api.pathing.goals.GoalNear;
 import baritone.api.process.PathingCommand;
 import baritone.api.process.PathingCommandType;
+import baritone.api.utils.input.Input;
 import baritone.compat.BlockPos;
 import baritone.pathing.movement.CalculationContext;
 import baritone.utils.PathingCommandContext;
@@ -213,12 +214,24 @@ public final class BaritoneNavigationBackend
         synchronized (this) {
             protectionRequested = cropProtectionRequested();
         }
-        if (protectionRequested && cropsNhTravel.shouldSuppressSprint(
+        boolean nearCrops = protectionRequested && cropsNhTravel.shouldSuppressSprint(
             baritone.getPlayerContext()
                 .world(),
             baritone.getPlayerContext()
-                .player()))
+                .player());
+        if (nearCrops) {
+            Boolean requested = event.getState();
             event.setState(false);
+            DevelopmentTrace.event(
+                "navigation",
+                "cropsnh-sprint-veto",
+                "requested",
+                requested,
+                "resolved",
+                false,
+                "cropOperations",
+                cropOperationCount());
+        }
     }
 
     private void enforceCropSprintSafety() {
@@ -237,9 +250,13 @@ public final class BaritoneNavigationBackend
                     .world(),
                 baritone.getPlayerContext()
                     .player());
-        if (suppress) baritone.getPlayerContext()
-            .player()
-            .setSprinting(false);
+        if (suppress) {
+            baritone.getInputOverrideHandler()
+                .setInputForceState(Input.SPRINT, false);
+            baritone.getPlayerContext()
+                .player()
+                .setSprinting(false);
+        }
         if (cropSprintSuppressed != suppress) {
             cropSprintSuppressed = suppress;
             DevelopmentTrace.event(
