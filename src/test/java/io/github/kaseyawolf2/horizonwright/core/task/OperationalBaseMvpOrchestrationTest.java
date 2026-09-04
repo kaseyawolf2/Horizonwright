@@ -16,6 +16,7 @@ import io.github.kaseyawolf2.horizonwright.runtime.task.ExcavationTask;
 import io.github.kaseyawolf2.horizonwright.runtime.task.FarmTask;
 import io.github.kaseyawolf2.horizonwright.runtime.task.HusbandryTask;
 import io.github.kaseyawolf2.horizonwright.runtime.task.SleepTask;
+import io.github.kaseyawolf2.horizonwright.runtime.task.TreeTask;
 
 /** Synthetic scheduler/reconnect proof for the Milestone 4 recurring-base acceptance shape. */
 public class OperationalBaseMvpOrchestrationTest {
@@ -60,13 +61,16 @@ public class OperationalBaseMvpOrchestrationTest {
             assertEquals(TaskState.SUSPENDED, task(nightPreemption, excavation.getId()).getState());
             String sleep = scheduleTask(nightPreemption, "sleep");
             String secondFarm = scheduleTask(nightPreemption, "farm");
+            String trees = scheduleTask(nightPreemption, "trees");
             String husbandry = scheduleTask(nightPreemption, "husbandry");
             assertEquals(TaskState.QUEUED, task(nightPreemption, sleep).getState());
             assertEquals(TaskState.QUEUED, task(nightPreemption, secondFarm).getState());
+            assertEquals(TaskState.QUEUED, task(nightPreemption, trees).getState());
             assertEquals(TaskState.QUEUED, task(nightPreemption, husbandry).getState());
 
             assertEquals(TaskState.COMPLETED, task(original.tick(environment(13_000L)), sleep).getState());
             assertEquals(TaskState.COMPLETED, task(original.tick(environment(13_000L)), secondFarm).getState());
+            assertEquals(TaskState.COMPLETED, task(original.tick(environment(13_000L)), trees).getState());
             assertEquals(TaskState.COMPLETED, task(original.tick(environment(13_000L)), husbandry).getState());
             ControllerSnapshot resumedAfterNight = original.tick(environment(13_000L));
             TaskCheckpoint beforeReconnect = task(resumedAfterNight, excavation.getId()).getCheckpoint();
@@ -84,6 +88,12 @@ public class OperationalBaseMvpOrchestrationTest {
                 ControllerSnapshot reconnected = restored.tick(reconnectedEnvironment(13_000L));
                 assertEquals(TaskState.RUNNING, task(reconnected, excavation.getId()).getState());
                 assertEquals(4, completedBlocks(task(reconnected, excavation.getId()).getCheckpoint()));
+                assertEquals(
+                    1L,
+                    reconnected.getScheduler()
+                        .findSchedule("trees")
+                        .get()
+                        .getTotalRuns());
                 assertEquals(
                     1L,
                     reconnected.getScheduler()
@@ -129,6 +139,14 @@ public class OperationalBaseMvpOrchestrationTest {
                 200L,
                 Collections.<String>emptySet(),
                 10));
+        orchestrator.submitSchedule(
+            ScheduleRule.connectedInterval(
+                "trees",
+                TreeTask.scheduledPass("woodlot", 2),
+                200L,
+                200L,
+                Collections.<String>emptySet(),
+                5));
         orchestrator.submitSchedule(
             ScheduleRule.worldTimeWindow(
                 "sleep",
