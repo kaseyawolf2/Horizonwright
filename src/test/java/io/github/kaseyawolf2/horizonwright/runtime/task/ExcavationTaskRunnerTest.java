@@ -836,6 +836,9 @@ public class ExcavationTaskRunnerTest {
             ActionLease actionLease) {
             assertTrue(actionLease.isValid());
             assertEquals(request.getActionEpoch(), actionLease.getEpoch());
+            assertTrue(
+                actionLease.getCapabilities()
+                    .contains(ActionCapability.CONTAINER));
             managedSubmissions++;
             managedActive = new ManagedHandle(request);
             return managedActive;

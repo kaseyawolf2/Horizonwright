@@ -75,6 +75,12 @@ public final class LiveExcavationBackend implements ExcavationBackend {
         ActionCapability.DIG,
         ActionCapability.PLACE,
         ActionCapability.HELD_USE);
+    private static final EnumSet<ActionCapability> MANAGED_REQUIRED = EnumSet.of(
+        ActionCapability.MOVEMENT,
+        ActionCapability.LOOK,
+        ActionCapability.PLACE,
+        ActionCapability.HELD_USE,
+        ActionCapability.CONTAINER);
     private static final long APPROACH_TIMEOUT_NANOS = NavigationRequest.MAX_RUNTIME_NANOS;
     private static final long LOCAL_ACTION_TIMEOUT_NANOS = TimeUnit.SECONDS.toNanos(20L);
     private static final long FINISH_BOUNDARY_FALLBACK_NANOS = TimeUnit.MILLISECONDS.toNanos(250L);
@@ -223,7 +229,7 @@ public final class LiveExcavationBackend implements ExcavationBackend {
         }
         if (!lease.isValid() || lease.getEpoch() != request.getActionEpoch()
             || !lease.getCapabilities()
-                .containsAll(REQUIRED)) {
+                .containsAll(MANAGED_REQUIRED)) {
             throw new IllegalArgumentException("a matching excavation action lease is required");
         }
         requireClientThread();
@@ -241,18 +247,18 @@ public final class LiveExcavationBackend implements ExcavationBackend {
                 .getPosition())) {
             throw new IllegalStateException("managed-quarry placement target is occupied by an unapproved block");
         }
-        int materialSlot = approvedMaterialHotbarSlot(
+        ManagedQuarryMaterialPlan material = approvedMaterial(
             request.getIntent()
                 .getApprovedMaterial());
-        if (materialSlot < 0) {
+        if (material == null) {
             throw new IllegalStateException(
-                "approved managed-quarry material is not in the hotbar: " + request.getIntent()
+                "approved managed-quarry material is not in player inventory: " + request.getIntent()
                     .getApprovedMaterial());
         }
         NavigationBackend navigation = navigationSource.getNavigationBackend();
         ExcavationBackendAvailability available = availability();
         if (navigation == null || !available.isAvailable()) throw new IllegalStateException(available.getDiagnostic());
-        LiveManagedHandle handle = new LiveManagedHandle(request, lease, navigation, materialSlot, System.nanoTime());
+        LiveManagedHandle handle = new LiveManagedHandle(request, lease, navigation, material, System.nanoTime());
         activeManaged = handle;
         try {
             handle.start();
@@ -376,21 +382,31 @@ public final class LiveExcavationBackend implements ExcavationBackend {
         if (activeManaged == handle) activeManaged = null;
     }
 
-    private int approvedMaterialHotbarSlot(String approvedMaterial) {
-        if (minecraft.thePlayer == null) return -1;
-        for (int slot = 0; slot < 9; slot++) {
+    private ManagedQuarryMaterialPlan approvedMaterial(String approvedMaterial) {
+        if (minecraft.thePlayer == null) return null;
+        for (int slot = 0; slot < minecraft.thePlayer.inventory.mainInventory.length; slot++) {
             ItemStack stack = minecraft.thePlayer.inventory.mainInventory[slot];
             if (stack == null || stack.stackSize < 1 || !(stack.getItem() instanceof ItemBlock)) continue;
             net.minecraft.block.Block block = ((ItemBlock) stack.getItem()).field_150939_a;
             GameRegistry.UniqueIdentifier id = GameRegistry.findUniqueIdentifierFor(block);
             String identity = id == null ? Block.blockRegistry.getNameForObject(block) : id.modId + ':' + id.name;
-            if (approvedMaterial.equals(identity)) return slot;
+            if (!approvedMaterial.equals(identity)) continue;
+            boolean[] occupied = new boolean[9];
+            for (int hotbarSlot = 0; hotbarSlot < occupied.length; hotbarSlot++) {
+                occupied[hotbarSlot] = minecraft.thePlayer.inventory.mainInventory[hotbarSlot] != null;
+            }
+            return ManagedQuarryMaterialPlan.choose(slot, occupied, minecraft.thePlayer.inventory.currentItem);
         }
-        return -1;
+        return null;
     }
 
     private String hotbarMaterialIdentity(int slot) {
-        if (minecraft.thePlayer == null || slot < 0 || slot > 8) return "missing";
+        return slot < 0 || slot > 8 ? "missing" : inventoryMaterialIdentity(slot);
+    }
+
+    private String inventoryMaterialIdentity(int slot) {
+        if (minecraft.thePlayer == null || slot < 0 || slot >= minecraft.thePlayer.inventory.mainInventory.length)
+            return "missing";
         ItemStack stack = minecraft.thePlayer.inventory.mainInventory[slot];
         if (stack == null || stack.stackSize < 1 || !(stack.getItem() instanceof ItemBlock)) return "missing";
         Block block = ((ItemBlock) stack.getItem()).field_150939_a;
@@ -1509,7 +1525,7 @@ public final class LiveExcavationBackend implements ExcavationBackend {
         private final ManagedQuarryActionRequest request;
         private final ActionLease lease;
         private final NavigationBackend navigation;
-        private final int materialSlot;
+        private final ManagedQuarryMaterialPlan material;
         private final long deadlineNanos;
         private NavigationHandle navigationHandle;
         private ManagedPhase phase = ManagedPhase.APPROACHING;
@@ -1517,16 +1533,19 @@ public final class LiveExcavationBackend implements ExcavationBackend {
         private String detail = "Preparing managed-quarry placement";
         private ConfirmedManagedQuarryResult confirmation;
         private boolean ownsActionSession;
+        private boolean materialStaged;
+        private boolean stagingDispatched;
         private boolean placementDispatched;
+        private boolean returnDispatched;
         private int priorHotbarSlot = -1;
         private volatile boolean cancellationRequested;
 
         private LiveManagedHandle(ManagedQuarryActionRequest request, ActionLease lease, NavigationBackend navigation,
-            int materialSlot, long startedAtNanos) {
+            ManagedQuarryMaterialPlan material, long startedAtNanos) {
             this.request = request;
             this.lease = lease;
             this.navigation = navigation;
-            this.materialSlot = materialSlot;
+            this.material = material;
             this.deadlineNanos = saturatingAdd(startedAtNanos, APPROACH_TIMEOUT_NANOS);
         }
 
@@ -1582,7 +1601,9 @@ public final class LiveExcavationBackend implements ExcavationBackend {
             }
             if (phase == ManagedPhase.APPROACHING) pollApproach();
             else if (phase == ManagedPhase.WAITING_FOR_ACTION_SESSION) placeWhenReady();
+            else if (phase == ManagedPhase.STAGING_MATERIAL) awaitMaterialStaging();
             else if (phase == ManagedPhase.DISPATCHING) awaitDispatch();
+            else if (phase == ManagedPhase.RETURNING_MATERIAL) awaitMaterialReturn();
             else if (phase == ManagedPhase.CONFIRMING) confirmPlacement();
             return snapshot();
         }
@@ -1632,6 +1653,71 @@ public final class LiveExcavationBackend implements ExcavationBackend {
                 fail("Managed-quarry placement target became occupied");
                 return;
             }
+            guard.begin(lease);
+            ownsActionSession = true;
+            priorHotbarSlot = minecraft.thePlayer.inventory.currentItem;
+            if (material.requiresStaging()) {
+                stageMaterial();
+                return;
+            }
+            placeApprovedBlock();
+        }
+
+        private void stageMaterial() {
+            if (minecraft.thePlayer.openContainer != minecraft.thePlayer.inventoryContainer
+                || minecraft.thePlayer.inventory.getItemStack() != null) {
+                fail("Cannot stage managed-quarry material while another container or cursor stack is active");
+                return;
+            }
+            if (!request.getIntent()
+                .getApprovedMaterial()
+                .equals(inventoryMaterialIdentity(material.getInventorySlot()))) {
+                fail("Approved managed-quarry material left its reserved inventory slot");
+                return;
+            }
+            minecraft.playerController.windowClick(
+                minecraft.thePlayer.inventoryContainer.windowId,
+                material.getInventorySlot(),
+                material.getHotbarSlot(),
+                2,
+                minecraft.thePlayer);
+            if (!request.getIntent()
+                .getApprovedMaterial()
+                .equals(hotbarMaterialIdentity(material.getHotbarSlot()))) {
+                fail("Minecraft did not stage the approved material into the hotbar");
+                return;
+            }
+            materialStaged = true;
+            phase = ManagedPhase.STAGING_MATERIAL;
+            detail = "Dispatching approved material from inventory to the hotbar";
+            try {
+                ActionPacketDispatch.afterPendingWrites(minecraft, () -> {
+                    synchronized (LiveManagedHandle.this) {
+                        stagingDispatched = true;
+                    }
+                });
+            } catch (RuntimeException failure) {
+                fail("Could not dispatch managed-quarry material staging: " + failure.getMessage());
+            }
+        }
+
+        private void awaitMaterialStaging() {
+            if (!stagingDispatched) return;
+            if (!request.getIntent()
+                .getApprovedMaterial()
+                .equals(hotbarMaterialIdentity(material.getHotbarSlot()))) {
+                fail("Approved material was not present after inventory staging drained");
+                return;
+            }
+            placeApprovedBlock();
+        }
+
+        private void placeApprovedBlock() {
+            ManagedQuarryIntent intent = request.getIntent();
+            if (!observer.isReplaceable(request.getDimensionId(), intent.getPosition())) {
+                fail("Managed-quarry placement target became occupied before placement");
+                return;
+            }
             PlacementFace face = findPlacementFace(intent.getPosition());
             if (face == null) {
                 fail("Managed-quarry target has no solid placement face");
@@ -1642,14 +1728,11 @@ public final class LiveExcavationBackend implements ExcavationBackend {
                 return;
             }
             if (!intent.getApprovedMaterial()
-                .equals(hotbarMaterialIdentity(materialSlot))) {
+                .equals(hotbarMaterialIdentity(material.getHotbarSlot()))) {
                 fail("Approved managed-quarry material left its selected hotbar slot");
                 return;
             }
-            guard.begin(lease);
-            ownsActionSession = true;
-            priorHotbarSlot = minecraft.thePlayer.inventory.currentItem;
-            minecraft.thePlayer.inventory.currentItem = materialSlot;
+            minecraft.thePlayer.inventory.currentItem = material.getHotbarSlot();
             minecraft.playerController.updateController();
             ItemStack held = minecraft.thePlayer.getHeldItem();
             boolean accepted = minecraft.playerController.onPlayerRightClick(
@@ -1673,7 +1756,6 @@ public final class LiveExcavationBackend implements ExcavationBackend {
             try {
                 ActionPacketDispatch.afterPendingWrites(minecraft, () -> {
                     synchronized (LiveManagedHandle.this) {
-                        stopActionSession();
                         placementDispatched = true;
                     }
                 });
@@ -1685,8 +1767,46 @@ public final class LiveExcavationBackend implements ExcavationBackend {
 
         private void awaitDispatch() {
             if (!placementDispatched) return;
+            if (materialStaged) {
+                returnStagedMaterial();
+                return;
+            }
+            stopActionSession();
             phase = ManagedPhase.CONFIRMING;
             detail = "Waiting for server-confirmed managed-quarry material";
+        }
+
+        private void returnStagedMaterial() {
+            if (minecraft.thePlayer.openContainer != minecraft.thePlayer.inventoryContainer
+                || minecraft.thePlayer.inventory.getItemStack() != null) {
+                fail("Cannot return managed-quarry material while another container or cursor stack is active");
+                return;
+            }
+            minecraft.playerController.windowClick(
+                minecraft.thePlayer.inventoryContainer.windowId,
+                material.getInventorySlot(),
+                material.getHotbarSlot(),
+                2,
+                minecraft.thePlayer);
+            materialStaged = false;
+            phase = ManagedPhase.RETURNING_MATERIAL;
+            detail = "Returning unused managed-quarry material to its inventory slot";
+            try {
+                ActionPacketDispatch.afterPendingWrites(minecraft, () -> {
+                    synchronized (LiveManagedHandle.this) {
+                        returnDispatched = true;
+                    }
+                });
+            } catch (RuntimeException failure) {
+                fail("Could not dispatch managed-quarry material return: " + failure.getMessage());
+            }
+        }
+
+        private void awaitMaterialReturn() {
+            if (!returnDispatched) return;
+            stopActionSession();
+            phase = ManagedPhase.CONFIRMING;
+            detail = "Material return drained; waiting for server-confirmed placement";
         }
 
         private void confirmPlacement() {
@@ -1749,6 +1869,24 @@ public final class LiveExcavationBackend implements ExcavationBackend {
         }
 
         private void stopActionSession() {
+            if (materialStaged) {
+                try {
+                    if (minecraft.thePlayer.openContainer != minecraft.thePlayer.inventoryContainer
+                        || minecraft.thePlayer.inventory.getItemStack() != null) {
+                        throw new IllegalStateException("inventory state prevents staged-material rollback");
+                    }
+                    minecraft.playerController.windowClick(
+                        minecraft.thePlayer.inventoryContainer.windowId,
+                        material.getInventorySlot(),
+                        material.getHotbarSlot(),
+                        2,
+                        minecraft.thePlayer);
+                    materialStaged = false;
+                    traceManaged("material-rollback", "result", "submitted");
+                } catch (RuntimeException failure) {
+                    traceManaged("material-rollback", "result", "failed", "reason", failure.getMessage());
+                }
+            }
             restoreHotbar();
             if (!ownsActionSession) return;
             guard.quarantine(lease);
@@ -1870,7 +2008,9 @@ public final class LiveExcavationBackend implements ExcavationBackend {
     private enum ManagedPhase {
         APPROACHING,
         WAITING_FOR_ACTION_SESSION,
+        STAGING_MATERIAL,
         DISPATCHING,
+        RETURNING_MATERIAL,
         CONFIRMING
     }
 

@@ -60,6 +60,13 @@ final class ExcavationTaskRunner implements TaskRunner {
             ActionCapability.DIG,
             ActionCapability.PLACE,
             ActionCapability.HELD_USE));
+    private static final Set<ActionCapability> MANAGED_REQUIRED_CAPABILITIES = Collections.unmodifiableSet(
+        EnumSet.of(
+            ActionCapability.MOVEMENT,
+            ActionCapability.LOOK,
+            ActionCapability.PLACE,
+            ActionCapability.HELD_USE,
+            ActionCapability.CONTAINER));
 
     private final TaskSpec spec;
     private final CylinderExcavationSpec cylinder;
@@ -527,7 +534,7 @@ final class ExcavationTaskRunner implements TaskRunner {
         }
 
         Optional<ActionLease> acquired = context.getActions()
-            .tryAcquire(REQUIRED_CAPABILITIES);
+            .tryAcquire(MANAGED_REQUIRED_CAPABILITIES);
         if (!acquired.isPresent()) {
             return StepResult.waitFor(
                 context.getActionEpoch(),

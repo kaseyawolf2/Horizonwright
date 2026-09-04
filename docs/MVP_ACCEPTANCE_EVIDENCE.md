@@ -25,18 +25,16 @@ but cannot replace the disposable-world observation run required by the plan.
 - Live husbandry execution for feeding, collecting drops, and bounded culling.
 - Explicit operator authorization for automatic killing of eligible excess adult
   livestock before the live executor is bound.
-- Managed-quarry ramp construction is connected for approved material already
-  in the hotbar; full inventory reserve management and physical validation are
-  pending.
-- Managed-quarry lighting placement is connected for approved material already
-  in the hotbar; full inventory reserve management and physical validation are
-  pending.
+- Managed-quarry ramp construction and full-player-inventory material staging
+  are connected; physical validation is pending.
+- Managed-quarry lighting placement and full-player-inventory material staging
+  are connected; physical validation is pending.
 - The managed-quarry task now persists approved ramp/light/filler materials and
   uses a retained descending-staircase geometry inside the quarry. The resumable runner observes,
   sequences, and requires server-confirmed evidence for each infrastructure
   action. The Minecraft backend performs a Baritone approach, normal right-click
-  placement, packet-drain cleanup, and post-server material confirmation for
-  approved blocks already present in the hotbar.
+  placement, transactional full-inventory material staging/return, packet-drain
+  cleanup, and post-server material confirmation.
 - Fluid containment/removal integration; clean-volume excavation currently
   refuses blind fluid work.
 - Ordinary tree farming/replanting as a recurring base chore. Excavation tree
