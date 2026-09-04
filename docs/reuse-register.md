@@ -53,7 +53,7 @@ remote commit URL for them.
 | Baritone commands, process ownership, and runtime state | `LEAVE_BEHIND` | Horizonwright's controller, scheduler, action broker, and safety state own work; only a private adapter process is registered. |
 | User-selected enhanced Baritone feature patches | `SEPARATE_RUNTIME` | Exact reviewed binary/source artifacts are vendored by hash; the mutable neighboring checkout is never a dynamic build input. |
 | Circle/cylinder geometry | `REIMPLEMENT` | Pure geometry with golden fixtures; no copied implementation. |
-| Farming and CropsNH behavior | `REIMPLEMENT` | Use exact-version public APIs and independently recorded ordinary-crop fixtures. |
+| Farming, Pam HarvestCraft, and CropsNH behavior | `REIMPLEMENT` | Use exact-version public APIs/observed metadata contracts and independently recorded ordinary-crop fixtures; no optional-mod implementation classes ship in Horizonwright. |
 | GT prospecting grid calculations | `REIMPLEMENT` | Use coordinate fixtures and an independent implementation. |
 | Storage/container transactions | `REIMPLEMENT` | New epoch-bound transactional service. |
 | Tinkers classification and repair behavior | `REIMPLEMENT` | Exact TConstruct `1.14.93-GTNH`, TGregworks `1.0.33`, and Mantle `0.5.4` source hashes gate a reflection-isolated adapter; no implementation types enter core or task packages. |
@@ -66,3 +66,25 @@ Baritone. Different bytes remain unvalidated in production, so the backend,
 navigation, and unattended operation fail closed until a maintainer deliberately
 updates the commit, corresponding source, license and checksum records and
 reruns collision, adapter, input-release, packet-firewall, and GTNH smoke tests.
+
+## Pam HarvestCraft runtime observation
+
+The Milestone 4 non-destructive Pam adapter was characterized from the separate
+runtime artifact installed in the disposable GTNH instance:
+
+| Field | Recorded value |
+| --- | --- |
+| Runtime filename | `harvestcraft-1.3.11-GTNH.jar` |
+| Binary SHA-256 | `da05759c991b81516fe04c26c437c6c27f04dbec0addec9dffe974e9668b911d` |
+| Ground crop class | `com.pam.harvestcraft.BlockPamCrop` |
+| Hanging fruit class | `com.pam.harvestcraft.BlockPamFruit` |
+| Fruiting log class | `com.pam.harvestcraft.BlockPamFruitingLog` |
+
+The adapter reimplements only the observed state contract: ground crops are
+mature at metadata 7, hanging fruit at metadata 2, and fruiting logs when their
+low two metadata bits equal 3. Crop and hanging-fruit automation additionally
+requires the runtime's exact public right-click configuration flag. It sends a
+normal server-authoritative right click and proves a same-family immature state;
+it does not copy or package HarvestCraft code and never assigns a dig action to
+a fruiting log. A different class or incompatible public flag shape is not
+guessed.

@@ -13,6 +13,7 @@
 | TConstruct | `1.14.93-GTNH` / `D4B5C6F4...C772E` | Exact Tool Station/Forge repair adapter |
 | TGregworks | `1.7.10-GTNH-1.0.33` / `93FFCA6F...5E807` | Eligible GT repair-material stack |
 | Mantle | `0.5.4` / `6E5C4B06...6B9EE` | Required TConstruct runtime foundation |
+| Pam HarvestCraft | `1.3.11-GTNH` / `DA05759C...8B911D` | Exact non-destructive crop/fruit metadata and right-click adapter |
 
 The daemon provisioning URLs name the exact Temurin release rather than the
 mutable `latest/25` endpoint. Adoptium does not publish this release for
@@ -35,6 +36,13 @@ version and complete SHA-256 pinned in
 `TinkersRepairCompatibilityInspector`. The adapter itself uses Minecraft types
 plus reflective `IModifyable.getBaseTagName` access so TConstruct implementation
 classes remain isolated from core, task, and general runtime packages.
+
+The optional Pam adapter recognizes only the three class names and metadata
+contracts recorded in `reuse-register.md`. It resolves the two public
+right-click configuration flags through the block's own class loader and has no
+compile-time HarvestCraft dependency. The recorded runtime hash is provenance
+for the observed behavior; the artifact remains a separately installed mod and
+is not copied into Horizonwright.
 
 Milestone 0A was launch-verified on 2026-08-30 with a clean GTNH
 `2.9.0-beta-2` Prism Launcher instance. The reobfuscated production JAR loaded
