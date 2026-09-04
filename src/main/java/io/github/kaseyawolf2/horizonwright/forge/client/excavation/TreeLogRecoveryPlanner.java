@@ -79,7 +79,6 @@ final class TreeLogRecoveryPlanner {
         List<BlockPosition> ordered = new ArrayList<>(connectedLogs);
         ordered.sort(
             Comparator.comparingInt(BlockPosition::getY)
-                .reversed()
                 .thenComparingInt(BlockPosition::getX)
                 .thenComparingInt(BlockPosition::getZ));
         BlockPosition root = connectedLogs.stream()

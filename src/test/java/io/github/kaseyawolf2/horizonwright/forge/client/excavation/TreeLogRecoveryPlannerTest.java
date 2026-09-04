@@ -26,7 +26,7 @@ public class TreeLogRecoveryPlannerTest {
         ExcavationMode.CLEAN_VOLUME);
 
     @Test
-    public void findsTheRootAndOrdersEveryConnectedLogFromTopToBottom() {
+    public void findsTheRootAndOrdersEveryConnectedLogFromBottomToTop() {
         BlockPosition leaf = position(0, 8, 0);
         Map<BlockPosition, TreeLogRecoveryPlanner.Kind> blocks = new HashMap<>();
         blocks.put(leaf, TreeLogRecoveryPlanner.Kind.LEAF);
@@ -45,24 +45,24 @@ public class TreeLogRecoveryPlannerTest {
             planned.get()
                 .getRootLog());
         assertEquals(
-            position(0, 6, 0),
+            position(0, 4, 0),
             planned.get()
-                .getLogsTopDown()
+                .getLogsBottomUp()
                 .get(0));
-        assertEquals(
-            position(1, 6, 0),
-            planned.get()
-                .getLogsTopDown()
-                .get(1));
         assertEquals(
             position(0, 5, 0),
             planned.get()
-                .getLogsTopDown()
+                .getLogsBottomUp()
+                .get(1));
+        assertEquals(
+            position(0, 6, 0),
+            planned.get()
+                .getLogsBottomUp()
                 .get(2));
         assertEquals(
-            position(0, 4, 0),
+            position(1, 6, 0),
             planned.get()
-                .getLogsTopDown()
+                .getLogsBottomUp()
                 .get(3));
     }
 
@@ -94,14 +94,14 @@ public class TreeLogRecoveryPlannerTest {
 
         assertEquals(
             1,
-            planned.getLogsTopDown()
+            planned.getLogsBottomUp()
                 .size());
         assertEquals(
             inside,
-            planned.getLogsTopDown()
+            planned.getLogsBottomUp()
                 .get(0));
         assertFalse(
-            planned.getLogsTopDown()
+            planned.getLogsBottomUp()
                 .contains(outside));
     }
 

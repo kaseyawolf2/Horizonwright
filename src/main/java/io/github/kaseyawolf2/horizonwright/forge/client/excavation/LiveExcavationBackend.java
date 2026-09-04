@@ -320,6 +320,7 @@ public final class LiveExcavationBackend implements ExcavationBackend {
         private String workingFingerprint;
         private BlockPosition occludingPosition;
         private boolean clearingObstruction;
+        private BlockPosition obstructedTreeLog;
         private final TreeLogRecoveryPlan treeRecovery;
         private int nextTreeLog;
         private boolean clearingTreeLog;
@@ -368,7 +369,7 @@ public final class LiveExcavationBackend implements ExcavationBackend {
             String approachId = request.getRequestId() + "-approach-" + approachAttempt;
             NavigationRequest approach;
             if (approachAttempt == 1) {
-                approach = clearingObstruction
+                approach = clearingObstruction || clearingTreeLog
                     ? NavigationRequest.adjacentToAllowingPlacement(
                         approachId,
                         request.getActionEpoch(),
@@ -388,7 +389,7 @@ public final class LiveExcavationBackend implements ExcavationBackend {
                         startedAtNanos,
                         APPROACH_TIMEOUT_NANOS);
             } else {
-                approach = clearingObstruction
+                approach = clearingObstruction || clearingTreeLog
                     ? NavigationRequest.nearAllowingPlacement(
                         approachId,
                         request.getActionEpoch(),
@@ -513,9 +514,12 @@ public final class LiveExcavationBackend implements ExcavationBackend {
                     detail = "Waiting for failed approach packets to drain before attempt " + (approachAttempt + 1);
                     trace("approach-retry-wait", "nextAttempt", approachAttempt + 1);
                 } else {
-                    if (clearingTreeLog) {
+                    boolean wasTreeLog = clearingTreeLog;
+                    if (prepareOccludingBlockClear()) {
+                        // The exact in-volume obstruction now becomes the working target.
+                    } else if (wasTreeLog) {
                         abandonTreeRecovery("Could not approach connected tree log; falling back to the leaf");
-                    } else if (!prepareOccludingBlockClear()) {
+                    } else {
                         fail(
                             "Could not approach excavation target after " + approachAttempt
                                 + " attempts: "
@@ -551,10 +555,10 @@ public final class LiveExcavationBackend implements ExcavationBackend {
             ExcavationObservation current = currentObservation();
             traceObservation("post-approach", current);
             if (isAir(current)) {
-                if (clearingTreeLog) {
-                    continueTreeRecovery();
-                } else if (clearingObstruction) {
+                if (clearingObstruction) {
                     resumePlannedTargetAfterObstruction();
+                } else if (clearingTreeLog) {
+                    continueTreeRecovery();
                 } else {
                     confirm(ExcavationTargetOutcome.COMPLETED, "Target became air before digging");
                 }
@@ -721,8 +725,8 @@ public final class LiveExcavationBackend implements ExcavationBackend {
                 trace("finish-drain", "blockedActions", guard.getBlockedActionCount());
                 return;
             }
-            if (clearingTreeLog) continueTreeRecovery();
-            else if (clearingObstruction) resumePlannedTargetAfterObstruction();
+            if (clearingObstruction) resumePlannedTargetAfterObstruction();
+            else if (clearingTreeLog) continueTreeRecovery();
             else confirm(ExcavationTargetOutcome.COMPLETED, "Exact target is confirmed air");
         }
 
@@ -1137,10 +1141,8 @@ public final class LiveExcavationBackend implements ExcavationBackend {
         }
 
         private boolean prepareOccludingBlockClear() {
-            if (clearingTreeLog) return false;
             BlockPosition obstruction = occludingPosition;
-            BlockPosition planned = request.getIntent()
-                .getPosition();
+            BlockPosition planned = workingPosition;
             if (obstruction == null || obstruction.equals(planned)
                 || !request.getExcavationArea()
                     .contains(obstruction)) {
@@ -1149,14 +1151,19 @@ public final class LiveExcavationBackend implements ExcavationBackend {
             ExcavationObservation observed = observer.observePosition(request.getDimensionId(), obstruction);
             if (observed.getClassification() != ExcavationBlockClassification.BREAKABLE) return false;
 
+            boolean restoringTreeLog = clearingTreeLog;
+            String plannedFingerprint = workingFingerprint;
             workingPosition = obstruction;
             workingFingerprint = observed.getBlockFingerprint();
             clearingObstruction = true;
+            clearingTreeLog = false;
+            obstructedTreeLog = restoringTreeLog ? planned : null;
             if (!canReachTarget()) {
                 workingPosition = planned;
-                workingFingerprint = request.getIntent()
-                    .getObservedFingerprint();
+                workingFingerprint = plannedFingerprint;
                 clearingObstruction = false;
+                clearingTreeLog = restoringTreeLog;
+                obstructedTreeLog = null;
                 return false;
             }
             phase = Phase.WAITING_FOR_DIG_SESSION;
@@ -1169,6 +1176,32 @@ public final class LiveExcavationBackend implements ExcavationBackend {
 
         private void resumePlannedTargetAfterObstruction() {
             clearingObstruction = false;
+            BlockPosition treeLog = obstructedTreeLog;
+            obstructedTreeLog = null;
+            if (treeLog != null) {
+                if (!observer.isWoodPosition(request.getDimensionId(), treeLog)) {
+                    clearingTreeLog = true;
+                    continueTreeRecovery();
+                    return;
+                }
+                ExcavationObservation observed = observer.observePosition(request.getDimensionId(), treeLog);
+                if (observed.getClassification() != ExcavationBlockClassification.BREAKABLE) {
+                    clearingTreeLog = true;
+                    continueTreeRecovery();
+                    return;
+                }
+                workingPosition = treeLog;
+                workingFingerprint = observed.getBlockFingerprint();
+                clearingTreeLog = true;
+                approachAttempt = 0;
+                pendingApproachReason = "Reapproaching the connected tree log after clearing its obstruction";
+                phase = Phase.WAITING_FOR_APPROACH_SESSION;
+                deadlineNanos = saturatingAdd(System.nanoTime(), LOCAL_ACTION_TIMEOUT_NANOS);
+                detail = "In-volume obstruction cleared; waiting to approach the connected tree log";
+                ExcavationTargetOverlay.show(workingPosition);
+                trace("tree-log-obstruction-cleared", "treeLog", workingPosition);
+                return;
+            }
             workingPosition = request.getIntent()
                 .getPosition();
             workingFingerprint = request.getIntent()
@@ -1187,9 +1220,9 @@ public final class LiveExcavationBackend implements ExcavationBackend {
 
         private boolean selectNextTreeLog() {
             if (treeRecovery == null) return false;
-            while (nextTreeLog < treeRecovery.getLogsTopDown()
+            while (nextTreeLog < treeRecovery.getLogsBottomUp()
                 .size()) {
-                BlockPosition candidate = treeRecovery.getLogsTopDown()
+                BlockPosition candidate = treeRecovery.getLogsBottomUp()
                     .get(nextTreeLog++);
                 if (!observer.isWoodPosition(request.getDimensionId(), candidate)) continue;
                 ExcavationObservation observed = observer.observePosition(request.getDimensionId(), candidate);
@@ -1212,7 +1245,7 @@ public final class LiveExcavationBackend implements ExcavationBackend {
                     "logNumber",
                     nextTreeLog,
                     "logCount",
-                    treeRecovery.getLogsTopDown()
+                    treeRecovery.getLogsBottomUp()
                         .size());
                 return true;
             }
@@ -1234,7 +1267,7 @@ public final class LiveExcavationBackend implements ExcavationBackend {
 
         private void abandonTreeRecovery(String reason) {
             nextTreeLog = treeRecovery == null ? 0
-                : treeRecovery.getLogsTopDown()
+                : treeRecovery.getLogsBottomUp()
                     .size();
             resumeLeafAfterTreeRecovery(reason);
         }
@@ -1242,6 +1275,7 @@ public final class LiveExcavationBackend implements ExcavationBackend {
         private void resumeLeafAfterTreeRecovery(String reason) {
             clearingTreeLog = false;
             clearingObstruction = false;
+            obstructedTreeLog = null;
             workingPosition = request.getIntent()
                 .getPosition();
             ExcavationObservation leaf = observer.observePosition(request.getDimensionId(), workingPosition);
