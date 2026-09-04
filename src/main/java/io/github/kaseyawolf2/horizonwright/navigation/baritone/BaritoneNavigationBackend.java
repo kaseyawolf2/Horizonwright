@@ -11,6 +11,8 @@ import net.minecraft.client.Minecraft;
 import baritone.api.BaritoneAPI;
 import baritone.api.IBaritone;
 import baritone.api.Settings;
+import baritone.api.event.events.SprintStateEvent;
+import baritone.api.event.listener.AbstractGameEventListener;
 import baritone.api.pathing.goals.Goal;
 import baritone.api.pathing.goals.GoalBlock;
 import baritone.api.pathing.goals.GoalGetToBlock;
@@ -35,7 +37,8 @@ import io.github.kaseyawolf2.horizonwright.core.navigation.NavigationProgress;
 import io.github.kaseyawolf2.horizonwright.core.navigation.NavigationRequest;
 import io.github.kaseyawolf2.horizonwright.core.navigation.NavigationState;
 
-public final class BaritoneNavigationBackend implements NavigationBackend, ActionRevocationListener {
+public final class BaritoneNavigationBackend
+    implements NavigationBackend, ActionRevocationListener, AbstractGameEventListener {
 
     static final int MAX_CLEANUP_ATTEMPTS = 3;
 
@@ -45,6 +48,8 @@ public final class BaritoneNavigationBackend implements NavigationBackend, Actio
     private final IBaritone baritone;
     private final ActionSessionGuard actionSessionGuard;
     private final HorizonwrightBaritoneProcess process;
+    private final CropsNhTravelPolicy cropsNhTravel = new CropsNhTravelPolicy();
+    private boolean cropSprintSuppressed;
     private volatile BackendAvailability availability = BackendAvailability
         .available("Baritone enhanced build fcbbd4882c ready (scoped navigation contexts)");
     private Handle active;
@@ -59,6 +64,8 @@ public final class BaritoneNavigationBackend implements NavigationBackend, Actio
         this.process = new HorizonwrightBaritoneProcess(this, baritone);
         baritone.getPathingControlManager()
             .registerProcess(process);
+        baritone.getGameEventHandler()
+            .registerEventListener(this);
         DevelopmentTrace.event("navigation", "backend-created", "availability", availability.getDiagnostic());
     }
 
@@ -185,12 +192,61 @@ public final class BaritoneNavigationBackend implements NavigationBackend, Actio
 
     @Override
     public void clientTick() {
+        enforceCropSprintSafety();
         PendingCleanup cleanup;
         synchronized (this) {
             cleanup = pendingCleanup;
         }
         if (cleanup != null) {
             cleanupTerminal(cleanup);
+        }
+    }
+
+    @Override
+    public void onPlayerSprintState(SprintStateEvent event) {
+        if (event == null) return;
+        Handle handle;
+        synchronized (this) {
+            handle = active;
+        }
+        if (handle != null && !handle.isTerminal()
+            && cropsNhTravel.shouldSuppressSprint(
+                baritone.getPlayerContext()
+                    .world(),
+                baritone.getPlayerContext()
+                    .player()))
+            event.setState(false);
+    }
+
+    private void enforceCropSprintSafety() {
+        Handle handle;
+        synchronized (this) {
+            handle = active;
+        }
+        boolean suppress = handle != null && !handle.isTerminal()
+            && baritone.getPlayerContext()
+                .world() != null
+            && baritone.getPlayerContext()
+                .player() != null
+            && cropsNhTravel.shouldSuppressSprint(
+                baritone.getPlayerContext()
+                    .world(),
+                baritone.getPlayerContext()
+                    .player());
+        if (suppress) baritone.getPlayerContext()
+            .player()
+            .setSprinting(false);
+        if (cropSprintSuppressed != suppress) {
+            cropSprintSuppressed = suppress;
+            DevelopmentTrace.event(
+                "navigation",
+                "cropsnh-sprint-suppression",
+                "active",
+                suppress,
+                "request",
+                handle == null ? "none" : handle.request.getRequestId(),
+                "radius",
+                CropsNhTravelPolicy.SPRINT_SUPPRESSION_RADIUS);
         }
     }
 
@@ -416,7 +472,7 @@ public final class BaritoneNavigationBackend implements NavigationBackend, Actio
                 settings.allowParkour.value = false;
                 settings.allowParkourPlace.value = allowPlacement;
                 settings.allowWaterBucketFall.value = false;
-                return new CalculationContext(baritone, true);
+                return new HorizonwrightCalculationContext(baritone, cropsNhTravel);
             } finally {
                 settings.allowBreak.value = allowBreak;
                 settings.allowBreakAnyway.value = allowBreakAnyway;
