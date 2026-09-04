@@ -25,13 +25,13 @@ public class FarmPlannerTest {
         new BasePosition(0, 4, 70, 4));
 
     @Test
-    public void ordinaryMatureCropsRequireMatchingSeedEvidenceAboveReserve() {
+    public void ordinaryMatureCropsUseNonDestructiveHarvestWithoutSeedReserve() {
         CropObservation mature = crop(CropFamily.VANILLA, "wheat:7", WHEAT_SEEDS, true, true, false);
 
-        assertEquals(FarmActionKind.HOLD_REPLANT_RESERVE, plan(mature, seeds(WHEAT_SEEDS, 4, 4)).getAction());
-        assertEquals(FarmActionKind.HOLD_REPLANT_RESERVE, plan(mature, seeds("minecraft:carrot", 10, 1)).getAction());
-        FarmDecision harvest = plan(mature, seeds(WHEAT_SEEDS, 5, 4));
-        assertEquals(FarmActionKind.BREAK_AND_REPLANT, harvest.getAction());
+        assertEquals(FarmActionKind.RIGHT_CLICK_HARVEST, plan(mature, seeds(WHEAT_SEEDS, 0, 4)).getAction());
+        assertEquals(FarmActionKind.RIGHT_CLICK_HARVEST, plan(mature, seeds("minecraft:carrot", 0, 1)).getAction());
+        FarmDecision harvest = plan(mature, seeds(WHEAT_SEEDS, 0, 4));
+        assertEquals(FarmActionKind.RIGHT_CLICK_HARVEST, harvest.getAction());
         assertEquals(WHEAT_SEEDS, harvest.getRequiredSeedFingerprint());
         assertTrue(harvest.requiresPostconditionVerification());
     }
@@ -91,7 +91,7 @@ public class FarmPlannerTest {
     }
 
     @Test
-    public void farmTransitionRejectsStaleReserveMaterialReplayAndFalsePostconditions() {
+    public void rightClickTransitionIgnoresSeedChangesAndRejectsFalsePostconditions() {
         CropObservation mature = crop(CropFamily.VANILLA, "wheat:7:a", WHEAT_SEEDS, true, true, false);
         FarmPassCheckpoint checkpoint = checkpoint(mature);
         SeedReserveEvidence plannedReserve = seeds(WHEAT_SEEDS, 5, 1);
@@ -104,7 +104,7 @@ public class FarmPlannerTest {
                 crop(CropFamily.VANILLA, "changed-before", WHEAT_SEEDS, true, true, false),
                 replanted,
                 plannedReserve));
-        assertRejected(() -> checkpoint.advance(decision, mature, replanted, seeds(WHEAT_SEEDS, 6, 1)));
+        assertTrue(decision.isCurrentFor(plot, mature, seeds(WHEAT_SEEDS, 6, 1)));
         assertRejected(
             () -> checkpoint.advance(
                 decision,
@@ -113,7 +113,7 @@ public class FarmPlannerTest {
                 plannedReserve));
         assertRejected(() -> checkpoint.advance(decision, mature, mature, plannedReserve));
 
-        FarmPassCheckpoint completed = checkpoint.advance(decision, mature, replanted, plannedReserve);
+        FarmPassCheckpoint completed = checkpoint.advance(decision, mature, replanted, seeds(WHEAT_SEEDS, 6, 1));
         assertRejected(() -> completed.advance(decision, mature, replanted, plannedReserve));
     }
 

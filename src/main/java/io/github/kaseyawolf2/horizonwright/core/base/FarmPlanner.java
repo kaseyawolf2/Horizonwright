@@ -42,9 +42,7 @@ public final class FarmPlanner {
                 checkpoint,
                 crop,
                 FarmActionKind.RIGHT_CLICK_HARVEST,
-                crop.getFamily() == CropFamily.PAM_FRUITING_LOG
-                    ? "right-click mature fruit; never break the fruiting log"
-                    : "right-click mature adapter crop",
+                rightClickDetail(crop.getFamily()),
                 reserveEvidence);
         }
         if (!reserveEvidence.isForMaterial(crop.getRequiredSeedFingerprint())
@@ -79,8 +77,15 @@ public final class FarmPlanner {
     }
 
     private static boolean usesNonDestructiveHarvest(CropFamily family) {
-        return family == CropFamily.PAM_CROP || family == CropFamily.PAM_HANGING_FRUIT
+        return family == CropFamily.VANILLA || family == CropFamily.PAM_CROP
+            || family == CropFamily.PAM_HANGING_FRUIT
             || family == CropFamily.PAM_FRUITING_LOG
             || family == CropFamily.CROPS_NH;
+    }
+
+    private static String rightClickDetail(CropFamily family) {
+        if (family == CropFamily.VANILLA) return "right-click mature crop and verify its maturity reset";
+        return family == CropFamily.PAM_FRUITING_LOG ? "right-click mature fruit; never break the fruiting log"
+            : "right-click mature adapter crop";
     }
 }

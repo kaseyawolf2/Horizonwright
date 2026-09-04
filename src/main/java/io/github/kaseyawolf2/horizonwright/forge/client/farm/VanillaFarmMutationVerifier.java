@@ -1,15 +1,16 @@
 package io.github.kaseyawolf2.horizonwright.forge.client.farm;
 
 import io.github.kaseyawolf2.horizonwright.core.base.CropObservation;
+import io.github.kaseyawolf2.horizonwright.core.base.FarmActionKind;
 import io.github.kaseyawolf2.horizonwright.core.base.FarmDecision;
 import io.github.kaseyawolf2.horizonwright.core.base.SeedReserveEvidence;
 
-/** Minecraft-independent last-moment and post-action proof checks for vanilla replanting. */
+/** Minecraft-independent last-moment and post-action proof checks for vanilla harvesting. */
 final class VanillaFarmMutationVerifier {
 
     void requireCurrent(FarmDecision decision, CropObservation current, SeedReserveEvidence reserve,
         String hotbarSeedFingerprint) {
-        if (decision == null || current == null || reserve == null || hotbarSeedFingerprint == null) {
+        if (decision == null || current == null || reserve == null) {
             throw new IllegalArgumentException("complete current farm authority evidence is required");
         }
         if (!decision.isCurrentFor(decision.getPlot(), current, reserve)) {
@@ -18,7 +19,7 @@ final class VanillaFarmMutationVerifier {
         if (!current.isMaturityKnown() || !current.isMature() || current.isProtectedBlock()) {
             throw new IllegalStateException("only a verified mature unprotected crop may be mutated");
         }
-        if (!decision.getRequiredSeedFingerprint()
+        if (decision.getAction() == FarmActionKind.BREAK_AND_REPLANT && !decision.getRequiredSeedFingerprint()
             .equals(hotbarSeedFingerprint)) {
             throw new IllegalStateException("hotbar seed identity does not match the planned replant material");
         }

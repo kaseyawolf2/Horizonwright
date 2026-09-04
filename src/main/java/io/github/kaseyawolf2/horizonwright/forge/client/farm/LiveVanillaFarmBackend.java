@@ -30,7 +30,7 @@ import io.github.kaseyawolf2.horizonwright.forge.client.MinecraftRuntimeAccess;
 import io.github.kaseyawolf2.horizonwright.forge.client.network.ActionPacketDispatch;
 import io.github.kaseyawolf2.horizonwright.runtime.task.FarmBackend;
 
-/** Exact vanilla crop approach, break, hotbar replant, and immutable postcondition backend. */
+/** Exact vanilla crop approach, non-destructive harvest, and immutable postcondition backend. */
 public final class LiveVanillaFarmBackend implements FarmBackend {
 
     public interface NavigationSource {
@@ -44,6 +44,8 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
         ActionCapability.DIG,
         ActionCapability.PLACE,
         ActionCapability.HELD_USE);
+    private static final EnumSet<ActionCapability> RIGHT_CLICK_HARVEST = EnumSet
+        .of(ActionCapability.MOVEMENT, ActionCapability.LOOK, ActionCapability.USE, ActionCapability.HELD_USE);
     private static final long ACTION_TIMEOUT_NANOS = TimeUnit.SECONDS.toNanos(30L);
 
     private final Minecraft minecraft;
@@ -171,15 +173,17 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
             lease != null && lease.isValid(),
             "leaseCapabilities",
             lease == null ? "none" : lease.getCapabilities());
-        if (request.getDecision()
-            .getAction() != FarmActionKind.BREAK_AND_REPLANT) {
-            throw new IllegalArgumentException("live vanilla backend supports only break-and-replant mutations");
-        }
+        FarmActionKind action = request.getDecision()
+            .getAction();
+        if (action != FarmActionKind.BREAK_AND_REPLANT && action != FarmActionKind.RIGHT_CLICK_HARVEST)
+            throw new IllegalArgumentException("live vanilla backend supports only verified crop mutations");
+        EnumSet<ActionCapability> requiredCapabilities = action == FarmActionKind.BREAK_AND_REPLANT ? BREAK_REPLANT
+            : RIGHT_CLICK_HARVEST;
         if (lease == null || !lease.isValid()
             || lease.getEpoch() != request.getActionEpoch()
             || !lease.getCapabilities()
-                .containsAll(BREAK_REPLANT)) {
-            throw new IllegalArgumentException("matching movement/look/dig/place/held-use authority is required");
+                .containsAll(requiredCapabilities)) {
+            throw new IllegalArgumentException("matching farm action authority is required");
         }
         if (active != null && !active.isTerminal()) throw new IllegalStateException("another farm action is active");
         CropObservation current = observer.observeRequired(
@@ -197,22 +201,23 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
             request.getDecision()
                 .getReserveEvidence()
                 .getMinimumReserve());
-        if (!request.getDecision()
+        if (action == FarmActionKind.BREAK_AND_REPLANT && !request.getDecision()
             .getReserveEvidence()
             .isSameSnapshot(reserve)) {
             throw new IllegalStateException("seed inventory changed after planning");
         }
-        int seedSlot = observer.findHotbarSeed(
+        int seedSlot = action == FarmActionKind.BREAK_AND_REPLANT ? observer.findHotbarSeed(
             request.getDecision()
-                .getRequiredSeedFingerprint());
-        if (seedSlot < 0)
+                .getRequiredSeedFingerprint())
+            : -1;
+        if (action == FarmActionKind.BREAK_AND_REPLANT && seedSlot < 0)
             throw new IllegalStateException("an exact approved replant seed must be present in the hotbar");
         verifier.requireCurrent(
             request.getDecision(),
             current,
             reserve,
-            request.getDecision()
-                .getRequiredSeedFingerprint());
+            action == FarmActionKind.BREAK_AND_REPLANT ? request.getDecision()
+                .getRequiredSeedFingerprint() : null);
         NavigationBackend navigation = navigationSource.getNavigationBackend();
         Availability available = availability();
         if (navigation == null || !available.isAvailable()) throw new IllegalStateException(available.getDiagnostic());
@@ -272,6 +277,7 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
         private CropObservation confirmedAfter;
         private boolean ownsActionSession;
         private boolean replantDispatched;
+        private boolean harvestDispatched;
         private boolean slotChanged;
         private int collectionSettleTicks;
         private volatile boolean cancellationRequested;
@@ -357,6 +363,7 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
             else if (phase == Phase.BREAKING) breakOneTick();
             else if (phase == Phase.PLANTING) plantOnce();
             else if (phase == Phase.DISPATCHING_REPLANT) awaitReplantDispatch();
+            else if (phase == Phase.DISPATCHING_HARVEST) awaitHarvestDispatch();
             else if (phase == Phase.CONFIRMING) confirmReplacement();
             else if (phase == Phase.WAITING_FOR_COLLECTION_SESSION) beginCollectionWhenReady();
             else if (phase == Phase.COLLECTING) pollCollection();
@@ -433,7 +440,9 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
                 request.getDecision()
                     .getReserveEvidence()
                     .getMinimumReserve());
-            if (observer.findHotbarSeed(
+            FarmActionKind action = request.getDecision()
+                .getAction();
+            if (action == FarmActionKind.BREAK_AND_REPLANT && observer.findHotbarSeed(
                 request.getDecision()
                     .getRequiredSeedFingerprint())
                 != seedSlot) {
@@ -445,14 +454,18 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
                     request.getDecision(),
                     current,
                     reserve,
-                    request.getDecision()
-                        .getRequiredSeedFingerprint());
+                    action == FarmActionKind.BREAK_AND_REPLANT ? request.getDecision()
+                        .getRequiredSeedFingerprint() : null);
             } catch (RuntimeException changed) {
                 fail(changed.getMessage());
                 return;
             }
             guard.begin(lease);
             ownsActionSession = true;
+            if (action == FarmActionKind.RIGHT_CLICK_HARVEST) {
+                rightClickHarvest();
+                return;
+            }
             ClientBootstrap.blockDamageShield()
                 .acquire(request.getRequestId());
             phase = Phase.BREAKING;
@@ -464,6 +477,43 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
                 .getTarget();
             minecraft.playerController.clickBlock(target.getX(), target.getY(), target.getZ(), targetSide());
             trace("break-start", "target", target);
+        }
+
+        private void rightClickHarvest() {
+            BasePosition target = request.getDecision()
+                .getTarget();
+            ItemStack held = MinecraftRuntimeAccess.heldItem(minecraft.thePlayer);
+            aimAt(target);
+            boolean accepted = minecraft.playerController.onPlayerRightClick(
+                minecraft.thePlayer,
+                minecraft.theWorld,
+                held,
+                target.getX(),
+                target.getY(),
+                target.getZ(),
+                targetSide(),
+                Vec3.createVectorHelper(target.getX() + 0.5D, target.getY() + 0.5D, target.getZ() + 0.5D));
+            minecraft.thePlayer.swingItem();
+            trace(
+                "harvest-interaction",
+                "accepted",
+                accepted,
+                "held",
+                held == null ? "empty" : observer.hotbarMaterialIdentity(minecraft.thePlayer.inventory.currentItem));
+            phase = Phase.DISPATCHING_HARVEST;
+            detail = accepted ? "Dispatching the non-destructive crop harvest"
+                : "Crop right-click packet sent; waiting for its verified result";
+            try {
+                ActionPacketDispatch.afterPendingWrites(minecraft, () -> {
+                    synchronized (LiveHandle.this) {
+                        stopActionSession();
+                        harvestDispatched = true;
+                    }
+                });
+            } catch (RuntimeException failure) {
+                stopActionSession();
+                fail("Could not dispatch the mature-crop right-click: " + failure.getMessage());
+            }
         }
 
         private void breakOneTick() {
@@ -568,6 +618,15 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
             detail = "Waiting for an immature replacement crop";
         }
 
+        private void awaitHarvestDispatch() {
+            if (!harvestDispatched) {
+                detail = "Waiting for the crop-harvest packet boundary";
+                return;
+            }
+            phase = Phase.CONFIRMING;
+            detail = "Waiting for the mature crop to reset to an immature state";
+        }
+
         private void confirmReplacement() {
             CropObservation after = observer.observeSupported(
                 request.getDecision()
@@ -587,7 +646,9 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
             confirmedAfter = after;
             stopActionSession();
             phase = Phase.WAITING_FOR_COLLECTION_SESSION;
-            detail = "Replacement confirmed; waiting to collect harvest drops";
+            detail = request.getDecision()
+                .getAction() == FarmActionKind.RIGHT_CLICK_HARVEST ? "Harvest reset confirmed; waiting to collect drops"
+                    : "Replacement confirmed; waiting to collect harvest drops";
         }
 
         private void beginCollectionWhenReady() {
@@ -649,7 +710,7 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
                 return;
             }
             state = ActionState.CONFIRMED;
-            detail = "Exact replacement crop is confirmed and its harvest location was collected";
+            detail = "Exact immature crop state is confirmed and its harvest location was collected";
             clearActive(this);
         }
 
@@ -793,7 +854,7 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
         }
 
         private ActionProgress snapshot() {
-            // The replacement is verified before the collection leg starts, but it is not
+            // The immature crop state is verified before the collection leg starts, but it is not
             // post-action evidence until that leg finishes and the whole action is confirmed.
             CropObservation reportableAfter = state == ActionState.CONFIRMED ? confirmedAfter : null;
             return new ActionProgress(request.getRequestId(), state, detail, reportableAfter);
@@ -834,6 +895,7 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
         BREAKING,
         PLANTING,
         DISPATCHING_REPLANT,
+        DISPATCHING_HARVEST,
         CONFIRMING,
         WAITING_FOR_COLLECTION_SESSION,
         COLLECTING,

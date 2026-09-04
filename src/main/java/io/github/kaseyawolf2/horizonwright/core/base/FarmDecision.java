@@ -90,13 +90,14 @@ public final class FarmDecision {
     /** Exact pre-action authority check; it must be repeated immediately before execution. */
     public boolean isCurrentFor(NamedArea currentPlot, CropObservation currentObservation,
         SeedReserveEvidence currentReserveEvidence) {
+        boolean reserveIsCurrent = action != FarmActionKind.BREAK_AND_REPLANT
+            || currentReserveEvidence != null && currentReserveEvidence.isForMaterial(requiredSeedFingerprint)
+                && reserveEvidence.isSameSnapshot(currentReserveEvidence);
         return currentPlot != null && currentObservation != null
-            && currentReserveEvidence != null
             && plot.equals(currentPlot)
             && target.equals(currentObservation.getPosition())
             && observationFingerprint.equals(currentObservation.getObservationFingerprint())
             && requiredSeedFingerprint.equals(currentObservation.getRequiredSeedFingerprint())
-            && currentReserveEvidence.isForMaterial(requiredSeedFingerprint)
-            && reserveEvidence.isSameSnapshot(currentReserveEvidence);
+            && reserveIsCurrent;
     }
 }

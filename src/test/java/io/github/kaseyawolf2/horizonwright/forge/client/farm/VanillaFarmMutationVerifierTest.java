@@ -32,31 +32,23 @@ public class VanillaFarmMutationVerifierTest {
 
     @Test
     public void exactCurrentEvidenceAndImmatureReplacementAreAccepted() {
-        verifier.requireCurrent(DECISION, MATURE, RESERVE, MATURE.getRequiredSeedFingerprint());
+        verifier.requireCurrent(DECISION, MATURE, RESERVE, null);
         verifier.requireReplacement(DECISION, MATURE, crop(CropFamily.VANILLA, "wheat-0", false, false));
     }
 
     @Test
-    public void changedInventoryWrongHotbarOrProtectedTargetAreRejected() {
+    public void rightClickHarvestIgnoresSeedsButRejectsProtectedTarget() {
         SeedReserveEvidence changed = new SeedReserveEvidence(
             1L,
             "changed",
             MATURE.getRequiredSeedFingerprint(),
             10,
             2);
+        verifier.requireCurrent(DECISION, MATURE, changed, null);
+        verifier.requireCurrent(DECISION, MATURE, RESERVE, "minecraft:carrot|meta=0|nbt=none");
         assertThrows(
             IllegalStateException.class,
-            () -> verifier.requireCurrent(DECISION, MATURE, changed, MATURE.getRequiredSeedFingerprint()));
-        assertThrows(
-            IllegalStateException.class,
-            () -> verifier.requireCurrent(DECISION, MATURE, RESERVE, "minecraft:carrot|meta=0|nbt=none"));
-        assertThrows(
-            IllegalStateException.class,
-            () -> verifier.requireCurrent(
-                DECISION,
-                crop(CropFamily.VANILLA, "wheat-7", true, true),
-                RESERVE,
-                MATURE.getRequiredSeedFingerprint()));
+            () -> verifier.requireCurrent(DECISION, crop(CropFamily.VANILLA, "wheat-7", true, true), RESERVE, null));
     }
 
     @Test

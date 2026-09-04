@@ -119,8 +119,8 @@ public class FarmTaskRunnerTest {
         assertEquals(1, harness.backend.actions);
         assertTrue(
             harness.backend.lease.getCapabilities()
-                .contains(ActionCapability.DIG));
-        assertTrue(
+                .contains(ActionCapability.USE));
+        assertFalse(
             harness.backend.lease.getCapabilities()
                 .contains(ActionCapability.PLACE));
         assertTrue(
@@ -128,7 +128,7 @@ public class FarmTaskRunnerTest {
                 .contains(ActionCapability.HELD_USE));
         assertFalse(
             harness.backend.lease.getCapabilities()
-                .contains(ActionCapability.USE));
+                .contains(ActionCapability.DIG));
 
         harness.backend.confirm(crop("wheat-0", false));
         TaskSnapshot completed = task(harness.controller.tick(), spec.getId());
