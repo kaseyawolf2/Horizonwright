@@ -36,6 +36,7 @@ import io.github.kaseyawolf2.horizonwright.core.persistence.ProfileBindingKey;
 import io.github.kaseyawolf2.horizonwright.core.persistence.WorldProfileIdentity;
 import io.github.kaseyawolf2.horizonwright.core.task.BlockedReason;
 import io.github.kaseyawolf2.horizonwright.core.task.TaskSnapshot;
+import io.github.kaseyawolf2.horizonwright.core.task.TaskState;
 import io.github.kaseyawolf2.horizonwright.forge.client.container.LiveContainerTransactionExecutor;
 import io.github.kaseyawolf2.horizonwright.forge.client.container.LiveVanillaChestUnloadBackend;
 import io.github.kaseyawolf2.horizonwright.forge.client.container.ProfileVanillaChestUnloadConfiguration;
@@ -97,6 +98,8 @@ public final class ClientBootstrap {
     private LiveTinkersRepairBackend liveRepairBackend;
     private LiveVanillaSleepBackend liveSleepBackend;
     private final Set<String> announcedBlockedTasks = new HashSet<>();
+    private final Set<String> announcedRetryAttempts = new HashSet<>();
+    private final Set<String> announcedFailedTasks = new HashSet<>();
     private boolean initialized;
 
     private ClientBootstrap() {}
@@ -386,9 +389,34 @@ public final class ClientBootstrap {
             .getTasks()) {
             BlockedReason reason = task.getBlockedReason()
                 .orElse(null);
-            if (reason == null) continue;
             String taskId = task.getSpec()
                 .getId();
+            if (task.getState() == TaskState.QUEUED && task.getRetryCount() > 0) {
+                String retryKey = taskId + ":" + task.getRetryCount();
+                if (announcedRetryAttempts.add(retryKey)) {
+                    MinecraftRuntimeAccess.addChatMessage(
+                        minecraft.thePlayer,
+                        new ChatComponentText(
+                            EnumChatFormatting.YELLOW + "Horizonwright will retry "
+                                + taskId
+                                + " (attempt "
+                                + (task.getRetryCount() + 1)
+                                + "): "
+                                + task.getDetail()));
+                }
+            }
+            if (task.getState() == TaskState.FAILED && announcedFailedTasks.add(taskId)) {
+                MinecraftRuntimeAccess.addChatMessage(
+                    minecraft.thePlayer,
+                    new ChatComponentText(
+                        EnumChatFormatting.RED + "Horizonwright failed "
+                            + taskId
+                            + ": "
+                            + task.getDetail()
+                            + EnumChatFormatting.GRAY
+                            + " Open H > Tasks for details."));
+            }
+            if (reason == null) continue;
             currentlyBlocked.add(taskId);
             if (announcedBlockedTasks.add(taskId)) {
                 String next = reason.getRequiredUserAction()
@@ -417,6 +445,8 @@ public final class ClientBootstrap {
 
     private void retireProfile() {
         announcedBlockedTasks.clear();
+        announcedRetryAttempts.clear();
+        announcedFailedTasks.clear();
         if (attachedRuntime != null && liveExcavationBackend != null) {
             attachedRuntime.getTaskServices()
                 .unbindExcavationBackend(liveExcavationBackend);

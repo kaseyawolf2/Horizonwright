@@ -629,16 +629,17 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
                 return false;
             }
             MovingObjectPosition hit = MinecraftRuntimeAccess.rayTraceBlocks(minecraft.theWorld, eyes, center, false);
-            boolean reachable = hit != null && hit.typeOfHit == MovingObjectPosition.MovingObjectType.BLOCK
+            boolean hitTarget = hit != null && hit.typeOfHit == MovingObjectPosition.MovingObjectType.BLOCK
                 && hit.blockX == target.getX()
                 && hit.blockY == target.getY()
                 && hit.blockZ == target.getZ();
+            boolean reachable = FarmReachability.canInteract(distanceSquared, reach * reach, hit != null, hitTarget);
             trace(
                 "reach",
                 "reachable",
                 reachable,
                 "reason",
-                reachable ? "target-hit" : "raytrace-mismatch",
+                hitTarget ? "target-hit" : hit == null && reachable ? "clear-ray-no-plant-hit" : "raytrace-obstructed",
                 "distanceSquared",
                 distanceSquared,
                 "reachSquared",
