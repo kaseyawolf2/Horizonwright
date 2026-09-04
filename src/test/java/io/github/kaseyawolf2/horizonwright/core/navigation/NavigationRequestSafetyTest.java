@@ -5,6 +5,8 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
+import java.util.Arrays;
+
 import org.junit.Test;
 
 public class NavigationRequestSafetyTest {
@@ -55,6 +57,45 @@ public class NavigationRequestSafetyTest {
         assertTrue(near.isPlacementAllowed());
         assertEquals(NavigationGoalKind.RANGE, near.getGoalKind());
         assertEquals(3, near.getTolerance());
+    }
+
+    @Test
+    public void scopedBreakingCarriesOnlyExplicitBlockIds() {
+        NavigationRequest request = NavigationRequest.adjacentToAllowingPlacementAndBreaking(
+            "tree-route",
+            1L,
+            0,
+            4,
+            90,
+            4,
+            Arrays.asList("minecraft:leaves", "minecraft:leaves", "Natura:floraleaves"),
+            100L,
+            1_000L);
+
+        assertTrue(request.isPlacementAllowed());
+        assertTrue(request.isBreakingAllowed());
+        assertEquals(Arrays.asList("minecraft:leaves", "Natura:floraleaves"), request.getAllowedBreakBlockIds());
+    }
+
+    @Test
+    public void scopedBreakingRejectsBlankBlockIds() {
+        try {
+            NavigationRequest.adjacentToAllowingPlacementAndBreaking(
+                "invalid-tree-route",
+                1L,
+                0,
+                4,
+                90,
+                4,
+                Arrays.asList("minecraft:leaves", " "),
+                100L,
+                1_000L);
+            fail("blank allowed-break IDs must be rejected");
+        } catch (IllegalArgumentException expected) {
+            assertTrue(
+                expected.getMessage()
+                    .contains("allowed break block IDs"));
+        }
     }
 
     private static void assertRejected(int x, int y, int z, int tolerance) {

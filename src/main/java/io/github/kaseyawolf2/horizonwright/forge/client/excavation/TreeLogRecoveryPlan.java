@@ -12,14 +12,20 @@ final class TreeLogRecoveryPlan {
 
     private final BlockPosition leaf;
     private final BlockPosition rootLog;
+    private final List<BlockPosition> connectedLeaves;
     private final List<BlockPosition> logsBottomUp;
 
-    TreeLogRecoveryPlan(BlockPosition leaf, BlockPosition rootLog, List<BlockPosition> logsBottomUp) {
+    TreeLogRecoveryPlan(BlockPosition leaf, BlockPosition rootLog, List<BlockPosition> connectedLeaves,
+        List<BlockPosition> logsBottomUp) {
         this.leaf = Objects.requireNonNull(leaf, "leaf");
         this.rootLog = Objects.requireNonNull(rootLog, "rootLog");
+        if (connectedLeaves == null || connectedLeaves.isEmpty()) {
+            throw new IllegalArgumentException("a tree recovery plan requires at least one connected leaf");
+        }
         if (logsBottomUp == null || logsBottomUp.isEmpty()) {
             throw new IllegalArgumentException("a tree recovery plan requires at least one log");
         }
+        this.connectedLeaves = Collections.unmodifiableList(new ArrayList<>(connectedLeaves));
         this.logsBottomUp = Collections.unmodifiableList(new ArrayList<>(logsBottomUp));
     }
 
@@ -29,6 +35,10 @@ final class TreeLogRecoveryPlan {
 
     BlockPosition getRootLog() {
         return rootLog;
+    }
+
+    List<BlockPosition> getConnectedLeaves() {
+        return connectedLeaves;
     }
 
     List<BlockPosition> getLogsBottomUp() {

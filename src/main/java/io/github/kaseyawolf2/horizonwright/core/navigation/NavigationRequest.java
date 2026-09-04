@@ -1,5 +1,8 @@
 package io.github.kaseyawolf2.horizonwright.core.navigation;
 
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 public final class NavigationRequest {
@@ -19,6 +22,7 @@ public final class NavigationRequest {
     private final int tolerance;
     private final NavigationGoalKind goalKind;
     private final boolean placementAllowed;
+    private final List<String> allowedBreakBlockIds;
     private final long createdAtNanos;
     private final long deadlineNanos;
 
@@ -39,7 +43,8 @@ public final class NavigationRequest {
             createdAtNanos,
             timeoutNanos,
             NavigationGoalKind.RANGE,
-            false);
+            false,
+            Collections.emptyList());
     }
 
     public static NavigationRequest adjacentTo(String requestId, long actionEpoch, int dimensionId, int x, int y, int z,
@@ -55,7 +60,8 @@ public final class NavigationRequest {
             createdAtNanos,
             timeoutNanos,
             NavigationGoalKind.ADJACENT,
-            false);
+            false,
+            Collections.emptyList());
     }
 
     public static NavigationRequest adjacentToAllowingPlacement(String requestId, long actionEpoch, int dimensionId,
@@ -71,7 +77,8 @@ public final class NavigationRequest {
             createdAtNanos,
             timeoutNanos,
             NavigationGoalKind.ADJACENT,
-            true);
+            true,
+            Collections.emptyList());
     }
 
     public static NavigationRequest nearAllowingPlacement(String requestId, long actionEpoch, int dimensionId, int x,
@@ -87,11 +94,49 @@ public final class NavigationRequest {
             createdAtNanos,
             timeoutNanos,
             NavigationGoalKind.RANGE,
-            true);
+            true,
+            Collections.emptyList());
+    }
+
+    public static NavigationRequest adjacentToAllowingPlacementAndBreaking(String requestId, long actionEpoch,
+        int dimensionId, int x, int y, int z, List<String> allowedBreakBlockIds, long createdAtNanos,
+        long timeoutNanos) {
+        return new NavigationRequest(
+            requestId,
+            actionEpoch,
+            dimensionId,
+            x,
+            y,
+            z,
+            0,
+            createdAtNanos,
+            timeoutNanos,
+            NavigationGoalKind.ADJACENT,
+            true,
+            allowedBreakBlockIds);
+    }
+
+    public static NavigationRequest nearAllowingPlacementAndBreaking(String requestId, long actionEpoch,
+        int dimensionId, int x, int y, int z, int tolerance, List<String> allowedBreakBlockIds, long createdAtNanos,
+        long timeoutNanos) {
+        return new NavigationRequest(
+            requestId,
+            actionEpoch,
+            dimensionId,
+            x,
+            y,
+            z,
+            tolerance,
+            createdAtNanos,
+            timeoutNanos,
+            NavigationGoalKind.RANGE,
+            true,
+            allowedBreakBlockIds);
     }
 
     private NavigationRequest(String requestId, long actionEpoch, int dimensionId, int x, int y, int z, int tolerance,
-        long createdAtNanos, long timeoutNanos, NavigationGoalKind goalKind, boolean placementAllowed) {
+        long createdAtNanos, long timeoutNanos, NavigationGoalKind goalKind, boolean placementAllowed,
+        List<String> allowedBreakBlockIds) {
         if (requestId == null || requestId.trim()
             .isEmpty()) {
             throw new IllegalArgumentException("requestId must not be blank");
@@ -112,6 +157,16 @@ public final class NavigationRequest {
             throw new IllegalArgumentException("navigation timeout is outside the supported range");
         }
         if (goalKind == null) throw new IllegalArgumentException("goalKind must not be null");
+        if (allowedBreakBlockIds == null) throw new IllegalArgumentException("allowedBreakBlockIds must not be null");
+        List<String> checkedBreakIds = new ArrayList<>(allowedBreakBlockIds.size());
+        for (String blockId : allowedBreakBlockIds) {
+            if (blockId == null || blockId.trim()
+                .isEmpty()) {
+                throw new IllegalArgumentException("allowed break block IDs must not be blank");
+            }
+            String checked = blockId.trim();
+            if (!checkedBreakIds.contains(checked)) checkedBreakIds.add(checked);
+        }
         this.requestId = requestId.trim();
         this.actionEpoch = actionEpoch;
         this.dimensionId = dimensionId;
@@ -121,6 +176,7 @@ public final class NavigationRequest {
         this.tolerance = tolerance;
         this.goalKind = goalKind;
         this.placementAllowed = placementAllowed;
+        this.allowedBreakBlockIds = Collections.unmodifiableList(checkedBreakIds);
         this.createdAtNanos = createdAtNanos;
         this.deadlineNanos = saturatingAdd(createdAtNanos, timeoutNanos);
     }
@@ -159,6 +215,14 @@ public final class NavigationRequest {
 
     public boolean isPlacementAllowed() {
         return placementAllowed;
+    }
+
+    public List<String> getAllowedBreakBlockIds() {
+        return allowedBreakBlockIds;
+    }
+
+    public boolean isBreakingAllowed() {
+        return !allowedBreakBlockIds.isEmpty();
     }
 
     public long getCreatedAtNanos() {

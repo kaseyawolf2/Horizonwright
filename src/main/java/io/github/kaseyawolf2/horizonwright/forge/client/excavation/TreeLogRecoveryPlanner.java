@@ -87,7 +87,7 @@ final class TreeLogRecoveryPlanner {
                     .thenComparingInt(BlockPosition::getX)
                     .thenComparingInt(BlockPosition::getZ))
             .get();
-        return Optional.of(new TreeLogRecoveryPlan(leaf, root, ordered));
+        return Optional.of(new TreeLogRecoveryPlan(leaf, root, new ArrayList<>(visitedLeaves), ordered));
     }
 
     private static List<BlockPosition> neighbors(BlockPosition position) {

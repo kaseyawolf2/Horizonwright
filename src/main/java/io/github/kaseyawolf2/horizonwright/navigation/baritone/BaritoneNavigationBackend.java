@@ -1,5 +1,6 @@
 package io.github.kaseyawolf2.horizonwright.navigation.baritone;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.EnumSet;
 import java.util.List;
@@ -91,6 +92,7 @@ public final class BaritoneNavigationBackend implements NavigationBackend, Actio
             requiredCapabilities.add(ActionCapability.PLACE);
             requiredCapabilities.add(ActionCapability.HELD_USE);
         }
+        if (request.isBreakingAllowed()) requiredCapabilities.add(ActionCapability.DIG);
         if (!movementLease.getCapabilities()
             .containsAll(requiredCapabilities)) {
             throw new IllegalArgumentException(
@@ -131,6 +133,8 @@ public final class BaritoneNavigationBackend implements NavigationBackend, Actio
             request.getTolerance(),
             "allowPlacement",
             request.isPlacementAllowed(),
+            "allowedBreakBlocks",
+            request.getAllowedBreakBlockIds(),
             "leaseOwner",
             movementLease.getOwner(),
             "safetyRecovery",
@@ -140,7 +144,9 @@ public final class BaritoneNavigationBackend implements NavigationBackend, Actio
         Goal goal = request.getGoalKind() == NavigationGoalKind.ADJACENT ? new GoalGetToBlock(target)
             : request.getTolerance() == 0 ? new GoalBlock(request.getX(), request.getY(), request.getZ())
                 : new GoalNear(target, request.getTolerance());
-        CalculationContext calculationContext = createMovementContext(request.isPlacementAllowed());
+        CalculationContext calculationContext = createMovementContext(
+            request.isPlacementAllowed(),
+            request.getAllowedBreakBlockIds());
         Handle handle = new Handle(this, request, movementLease, goal, calculationContext);
         actionSessionGuard.begin(movementLease);
         active = handle;
@@ -392,7 +398,7 @@ public final class BaritoneNavigationBackend implements NavigationBackend, Actio
         return new PathingCommandContext(handle.goal, commandType, handle.calculationContext);
     }
 
-    private CalculationContext createMovementContext(boolean allowPlacement) {
+    private CalculationContext createMovementContext(boolean allowPlacement, List<String> allowedBreakBlockIds) {
         Settings settings = BaritoneAPI.getSettings();
         synchronized (settings) {
             boolean allowBreak = settings.allowBreak.value;
@@ -404,7 +410,7 @@ public final class BaritoneNavigationBackend implements NavigationBackend, Actio
             boolean allowWaterBucketFall = settings.allowWaterBucketFall.value;
             try {
                 settings.allowBreak.value = false;
-                settings.allowBreakAnyway.value = Collections.emptyList();
+                settings.allowBreakAnyway.value = resolveAllowedBreakBlocks(allowedBreakBlockIds);
                 settings.allowPlace.value = allowPlacement;
                 settings.allowInventory.value = false;
                 settings.allowParkour.value = false;
@@ -421,6 +427,20 @@ public final class BaritoneNavigationBackend implements NavigationBackend, Actio
                 settings.allowWaterBucketFall.value = allowWaterBucketFall;
             }
         }
+    }
+
+    private static List<Block> resolveAllowedBreakBlocks(List<String> blockIds) {
+        if (blockIds.isEmpty()) return Collections.emptyList();
+        List<Block> blocks = new ArrayList<>(blockIds.size());
+        for (String blockId : blockIds) {
+            Object registered = Block.blockRegistry.getObject(blockId);
+            if (!(registered instanceof Block)) {
+                throw new IllegalArgumentException("navigation allowed-break block is not registered: " + blockId);
+            }
+            Block block = (Block) registered;
+            if (!blocks.contains(block)) blocks.add(block);
+        }
+        return blocks;
     }
 
     private void requireRequestWorld(NavigationRequest request) {

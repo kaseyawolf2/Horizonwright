@@ -1,6 +1,10 @@
 package io.github.kaseyawolf2.horizonwright.forge.client.excavation;
 
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 import net.minecraft.block.Block;
 import net.minecraft.block.material.Material;
@@ -93,6 +97,22 @@ final class MinecraftExcavationObserver {
         if (!world.blockExists(position.getX(), position.getY(), position.getZ())) return false;
         Block block = world.getBlock(position.getX(), position.getY(), position.getZ());
         return block != null && block.isWood(world, position.getX(), position.getY(), position.getZ());
+    }
+
+    List<String> connectedLeafBlockIds(TreeLogRecoveryPlan plan) {
+        if (plan == null) throw new IllegalArgumentException("plan is required");
+        World world = minecraft.theWorld;
+        Set<String> blockIds = new LinkedHashSet<>();
+        for (BlockPosition position : plan.getConnectedLeaves()) {
+            if (!world.blockExists(position.getX(), position.getY(), position.getZ())) continue;
+            Block block = world.getBlock(position.getX(), position.getY(), position.getZ());
+            if (block == null || !block.isLeaves(world, position.getX(), position.getY(), position.getZ())) continue;
+            GameRegistry.UniqueIdentifier id = GameRegistry.findUniqueIdentifierFor(block);
+            String name = id == null ? Block.blockRegistry.getNameForObject(block) : id.modId + ':' + id.name;
+            if (name != null && !name.trim()
+                .isEmpty()) blockIds.add(name.trim());
+        }
+        return new ArrayList<>(blockIds);
     }
 
     private void requireClientWorld(int dimensionId) {

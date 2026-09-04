@@ -1,6 +1,7 @@
 package io.github.kaseyawolf2.horizonwright.forge.client.excavation;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Optional;
@@ -248,7 +249,15 @@ public final class LiveExcavationBackend implements ExcavationBackend {
             request.getExcavationArea(),
             request.getIntent()
                 .getPosition());
-        LiveHandle handle = new LiveHandle(request, lease, navigation, System.nanoTime(), treeRecovery.orElse(null));
+        List<String> treeLeafBlockIds = treeRecovery.isPresent() ? observer.connectedLeafBlockIds(treeRecovery.get())
+            : Collections.emptyList();
+        LiveHandle handle = new LiveHandle(
+            request,
+            lease,
+            navigation,
+            System.nanoTime(),
+            treeRecovery.orElse(null),
+            treeLeafBlockIds);
         active = handle;
         try {
             handle.start();
@@ -322,6 +331,7 @@ public final class LiveExcavationBackend implements ExcavationBackend {
         private boolean clearingObstruction;
         private BlockPosition obstructedTreeLog;
         private final TreeLogRecoveryPlan treeRecovery;
+        private final List<String> treeLeafBlockIds;
         private int nextTreeLog;
         private boolean clearingTreeLog;
         private TargetAim verifiedTargetAim;
@@ -330,11 +340,12 @@ public final class LiveExcavationBackend implements ExcavationBackend {
         private volatile boolean cancellationRequested;
 
         private LiveHandle(ExcavationActionRequest request, ActionLease lease, NavigationBackend navigation,
-            long startedAtNanos, TreeLogRecoveryPlan treeRecovery) {
+            long startedAtNanos, TreeLogRecoveryPlan treeRecovery, List<String> treeLeafBlockIds) {
             this.request = request;
             this.lease = lease;
             this.navigation = navigation;
             this.treeRecovery = treeRecovery;
+            this.treeLeafBlockIds = Collections.unmodifiableList(new ArrayList<>(treeLeafBlockIds));
             this.workingPosition = request.getIntent()
                 .getPosition();
             this.workingFingerprint = request.getIntent()
@@ -368,29 +379,42 @@ public final class LiveExcavationBackend implements ExcavationBackend {
             long startedAtNanos = System.nanoTime();
             String approachId = request.getRequestId() + "-approach-" + approachAttempt;
             NavigationRequest approach;
+            boolean treeRoute = clearingTreeLog || obstructedTreeLog != null;
+            boolean allowLeafBreaking = treeRoute && !treeLeafBlockIds.isEmpty();
             if (approachAttempt == 1) {
-                approach = clearingObstruction || clearingTreeLog
-                    ? NavigationRequest.adjacentToAllowingPlacement(
+                approach = allowLeafBreaking
+                    ? NavigationRequest.adjacentToAllowingPlacementAndBreaking(
                         approachId,
                         request.getActionEpoch(),
                         request.getDimensionId(),
                         position.getX(),
                         position.getY(),
                         position.getZ(),
+                        treeLeafBlockIds,
                         startedAtNanos,
                         APPROACH_TIMEOUT_NANOS)
-                    : NavigationRequest.adjacentTo(
-                        approachId,
-                        request.getActionEpoch(),
-                        request.getDimensionId(),
-                        position.getX(),
-                        position.getY(),
-                        position.getZ(),
-                        startedAtNanos,
-                        APPROACH_TIMEOUT_NANOS);
+                    : clearingObstruction || clearingTreeLog
+                        ? NavigationRequest.adjacentToAllowingPlacement(
+                            approachId,
+                            request.getActionEpoch(),
+                            request.getDimensionId(),
+                            position.getX(),
+                            position.getY(),
+                            position.getZ(),
+                            startedAtNanos,
+                            APPROACH_TIMEOUT_NANOS)
+                        : NavigationRequest.adjacentTo(
+                            approachId,
+                            request.getActionEpoch(),
+                            request.getDimensionId(),
+                            position.getX(),
+                            position.getY(),
+                            position.getZ(),
+                            startedAtNanos,
+                            APPROACH_TIMEOUT_NANOS);
             } else {
-                approach = clearingObstruction || clearingTreeLog
-                    ? NavigationRequest.nearAllowingPlacement(
+                approach = allowLeafBreaking
+                    ? NavigationRequest.nearAllowingPlacementAndBreaking(
                         approachId,
                         request.getActionEpoch(),
                         request.getDimensionId(),
@@ -398,18 +422,30 @@ public final class LiveExcavationBackend implements ExcavationBackend {
                         position.getY(),
                         position.getZ(),
                         3,
+                        treeLeafBlockIds,
                         startedAtNanos,
                         APPROACH_TIMEOUT_NANOS)
-                    : new NavigationRequest(
-                        approachId,
-                        request.getActionEpoch(),
-                        request.getDimensionId(),
-                        position.getX(),
-                        position.getY(),
-                        position.getZ(),
-                        3,
-                        startedAtNanos,
-                        APPROACH_TIMEOUT_NANOS);
+                    : clearingObstruction || clearingTreeLog
+                        ? NavigationRequest.nearAllowingPlacement(
+                            approachId,
+                            request.getActionEpoch(),
+                            request.getDimensionId(),
+                            position.getX(),
+                            position.getY(),
+                            position.getZ(),
+                            3,
+                            startedAtNanos,
+                            APPROACH_TIMEOUT_NANOS)
+                        : new NavigationRequest(
+                            approachId,
+                            request.getActionEpoch(),
+                            request.getDimensionId(),
+                            position.getX(),
+                            position.getY(),
+                            position.getZ(),
+                            3,
+                            startedAtNanos,
+                            APPROACH_TIMEOUT_NANOS);
             }
             navigationHandle = navigation.submit(approach, lease);
             phase = Phase.APPROACHING;
@@ -423,7 +459,9 @@ public final class LiveExcavationBackend implements ExcavationBackend {
                 "attempt",
                 approachAttempt,
                 "allowPlacement",
-                approach.isPlacementAllowed());
+                approach.isPlacementAllowed(),
+                "allowedBreakBlocks",
+                approach.getAllowedBreakBlockIds());
         }
 
         @Override
