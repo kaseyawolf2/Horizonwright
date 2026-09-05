@@ -175,7 +175,7 @@ public final class GuiHusbandrySetup extends GuiScreen {
                 values.maximumAdults,
                 values.maximumActions));
         status = "Queued '" + task.getSpec()
-            .getId() + "'; live actions disabled.";
+            .getId() + "'; feeding/collection enabled, culling disabled.";
     }
 
     private void schedulePasses() {
@@ -193,7 +193,7 @@ public final class GuiHusbandrySetup extends GuiScreen {
                 values.maximumAdults,
                 values.maximumActions,
                 intervalMillis);
-            status = "Scheduled '" + scheduleId + "'; live actions disabled.";
+            status = "Scheduled '" + scheduleId + "'; feeding/collection enabled, culling disabled.";
         } else {
             runtime.updateHusbandrySchedule(
                 scheduleId,

@@ -720,6 +720,7 @@ public final class HorizonwrightClientCommand extends CommandBase {
                 int adults = 0;
                 int ready = 0;
                 int engaged = 0;
+                int protectedStock = 0;
                 int excluded = 0;
                 for (AnimalObservation animal : observation.getAnimals()) {
                     if (animal.getSpecies() != species) continue;
@@ -727,6 +728,7 @@ public final class HorizonwrightClientCommand extends CommandBase {
                     if (animal.isAdult()) adults++;
                     if (animal.isReadyToBreed()) ready++;
                     if (animal.isBreedingEngaged()) engaged++;
+                    if (animal.isProtectedStock()) protectedStock++;
                     if (!animal.isEligibleTarget()) excluded++;
                 }
                 if (total > 0) {
@@ -742,6 +744,8 @@ public final class HorizonwrightClientCommand extends CommandBase {
                                 + ready
                                 + ", breeding "
                                 + engaged
+                                + ", protected "
+                                + protectedStock
                                 + ", excluded "
                                 + excluded));
                 }
@@ -923,7 +927,7 @@ public final class HorizonwrightClientCommand extends CommandBase {
                         + species
                         + " in '"
                         + penId
-                        + "'. Live animal actions remain disabled."));
+                        + "'. Feeding and drop collection are enabled; automatic culling remains disabled."));
         } catch (RuntimeException failure) {
             MinecraftRuntimeAccess.addChatMessage(
                 sender,
@@ -964,7 +968,7 @@ public final class HorizonwrightClientCommand extends CommandBase {
                         + scheduleId
                         + "' every "
                         + minutes
-                        + " connected minute(s). Live animal actions remain disabled."));
+                        + " connected minute(s). Feeding and drop collection are enabled; automatic culling remains disabled."));
         } catch (RuntimeException failure) {
             MinecraftRuntimeAccess.addChatMessage(
                 sender,
