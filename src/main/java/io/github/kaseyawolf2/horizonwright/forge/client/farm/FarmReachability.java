@@ -3,6 +3,9 @@ package io.github.kaseyawolf2.horizonwright.forge.client.farm;
 /** Pure final-reach decision for a positively identified crop target. */
 final class FarmReachability {
 
+    static final int DROP_COLLECTION_TOLERANCE = 1;
+    private static final double FACE_INSET = 0.001D;
+
     private FarmReachability() {}
 
     static boolean canInteract(double distanceSquared, double reachSquared, boolean rayHitPresent,
@@ -11,5 +14,26 @@ final class FarmReachability {
         // Some vanilla plant geometries return no world-ray hit. Once the exact crop is independently
         // identified and within reach, a null hit means no collidable block obstructed the segment.
         return !rayHitPresent || rayHitTarget;
+    }
+
+    static int collectionFeetY(double playerY) {
+        int feetY = (int) Math.floor(playerY);
+        return Math.max(0, Math.min(255, feetY));
+    }
+
+    /** Center first, followed by a point just inside each of the six block faces. */
+    static double[][] interactionProbes(int x, int y, int z) {
+        double minX = x + FACE_INSET;
+        double minY = y + FACE_INSET;
+        double minZ = z + FACE_INSET;
+        double maxX = x + 1.0D - FACE_INSET;
+        double maxY = y + 1.0D - FACE_INSET;
+        double maxZ = z + 1.0D - FACE_INSET;
+        double centerX = x + 0.5D;
+        double centerY = y + 0.5D;
+        double centerZ = z + 0.5D;
+        return new double[][] { { centerX, centerY, centerZ }, { minX, centerY, centerZ }, { maxX, centerY, centerZ },
+            { centerX, minY, centerZ }, { centerX, maxY, centerZ }, { centerX, centerY, minZ },
+            { centerX, centerY, maxZ } };
     }
 }

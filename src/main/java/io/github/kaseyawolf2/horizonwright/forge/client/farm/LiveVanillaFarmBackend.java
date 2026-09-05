@@ -396,6 +396,8 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
         private boolean slotChanged;
         private boolean cropTravelSafetyHeld;
         private int collectionSettleTicks;
+        private Vec3 interactionPoint;
+        private int interactionSide = 1;
         private volatile boolean cancellationRequested;
 
         private LiveHandle(ActionRequest request, ActionLease lease, NavigationBackend navigation, int seedSlot,
@@ -756,7 +758,10 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
                 fail("Could not establish the CropsNH spade for crop harvesting");
                 return;
             }
-            aimAt(target);
+            Vec3 clickPoint = interactionPoint == null
+                ? Vec3.createVectorHelper(target.getX() + 0.5D, target.getY() + 0.5D, target.getZ() + 0.5D)
+                : interactionPoint;
+            aimAt(clickPoint);
             boolean accepted = minecraft.playerController.onPlayerRightClick(
                 minecraft.thePlayer,
                 minecraft.theWorld,
@@ -765,7 +770,7 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
                 target.getY(),
                 target.getZ(),
                 targetSide(),
-                Vec3.createVectorHelper(target.getX() + 0.5D, target.getY() + 0.5D, target.getZ() + 0.5D));
+                clickPoint);
             minecraft.thePlayer.swingItem();
             trace(
                 "harvest-interaction",
@@ -943,9 +948,11 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
             }
             BasePosition target = request.getDecision()
                 .getTarget();
-            // Baritone's player block position is the non-solid crop layer, not the
-            // rendered/eye-height position reported by EntityPlayer.posY.
-            int playerY = target.getY();
+            // Collection is a player-position goal, not a request to occupy the crop block.
+            // Keep the current foot layer (important for hanging fruit and stacked fruit logs)
+            // and permit an adjacent pickup position instead of issuing GoalBlock for an
+            // occupied crop coordinate.
+            int playerY = FarmReachability.collectionFeetY(minecraft.thePlayer.posY);
             long now = System.nanoTime();
             long remaining = deadline.remainingAction(now);
             if (remaining <= 0L) {
@@ -960,13 +967,20 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
                     target.getX(),
                     playerY,
                     target.getZ(),
-                    0,
+                    FarmReachability.DROP_COLLECTION_TOLERANCE,
                     now,
                     Math.min(remaining, NavigationRequest.MAX_RUNTIME_NANOS)),
                 lease);
             phase = Phase.COLLECTING;
-            detail = "Moving through the harvested crop to collect its drops";
-            trace("collection-start", "navigationRequest", navigationHandle.getRequestId(), "playerGoalY", playerY);
+            detail = "Moving beside the harvested crop to collect its drops";
+            trace(
+                "collection-start",
+                "navigationRequest",
+                navigationHandle.getRequestId(),
+                "playerGoalY",
+                playerY,
+                "tolerance",
+                FarmReachability.DROP_COLLECTION_TOLERANCE);
         }
 
         private void pollCollection() {
@@ -1020,58 +1034,100 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
             EntityPlayer player = minecraft.thePlayer;
             Vec3 eyes = Vec3
                 .createVectorHelper(player.posX, player.posY + MinecraftRuntimeAccess.eyeHeight(player), player.posZ);
-            Vec3 center = Vec3.createVectorHelper(target.getX() + 0.5D, target.getY() + 0.5D, target.getZ() + 0.5D);
             double reach = minecraft.playerController.getBlockReachDistance() + 0.5D;
-            double distanceSquared = eyes.squareDistanceTo(center);
-            if (distanceSquared > reach * reach) {
-                trace(
-                    "reach",
-                    "reachable",
-                    false,
-                    "reason",
-                    "distance",
-                    "distanceSquared",
-                    distanceSquared,
-                    "reachSquared",
-                    reach * reach,
-                    "eyes",
-                    eyes,
-                    "center",
-                    center);
-                return false;
+            double reachSquared = reach * reach;
+            interactionPoint = null;
+            interactionSide = 1;
+            MovingObjectPosition centerHit = null;
+            double centerDistanceSquared = Double.POSITIVE_INFINITY;
+            double[][] probes = FarmReachability.interactionProbes(target.getX(), target.getY(), target.getZ());
+            for (int probeIndex = 0; probeIndex < probes.length; probeIndex++) {
+                double[] probe = probes[probeIndex];
+                Vec3 point = Vec3.createVectorHelper(probe[0], probe[1], probe[2]);
+                double distanceSquared = eyes.squareDistanceTo(point);
+                if (probeIndex == 0) centerDistanceSquared = distanceSquared;
+                if (distanceSquared > reachSquared) continue;
+                MovingObjectPosition hit = MinecraftRuntimeAccess
+                    .rayTraceBlocks(minecraft.theWorld, eyes, point, false);
+                if (probeIndex == 0) centerHit = hit;
+                if (isExactTargetHit(hit, target)) {
+                    interactionPoint = hit.hitVec == null ? point : hit.hitVec;
+                    interactionSide = hit.sideHit;
+                    trace(
+                        "reach",
+                        "reachable",
+                        true,
+                        "reason",
+                        probeIndex == 0 ? "target-center-hit" : "target-face-hit",
+                        "probe",
+                        probeIndex,
+                        "distanceSquared",
+                        distanceSquared,
+                        "reachSquared",
+                        reachSquared,
+                        "side",
+                        interactionSide,
+                        "hitPoint",
+                        interactionPoint);
+                    return true;
+                }
+                // Non-collidable plant geometries can produce a clear center ray. Preserve
+                // that established behavior, but do not click through a center obstruction
+                // merely because an alternate endpoint produced no collision.
+                if (probeIndex == 0
+                    && FarmReachability.canInteract(distanceSquared, reachSquared, hit != null, false)) {
+                    interactionPoint = point;
+                    trace(
+                        "reach",
+                        "reachable",
+                        true,
+                        "reason",
+                        "clear-center-ray-no-plant-hit",
+                        "distanceSquared",
+                        distanceSquared,
+                        "reachSquared",
+                        reachSquared);
+                    return true;
+                }
             }
-            MovingObjectPosition hit = MinecraftRuntimeAccess.rayTraceBlocks(minecraft.theWorld, eyes, center, false);
-            boolean hitTarget = hit != null && hit.typeOfHit == MovingObjectPosition.MovingObjectType.BLOCK
-                && hit.blockX == target.getX()
-                && hit.blockY == target.getY()
-                && hit.blockZ == target.getZ();
-            boolean reachable = FarmReachability.canInteract(distanceSquared, reach * reach, hit != null, hitTarget);
             trace(
                 "reach",
                 "reachable",
-                reachable,
+                false,
                 "reason",
-                hitTarget ? "target-hit" : hit == null && reachable ? "clear-ray-no-plant-hit" : "raytrace-obstructed",
+                centerDistanceSquared > reachSquared ? "distance" : "all-target-faces-obstructed",
                 "distanceSquared",
-                distanceSquared,
+                centerDistanceSquared,
                 "reachSquared",
-                reach * reach,
+                reachSquared,
                 "hit",
-                hit == null ? "none" : hit.typeOfHit + ":" + hit.blockX + "," + hit.blockY + "," + hit.blockZ);
-            return reachable;
+                centerHit == null ? "none"
+                    : centerHit.typeOfHit + ":" + centerHit.blockX + "," + centerHit.blockY + "," + centerHit.blockZ);
+            return false;
+        }
+
+        private boolean isExactTargetHit(MovingObjectPosition hit, BasePosition target) {
+            return hit != null && hit.typeOfHit == MovingObjectPosition.MovingObjectType.BLOCK
+                && hit.blockX == target.getX()
+                && hit.blockY == target.getY()
+                && hit.blockZ == target.getZ();
         }
 
         private void aimAt(BasePosition target) {
+            aimAt(Vec3.createVectorHelper(target.getX() + 0.5D, target.getY() + 0.5D, target.getZ() + 0.5D));
+        }
+
+        private void aimAt(Vec3 point) {
             EntityPlayer player = minecraft.thePlayer;
-            double dx = target.getX() + 0.5D - player.posX;
-            double dy = target.getY() + 0.5D - (player.posY + MinecraftRuntimeAccess.eyeHeight(player));
-            double dz = target.getZ() + 0.5D - player.posZ;
+            double dx = point.xCoord - player.posX;
+            double dy = point.yCoord - (player.posY + MinecraftRuntimeAccess.eyeHeight(player));
+            double dz = point.zCoord - player.posZ;
             player.rotationYaw = (float) (Math.atan2(dz, dx) * 180.0D / Math.PI) - 90.0F;
             player.rotationPitch = (float) -(Math.atan2(dy, Math.sqrt(dx * dx + dz * dz)) * 180.0D / Math.PI);
         }
 
         private int targetSide() {
-            return 1;
+            return interactionPoint == null ? 1 : interactionSide;
         }
 
         private void restoreSlot() {
