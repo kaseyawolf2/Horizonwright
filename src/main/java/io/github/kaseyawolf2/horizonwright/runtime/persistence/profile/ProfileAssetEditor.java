@@ -176,9 +176,9 @@ public final class ProfileAssetEditor {
         ProfileEnvelope previous = requireExactProfile();
         requireArea(previous, penId);
         String normalizedPen = penId.trim();
+        ProtectedLivestock protectedAnimal = new ProtectedLivestock(normalizedPen, entityIdentity);
         List<ProtectedLivestock> protectedLivestock = new ArrayList<>(previous.getProtectedLivestock());
-        boolean removed = protectedLivestock.removeIf(
-            value -> normalizedPen.equals(value.getPenId()) && entityIdentity.equals(value.getEntityIdentity()));
+        boolean removed = protectedLivestock.remove(protectedAnimal);
         if (!removed) {
             throw new ProfileAssetEditingException("animal is not protected in pen '" + normalizedPen + "'");
         }

@@ -219,7 +219,9 @@ the active world profile; `/hw husbandryunprotect <pen-id>` removes the mark.
 Both commands require a complete loaded-pen scan proving the targeted animal is
 inside the named pen. Protection survives rejoin and profile reassociation,
 participates in the observation fingerprint, and is removed automatically if
-its named pen is deleted.
+its named pen is deleted. `/hw husbandryprotected <pen-id>` lists every stored
+UUID with a clickable removal action; this also permits stale protection to be
+removed safely when an animal is no longer loaded or no longer exists.
 The bound live vanilla executor now enables only the non-destructive subset.
 Baritone approaches the exact freshly observed adult or item drop. Feeding
 requires the exact vanilla species feed, can transactionally stage it from the

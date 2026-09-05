@@ -294,6 +294,11 @@ same animal and confirm the protected count falls. Protection changes must
 produce a new observation fingerprint, so no plan captured before the change
 may act afterward.
 
+Protect the animal once more, make it unavailable without deleting the pen,
+then run `/hw husbandryprotected <pen-id>`. Confirm its UUID is listed and that
+the clickable **Remove protection** action deletes the stale record without the
+animal being loaded.
+
 Drop an ordinary item inside the stable-population pen and queue another pass.
 Confirm Horizonwright walks through that exact item position and advances only
 after the same item-entity identity disappears from a fresh complete scan. Test

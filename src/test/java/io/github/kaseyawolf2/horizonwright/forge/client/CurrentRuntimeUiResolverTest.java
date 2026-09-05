@@ -18,6 +18,7 @@ import net.minecraft.util.IChatComponent;
 import org.junit.Test;
 
 import io.github.kaseyawolf2.horizonwright.HorizonwrightRuntime;
+import io.github.kaseyawolf2.horizonwright.core.persistence.ProtectedLivestock;
 import io.github.kaseyawolf2.horizonwright.core.task.IHorizonwrightController;
 import io.github.kaseyawolf2.horizonwright.core.task.ScheduleEnvironment;
 import io.github.kaseyawolf2.horizonwright.core.task.TaskSnapshot;
@@ -199,6 +200,35 @@ public class CurrentRuntimeUiResolverTest {
         } finally {
             runtime.close();
         }
+    }
+
+    @Test
+    public void protectedLivestockChoiceRunsExactUuidRemovalAndExplainsUnloadedRemoval() {
+        ProtectedLivestock protectedAnimal = new ProtectedLivestock("cow-pen", "00000000-0000-0000-0000-000000000123");
+
+        IChatComponent choice = HorizonwrightClientCommand.clickableUnprotectChoice(protectedAnimal);
+
+        assertEquals(
+            ClickEvent.Action.RUN_COMMAND,
+            choice.getChatStyle()
+                .getChatClickEvent()
+                .getAction());
+        assertEquals(
+            "/hw husbandryunprotect cow-pen 00000000-0000-0000-0000-000000000123",
+            choice.getChatStyle()
+                .getChatClickEvent()
+                .getValue());
+        assertEquals(
+            HoverEvent.Action.SHOW_TEXT,
+            choice.getChatStyle()
+                .getChatHoverEvent()
+                .getAction());
+        assertTrue(
+            choice.getChatStyle()
+                .getChatHoverEvent()
+                .getValue()
+                .getUnformattedText()
+                .contains("does not need to be loaded"));
     }
 
     private static ICommandSender recordingSender(final List<String> messages) {

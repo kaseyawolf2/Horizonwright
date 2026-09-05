@@ -26,6 +26,8 @@ import io.github.kaseyawolf2.horizonwright.core.base.HusbandryObservation;
 import io.github.kaseyawolf2.horizonwright.core.base.LivestockSpecies;
 import io.github.kaseyawolf2.horizonwright.core.excavation.ManagedQuarryConfiguration;
 import io.github.kaseyawolf2.horizonwright.core.navigation.NavigationProgress;
+import io.github.kaseyawolf2.horizonwright.core.persistence.ProfileEnvelope;
+import io.github.kaseyawolf2.horizonwright.core.persistence.ProtectedLivestock;
 import io.github.kaseyawolf2.horizonwright.core.task.ControllerSnapshot;
 import io.github.kaseyawolf2.horizonwright.core.task.TaskLane;
 import io.github.kaseyawolf2.horizonwright.core.task.TaskResumeCandidates;
@@ -78,7 +80,7 @@ public final class HorizonwrightClientCommand extends CommandBase {
 
     @Override
     public String getCommandUsage(ICommandSender sender) {
-        return "/hw [panel|profile [status|enroll|recover|reassociate <id>]|debug [on|off|status]|status|task [id]|goto <x> <y> <z> [tolerance]|excavate cylinder <id> <radius> <bottom-y> <top-y> [<loadout> <storage> <station> <tool-slot> <work-damage>]|excavate managed <id> <radius> <bottom-y> <top-y> <ramp-block> <light-block> <filler-block> <light-interval> [<loadout> <storage> <station> <tool-slot> <work-damage>]|farm <task-id> <plot-id> [seed-reserve]|farmschedule <id> <plot-id> <minutes> [seed-reserve]|trees <task-id> <area-id> [sapling-reserve]|treeschedule <id> <area-id> <minutes> [sapling-reserve]|husbandryscan <pen-id>|husbandryprotect <pen-id>|husbandryunprotect <pen-id>|husbandry <task-id> <pen-id> <species> <minimum> <maximum> [max-actions]|husbandryschedule <id> <pen-id> <species> <minimum> <maximum> <minutes> [max-actions]|sleep <task-id> <bed-location>|sleepschedule <id> <bed-location>|pause [id]|resume [id]|cancel <id>|navcancel|dryrun [on|off]|stop|reset]";
+        return "/hw [panel|profile [status|enroll|recover|reassociate <id>]|debug [on|off|status]|status|task [id]|goto <x> <y> <z> [tolerance]|excavate cylinder <id> <radius> <bottom-y> <top-y> [<loadout> <storage> <station> <tool-slot> <work-damage>]|excavate managed <id> <radius> <bottom-y> <top-y> <ramp-block> <light-block> <filler-block> <light-interval> [<loadout> <storage> <station> <tool-slot> <work-damage>]|farm <task-id> <plot-id> [seed-reserve]|farmschedule <id> <plot-id> <minutes> [seed-reserve]|trees <task-id> <area-id> [sapling-reserve]|treeschedule <id> <area-id> <minutes> [sapling-reserve]|husbandryscan <pen-id>|husbandryprotected <pen-id>|husbandryprotect <pen-id>|husbandryunprotect <pen-id> [uuid]|husbandry <task-id> <pen-id> <species> <minimum> <maximum> [max-actions]|husbandryschedule <id> <pen-id> <species> <minimum> <maximum> <minutes> [max-actions]|sleep <task-id> <bed-location>|sleepschedule <id> <bed-location>|pause [id]|resume [id]|cancel <id>|navcancel|dryrun [on|off]|stop|reset]";
     }
 
     @Override
@@ -151,6 +153,10 @@ public final class HorizonwrightClientCommand extends CommandBase {
         }
         if ("husbandryscan".equals(subcommand)) {
             scanHusbandryPen(sender, arguments);
+            return;
+        }
+        if ("husbandryprotected".equals(subcommand)) {
+            listProtectedLivestock(sender, arguments);
             return;
         }
         if ("husbandryprotect".equals(subcommand) || "husbandryunprotect".equals(subcommand)) {
@@ -232,6 +238,7 @@ public final class HorizonwrightClientCommand extends CommandBase {
             || "trees".equals(subcommand)
             || "treeschedule".equals(subcommand)
             || "husbandryscan".equals(subcommand)
+            || "husbandryprotected".equals(subcommand)
             || "husbandryprotect".equals(subcommand)
             || "husbandryunprotect".equals(subcommand)
             || "husbandry".equals(subcommand)
@@ -290,6 +297,7 @@ public final class HorizonwrightClientCommand extends CommandBase {
                 "trees",
                 "treeschedule",
                 "husbandryscan",
+                "husbandryprotected",
                 "husbandryprotect",
                 "husbandryunprotect",
                 "husbandry",
@@ -322,7 +330,8 @@ public final class HorizonwrightClientCommand extends CommandBase {
                     .getReassociationCandidateProfileIds());
         }
         if (arguments.length == 2
-            && ("husbandryscan".equalsIgnoreCase(arguments[0]) || "husbandryprotect".equalsIgnoreCase(arguments[0])
+            && ("husbandryscan".equalsIgnoreCase(arguments[0]) || "husbandryprotected".equalsIgnoreCase(arguments[0])
+                || "husbandryprotect".equalsIgnoreCase(arguments[0])
                 || "husbandryunprotect".equalsIgnoreCase(arguments[0]))) {
             return getListOfStringsFromIterableMatchingLastWord(arguments, namedAreaIds());
         }
@@ -746,17 +755,32 @@ public final class HorizonwrightClientCommand extends CommandBase {
     }
 
     private void setTargetedLivestockProtection(ICommandSender sender, String[] arguments, boolean protect) {
-        if (arguments.length != 2) {
+        if (protect && arguments.length != 2 || !protect && arguments.length != 2 && arguments.length != 3) {
             MinecraftRuntimeAccess.addChatMessage(
                 sender,
                 new ChatComponentText(
                     EnumChatFormatting.RED + "Usage: /hw "
                         + (protect ? "husbandryprotect" : "husbandryunprotect")
-                        + " <pen-id>"));
+                        + " <pen-id>"
+                        + (protect ? "" : " [uuid]")));
             return;
         }
         try {
             String penId = ProfileAssetInput.stableId(arguments[1], "livestock pen name");
+            ProfileAssetEditor editor = profileEditorProvider.getCurrentProfileAssetEditor()
+                .orElseThrow(() -> new IllegalStateException("active profile assets are unavailable"));
+            if (!protect && arguments.length == 3) {
+                editor.unprotectLivestock(penId, arguments[2]);
+                MinecraftRuntimeAccess.addChatMessage(
+                    sender,
+                    new ChatComponentText(
+                        EnumChatFormatting.YELLOW + "Horizonwright removed stored protection for "
+                            + arguments[2]
+                            + " in '"
+                            + penId
+                            + "'."));
+                return;
+            }
             Minecraft minecraft = Minecraft.getMinecraft();
             MovingObjectPosition hit = minecraft.objectMouseOver;
             if (hit == null || hit.typeOfHit != MovingObjectPosition.MovingObjectType.ENTITY
@@ -783,8 +807,6 @@ public final class HorizonwrightClientCommand extends CommandBase {
             if (!insideCompletePenScan) {
                 throw new IllegalStateException("the targeted animal is not inside the complete loaded named pen");
             }
-            ProfileAssetEditor editor = profileEditorProvider.getCurrentProfileAssetEditor()
-                .orElseThrow(() -> new IllegalStateException("active profile assets are unavailable"));
             if (protect) editor.protectLivestock(penId, identity);
             else editor.unprotectLivestock(penId, identity);
             MinecraftRuntimeAccess.addChatMessage(
@@ -806,6 +828,71 @@ public final class HorizonwrightClientCommand extends CommandBase {
                 new ChatComponentText(
                     EnumChatFormatting.RED + "Livestock protection not changed: " + safeMessage(failure)));
         }
+    }
+
+    private void listProtectedLivestock(ICommandSender sender, String[] arguments) {
+        if (arguments.length != 2) {
+            MinecraftRuntimeAccess.addChatMessage(
+                sender,
+                new ChatComponentText(EnumChatFormatting.RED + "Usage: /hw husbandryprotected <pen-id>"));
+            return;
+        }
+        try {
+            String penId = ProfileAssetInput.stableId(arguments[1], "livestock pen name");
+            ProfileAssetEditor editor = profileEditorProvider.getCurrentProfileAssetEditor()
+                .orElseThrow(() -> new IllegalStateException("active profile assets are unavailable"));
+            ProfileEnvelope profile = editor.load();
+            boolean penExists = false;
+            for (io.github.kaseyawolf2.horizonwright.core.base.NamedArea area : profile.getNamedAreas()) {
+                if (penId.equals(area.getId())) penExists = true;
+            }
+            if (!penExists) throw new IllegalStateException("active profile has no named area '" + penId + "'");
+            List<ProtectedLivestock> protectedAnimals = new ArrayList<>();
+            for (ProtectedLivestock protectedAnimal : profile.getProtectedLivestock()) {
+                if (penId.equals(protectedAnimal.getPenId())) protectedAnimals.add(protectedAnimal);
+            }
+            MinecraftRuntimeAccess.addChatMessage(
+                sender,
+                new ChatComponentText(
+                    EnumChatFormatting.AQUA + "Protected livestock in '" + penId + "': " + protectedAnimals.size()));
+            if (protectedAnimals.isEmpty()) {
+                MinecraftRuntimeAccess.addChatMessage(
+                    sender,
+                    new ChatComponentText(EnumChatFormatting.GRAY + "No animal UUIDs are protected in this pen."));
+                return;
+            }
+            for (ProtectedLivestock protectedAnimal : protectedAnimals) {
+                MinecraftRuntimeAccess.addChatMessage(sender, clickableUnprotectChoice(protectedAnimal));
+            }
+        } catch (RuntimeException failure) {
+            MinecraftRuntimeAccess.addChatMessage(
+                sender,
+                new ChatComponentText(
+                    EnumChatFormatting.RED + "Protected livestock could not be listed: " + safeMessage(failure)));
+        }
+    }
+
+    static IChatComponent clickableUnprotectChoice(ProtectedLivestock protectedAnimal) {
+        if (protectedAnimal == null) throw new IllegalArgumentException("protected animal must not be null");
+        String identity = protectedAnimal.getEntityIdentity();
+        ChatComponentText choice = new ChatComponentText("[Remove protection] " + identity);
+        MinecraftRuntimeAccess.chatStyle(choice)
+            .setColor(EnumChatFormatting.YELLOW)
+            .setUnderlined(Boolean.TRUE)
+            .setChatClickEvent(
+                new ClickEvent(
+                    ClickEvent.Action.RUN_COMMAND,
+                    "/hw husbandryunprotect " + protectedAnimal.getPenId() + " " + identity))
+            .setChatHoverEvent(
+                new HoverEvent(
+                    HoverEvent.Action.SHOW_TEXT,
+                    new ChatComponentText(
+                        "Click to remove this stored protected-stock UUID." + "\nPen: "
+                            + protectedAnimal.getPenId()
+                            + "\nAnimal UUID: "
+                            + identity
+                            + "\nThe animal does not need to be loaded.")));
+        return choice;
     }
 
     private void startHusbandry(ICommandSender sender, String[] arguments, HorizonwrightRuntime runtime) {
