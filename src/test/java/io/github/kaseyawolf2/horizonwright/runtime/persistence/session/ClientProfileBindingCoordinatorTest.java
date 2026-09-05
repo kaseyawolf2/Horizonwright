@@ -18,6 +18,8 @@ import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
 
+import io.github.kaseyawolf2.horizonwright.core.base.BasePosition;
+import io.github.kaseyawolf2.horizonwright.core.base.NamedArea;
 import io.github.kaseyawolf2.horizonwright.core.logistics.NamedLoadout;
 import io.github.kaseyawolf2.horizonwright.core.logistics.StorageItemFilter;
 import io.github.kaseyawolf2.horizonwright.core.persistence.HorizonwrightPersistenceStore;
@@ -32,6 +34,7 @@ import io.github.kaseyawolf2.horizonwright.core.persistence.ProfileBindingKey;
 import io.github.kaseyawolf2.horizonwright.core.persistence.ProfileEnvelope;
 import io.github.kaseyawolf2.horizonwright.core.persistence.ProfileReassociation;
 import io.github.kaseyawolf2.horizonwright.core.persistence.ProfileStatePaths;
+import io.github.kaseyawolf2.horizonwright.core.persistence.ProtectedLivestock;
 import io.github.kaseyawolf2.horizonwright.core.persistence.WorldProfileIdentity;
 
 public class ClientProfileBindingCoordinatorTest {
@@ -125,6 +128,12 @@ public class ClientProfileBindingCoordinatorTest {
             home.getId(),
             StorageItemFilter.acceptAll());
         NamedRepairStation repair = new NamedRepairStation("home-forge", "Home forge", home.getId(), loadout.getId());
+        NamedArea pen = new NamedArea(
+            "cow-pen",
+            "Cow pen",
+            new BasePosition(0, 1, 64, 1),
+            new BasePosition(0, 4, 66, 4));
+        ProtectedLivestock protectedCow = new ProtectedLivestock(pen.getId(), "00000000-0000-0000-0000-000000000123");
         stores.profiles.saveProfile(
             stores.profiles.pathsForProfile(previous.getProfileId()),
             new ProfileEnvelope(
@@ -135,7 +144,9 @@ public class ClientProfileBindingCoordinatorTest {
                 Collections.emptyList(),
                 Collections.singletonList(loadout),
                 Collections.singletonList(storage),
-                Collections.singletonList(repair)));
+                Collections.singletonList(repair),
+                Collections.singletonList(pen),
+                Collections.singletonList(protectedCow)));
         ProfileBindingKey replacementKey = ProfileBindingKey.multiplayer(ENDPOINT, "world-after-reset");
         ClientProfileBindingCoordinator coordinator = coordinator(stores, ids(), ids("confirm-reset"), 20L);
 
@@ -171,6 +182,8 @@ public class ClientProfileBindingCoordinatorTest {
         assertEquals(Collections.singletonList(loadout), persisted.getNamedLoadouts());
         assertEquals(Collections.singletonList(storage), persisted.getNamedStorageEndpoints());
         assertEquals(Collections.singletonList(repair), persisted.getNamedRepairStations());
+        assertEquals(Collections.singletonList(pen), persisted.getNamedAreas());
+        assertEquals(Collections.singletonList(protectedCow), persisted.getProtectedLivestock());
         assertEquals(
             1,
             persisted.getReassociations()

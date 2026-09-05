@@ -9,12 +9,14 @@ import java.util.Optional;
 import net.minecraft.client.Minecraft;
 import net.minecraft.command.CommandBase;
 import net.minecraft.command.ICommandSender;
+import net.minecraft.entity.passive.EntityAnimal;
 import net.minecraft.event.ClickEvent;
 import net.minecraft.event.HoverEvent;
 import net.minecraft.util.ChatComponentText;
 import net.minecraft.util.ChunkCoordinates;
 import net.minecraft.util.EnumChatFormatting;
 import net.minecraft.util.IChatComponent;
+import net.minecraft.util.MovingObjectPosition;
 
 import io.github.kaseyawolf2.horizonwright.DevelopmentTrace;
 import io.github.kaseyawolf2.horizonwright.HorizonwrightRuntime;
@@ -76,7 +78,7 @@ public final class HorizonwrightClientCommand extends CommandBase {
 
     @Override
     public String getCommandUsage(ICommandSender sender) {
-        return "/hw [panel|profile [status|enroll|recover|reassociate <id>]|debug [on|off|status]|status|task [id]|goto <x> <y> <z> [tolerance]|excavate cylinder <id> <radius> <bottom-y> <top-y> [<loadout> <storage> <station> <tool-slot> <work-damage>]|excavate managed <id> <radius> <bottom-y> <top-y> <ramp-block> <light-block> <filler-block> <light-interval> [<loadout> <storage> <station> <tool-slot> <work-damage>]|farm <task-id> <plot-id> [seed-reserve]|farmschedule <id> <plot-id> <minutes> [seed-reserve]|trees <task-id> <area-id> [sapling-reserve]|treeschedule <id> <area-id> <minutes> [sapling-reserve]|husbandryscan <pen-id>|husbandry <task-id> <pen-id> <species> <minimum> <maximum> [max-actions]|husbandryschedule <id> <pen-id> <species> <minimum> <maximum> <minutes> [max-actions]|sleep <task-id> <bed-location>|sleepschedule <id> <bed-location>|pause [id]|resume [id]|cancel <id>|navcancel|dryrun [on|off]|stop|reset]";
+        return "/hw [panel|profile [status|enroll|recover|reassociate <id>]|debug [on|off|status]|status|task [id]|goto <x> <y> <z> [tolerance]|excavate cylinder <id> <radius> <bottom-y> <top-y> [<loadout> <storage> <station> <tool-slot> <work-damage>]|excavate managed <id> <radius> <bottom-y> <top-y> <ramp-block> <light-block> <filler-block> <light-interval> [<loadout> <storage> <station> <tool-slot> <work-damage>]|farm <task-id> <plot-id> [seed-reserve]|farmschedule <id> <plot-id> <minutes> [seed-reserve]|trees <task-id> <area-id> [sapling-reserve]|treeschedule <id> <area-id> <minutes> [sapling-reserve]|husbandryscan <pen-id>|husbandryprotect <pen-id>|husbandryunprotect <pen-id>|husbandry <task-id> <pen-id> <species> <minimum> <maximum> [max-actions]|husbandryschedule <id> <pen-id> <species> <minimum> <maximum> <minutes> [max-actions]|sleep <task-id> <bed-location>|sleepschedule <id> <bed-location>|pause [id]|resume [id]|cancel <id>|navcancel|dryrun [on|off]|stop|reset]";
     }
 
     @Override
@@ -149,6 +151,10 @@ public final class HorizonwrightClientCommand extends CommandBase {
         }
         if ("husbandryscan".equals(subcommand)) {
             scanHusbandryPen(sender, arguments);
+            return;
+        }
+        if ("husbandryprotect".equals(subcommand) || "husbandryunprotect".equals(subcommand)) {
+            setTargetedLivestockProtection(sender, arguments, "husbandryprotect".equals(subcommand));
             return;
         }
         if ("husbandry".equals(subcommand)) {
@@ -226,6 +232,8 @@ public final class HorizonwrightClientCommand extends CommandBase {
             || "trees".equals(subcommand)
             || "treeschedule".equals(subcommand)
             || "husbandryscan".equals(subcommand)
+            || "husbandryprotect".equals(subcommand)
+            || "husbandryunprotect".equals(subcommand)
             || "husbandry".equals(subcommand)
             || "husbandryschedule".equals(subcommand)
             || "sleep".equals(subcommand)
@@ -282,6 +290,8 @@ public final class HorizonwrightClientCommand extends CommandBase {
                 "trees",
                 "treeschedule",
                 "husbandryscan",
+                "husbandryprotect",
+                "husbandryunprotect",
                 "husbandry",
                 "husbandryschedule",
                 "sleep",
@@ -311,7 +321,9 @@ public final class HorizonwrightClientCommand extends CommandBase {
                 profileBindings.getSnapshot()
                     .getReassociationCandidateProfileIds());
         }
-        if (arguments.length == 2 && "husbandryscan".equalsIgnoreCase(arguments[0])) {
+        if (arguments.length == 2
+            && ("husbandryscan".equalsIgnoreCase(arguments[0]) || "husbandryprotect".equalsIgnoreCase(arguments[0])
+                || "husbandryunprotect".equalsIgnoreCase(arguments[0]))) {
             return getListOfStringsFromIterableMatchingLastWord(arguments, namedAreaIds());
         }
         if (arguments.length == 3
@@ -730,6 +742,69 @@ public final class HorizonwrightClientCommand extends CommandBase {
                 sender,
                 new ChatComponentText(
                     EnumChatFormatting.RED + "Livestock pen scan failed safely: " + safeMessage(failure)));
+        }
+    }
+
+    private void setTargetedLivestockProtection(ICommandSender sender, String[] arguments, boolean protect) {
+        if (arguments.length != 2) {
+            MinecraftRuntimeAccess.addChatMessage(
+                sender,
+                new ChatComponentText(
+                    EnumChatFormatting.RED + "Usage: /hw "
+                        + (protect ? "husbandryprotect" : "husbandryunprotect")
+                        + " <pen-id>"));
+            return;
+        }
+        try {
+            String penId = ProfileAssetInput.stableId(arguments[1], "livestock pen name");
+            Minecraft minecraft = Minecraft.getMinecraft();
+            MovingObjectPosition hit = minecraft.objectMouseOver;
+            if (hit == null || hit.typeOfHit != MovingObjectPosition.MovingObjectType.ENTITY
+                || !(hit.entityHit instanceof EntityAnimal)) {
+                throw new IllegalStateException("look directly at a supported vanilla animal within reach");
+            }
+            EntityAnimal target = (EntityAnimal) hit.entityHit;
+            MinecraftHusbandryObserver observer = new MinecraftHusbandryObserver(
+                minecraft,
+                new ProfileHusbandryConfiguration(profileEditorProvider));
+            if (observer.descriptor(target) == null) {
+                throw new IllegalStateException("the targeted animal is not a supported vanilla livestock species");
+            }
+            String identity = MinecraftRuntimeAccess.uniqueId(target)
+                .toString();
+            HusbandryObservation observation = observer.observe(penId);
+            boolean insideCompletePenScan = false;
+            for (AnimalObservation animal : observation.getAnimals()) {
+                if (identity.equals(animal.getIdentity())) {
+                    insideCompletePenScan = true;
+                    break;
+                }
+            }
+            if (!insideCompletePenScan) {
+                throw new IllegalStateException("the targeted animal is not inside the complete loaded named pen");
+            }
+            ProfileAssetEditor editor = profileEditorProvider.getCurrentProfileAssetEditor()
+                .orElseThrow(() -> new IllegalStateException("active profile assets are unavailable"));
+            if (protect) editor.protectLivestock(penId, identity);
+            else editor.unprotectLivestock(penId, identity);
+            MinecraftRuntimeAccess.addChatMessage(
+                sender,
+                new ChatComponentText(
+                    (protect ? EnumChatFormatting.GREEN : EnumChatFormatting.YELLOW) + "Horizonwright "
+                        + (protect ? "protected" : "removed protection from")
+                        + " targeted "
+                        + observer.descriptor(target)
+                            .getSpecies()
+                            .name()
+                            .toLowerCase()
+                        + " in '"
+                        + penId
+                        + "'."));
+        } catch (RuntimeException failure) {
+            MinecraftRuntimeAccess.addChatMessage(
+                sender,
+                new ChatComponentText(
+                    EnumChatFormatting.RED + "Livestock protection not changed: " + safeMessage(failure)));
         }
     }
 

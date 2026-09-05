@@ -23,6 +23,7 @@ public final class ProfileEnvelope {
     private final List<NamedStorageEndpoint> namedStorageEndpoints;
     private final List<NamedRepairStation> namedRepairStations;
     private final List<NamedArea> namedAreas;
+    private final List<ProtectedLivestock> protectedLivestock;
 
     public ProfileEnvelope(long writtenAtEpochMillis, WorldProfileIdentity identity,
         List<ProfileReassociation> reassociations, List<NamedLocation> namedLocations, List<NamedRoute> namedRoutes) {
@@ -37,7 +38,8 @@ public final class ProfileEnvelope {
             Collections.<NamedLoadout>emptyList(),
             Collections.<NamedStorageEndpoint>emptyList(),
             Collections.<NamedRepairStation>emptyList(),
-            Collections.<NamedArea>emptyList());
+            Collections.<NamedArea>emptyList(),
+            Collections.<ProtectedLivestock>emptyList());
     }
 
     public ProfileEnvelope(long writtenAtEpochMillis, WorldProfileIdentity identity,
@@ -54,7 +56,8 @@ public final class ProfileEnvelope {
             namedLoadouts,
             Collections.<NamedStorageEndpoint>emptyList(),
             Collections.<NamedRepairStation>emptyList(),
-            Collections.<NamedArea>emptyList());
+            Collections.<NamedArea>emptyList(),
+            Collections.<ProtectedLivestock>emptyList());
     }
 
     public ProfileEnvelope(long writtenAtEpochMillis, WorldProfileIdentity identity,
@@ -71,7 +74,8 @@ public final class ProfileEnvelope {
             namedLoadouts,
             namedStorageEndpoints,
             Collections.<NamedRepairStation>emptyList(),
-            Collections.<NamedArea>emptyList());
+            Collections.<NamedArea>emptyList(),
+            Collections.<ProtectedLivestock>emptyList());
     }
 
     public ProfileEnvelope(long writtenAtEpochMillis, WorldProfileIdentity identity,
@@ -89,7 +93,8 @@ public final class ProfileEnvelope {
             namedLoadouts,
             namedStorageEndpoints,
             namedRepairStations,
-            Collections.<NamedArea>emptyList());
+            Collections.<NamedArea>emptyList(),
+            Collections.<ProtectedLivestock>emptyList());
     }
 
     public ProfileEnvelope(long writtenAtEpochMillis, WorldProfileIdentity identity,
@@ -107,14 +112,35 @@ public final class ProfileEnvelope {
             namedLoadouts,
             namedStorageEndpoints,
             namedRepairStations,
-            namedAreas);
+            namedAreas,
+            Collections.<ProtectedLivestock>emptyList());
+    }
+
+    public ProfileEnvelope(long writtenAtEpochMillis, WorldProfileIdentity identity,
+        List<ProfileReassociation> reassociations, List<NamedLocation> namedLocations, List<NamedRoute> namedRoutes,
+        List<NamedLoadout> namedLoadouts, List<NamedStorageEndpoint> namedStorageEndpoints,
+        List<NamedRepairStation> namedRepairStations, List<NamedArea> namedAreas,
+        List<ProtectedLivestock> protectedLivestock) {
+        this(
+            PersistenceSchema.CURRENT_VERSION,
+            PersistenceSchema.PROFILE_DOCUMENT_KIND,
+            writtenAtEpochMillis,
+            identity,
+            reassociations,
+            namedLocations,
+            namedRoutes,
+            namedLoadouts,
+            namedStorageEndpoints,
+            namedRepairStations,
+            namedAreas,
+            protectedLivestock);
     }
 
     private ProfileEnvelope(int schemaVersion, String documentKind, long writtenAtEpochMillis,
         WorldProfileIdentity identity, List<ProfileReassociation> reassociations, List<NamedLocation> namedLocations,
         List<NamedRoute> namedRoutes, List<NamedLoadout> namedLoadouts,
         List<NamedStorageEndpoint> namedStorageEndpoints, List<NamedRepairStation> namedRepairStations,
-        List<NamedArea> namedAreas) {
+        List<NamedArea> namedAreas, List<ProtectedLivestock> protectedLivestock) {
         this.schemaVersion = schemaVersion;
         this.documentKind = documentKind;
         this.writtenAtEpochMillis = writtenAtEpochMillis;
@@ -126,6 +152,7 @@ public final class ProfileEnvelope {
         this.namedStorageEndpoints = immutableCopy(namedStorageEndpoints, "namedStorageEndpoints");
         this.namedRepairStations = immutableCopy(namedRepairStations, "namedRepairStations");
         this.namedAreas = immutableCopy(namedAreas, "namedAreas");
+        this.protectedLivestock = immutableCopy(protectedLivestock, "protectedLivestock");
         validate();
     }
 
@@ -171,6 +198,10 @@ public final class ProfileEnvelope {
 
     public List<NamedArea> getNamedAreas() {
         return Collections.unmodifiableList(namedAreas);
+    }
+
+    public List<ProtectedLivestock> getProtectedLivestock() {
+        return Collections.unmodifiableList(protectedLivestock);
     }
 
     void validate() {
@@ -247,6 +278,19 @@ public final class ProfileEnvelope {
                 throw new IllegalArgumentException("profile namedAreas contains duplicate id '" + area.getId() + "'");
             }
         }
+        PersistenceValidation.requireList(protectedLivestock, "profile protectedLivestock");
+        Set<String> protectedIdentities = new HashSet<>();
+        for (ProtectedLivestock protectedAnimal : protectedLivestock) {
+            protectedAnimal.validate();
+            if (!areaIds.contains(protectedAnimal.getPenId())) {
+                throw new IllegalArgumentException(
+                    "protected livestock references missing pen '" + protectedAnimal.getPenId() + "'");
+            }
+            String key = protectedAnimal.getPenId() + "\u0000" + protectedAnimal.getEntityIdentity();
+            if (!protectedIdentities.add(key)) {
+                throw new IllegalArgumentException("profile protectedLivestock contains a duplicate pen identity");
+            }
+        }
     }
 
     private void validateReassociationChain() {
@@ -303,7 +347,8 @@ public final class ProfileEnvelope {
             && Objects.equals(namedLoadouts, that.namedLoadouts)
             && Objects.equals(namedStorageEndpoints, that.namedStorageEndpoints)
             && Objects.equals(namedRepairStations, that.namedRepairStations)
-            && Objects.equals(namedAreas, that.namedAreas);
+            && Objects.equals(namedAreas, that.namedAreas)
+            && Objects.equals(protectedLivestock, that.protectedLivestock);
     }
 
     @Override
@@ -319,6 +364,7 @@ public final class ProfileEnvelope {
             namedLoadouts,
             namedStorageEndpoints,
             namedRepairStations,
-            namedAreas);
+            namedAreas,
+            protectedLivestock);
     }
 }

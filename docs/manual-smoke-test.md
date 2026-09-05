@@ -286,6 +286,14 @@ complete scan shows that exact adult in breeding state. The next plan may feed
 the second adult, but must never target a baby, named animal, player, unsupported
 mod animal, or already-engaged animal.
 
+Look directly at one supported animal inside the completely loaded pen and run
+`/hw husbandryprotect <pen-id>`. Scan the pen and confirm the protected count
+increases and the animal is excluded. Save and rejoin, then scan again to prove
+the mark persisted. Run `/hw husbandryunprotect <pen-id>` while targeting the
+same animal and confirm the protected count falls. Protection changes must
+produce a new observation fingerprint, so no plan captured before the change
+may act afterward.
+
 Drop an ordinary item inside the stable-population pen and queue another pass.
 Confirm Horizonwright walks through that exact item position and advances only
 after the same item-entity identity disappears from a fresh complete scan. Test

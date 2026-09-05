@@ -24,6 +24,7 @@ import io.github.kaseyawolf2.horizonwright.core.persistence.NamedRoute;
 import io.github.kaseyawolf2.horizonwright.core.persistence.NamedStorageEndpoint;
 import io.github.kaseyawolf2.horizonwright.core.persistence.ProfileEnvelope;
 import io.github.kaseyawolf2.horizonwright.core.persistence.ProfileReassociation;
+import io.github.kaseyawolf2.horizonwright.core.persistence.ProtectedLivestock;
 import io.github.kaseyawolf2.horizonwright.core.persistence.WorldProfileIdentity;
 
 public class ProfileAssetEditorTest {
@@ -152,6 +153,53 @@ public class ProfileAssetEditorTest {
 
         assertEquals(Collections.singletonList(second), saved.getNamedAreas());
         assertEquals(saved, editor.load());
+    }
+
+    @Test
+    public void livestockProtectionIsAtomicAndDeletingItsPenRemovesOnlyBoundProtection() throws Exception {
+        HorizonwrightPersistenceStore store = store();
+        WorldProfileIdentity identity = identity("world-one");
+        NamedArea first = new NamedArea("first", "First", new BasePosition(0, 1, 64, 1), new BasePosition(0, 2, 64, 2));
+        NamedArea second = new NamedArea(
+            "second",
+            "Second",
+            new BasePosition(0, 3, 64, 3),
+            new BasePosition(0, 4, 64, 4));
+        store.saveProfile(
+            store.pathsForProfile(identity.getProfileId()),
+            new ProfileEnvelope(
+                20L,
+                identity,
+                Collections.emptyList(),
+                Collections.emptyList(),
+                Collections.emptyList(),
+                Collections.emptyList(),
+                Collections.emptyList(),
+                Collections.emptyList(),
+                Arrays.asList(first, second)));
+        ProfileAssetEditor editor = new ProfileAssetEditor(store, identity, () -> 30L);
+        String firstAnimal = "00000000-0000-0000-0000-000000000001";
+        String secondAnimal = "00000000-0000-0000-0000-000000000002";
+
+        editor.protectLivestock("first", firstAnimal);
+        ProfileEnvelope protectedBoth = editor.protectLivestock("second", secondAnimal);
+
+        assertEquals(
+            Arrays.asList(new ProtectedLivestock("first", firstAnimal), new ProtectedLivestock("second", secondAnimal)),
+            protectedBoth.getProtectedLivestock());
+        assertThrows(ProfileAssetEditingException.class, () -> editor.protectLivestock("first", firstAnimal));
+        assertEquals(protectedBoth, editor.load());
+
+        ProfileEnvelope deleted = editor.deleteArea("first");
+
+        assertEquals(Collections.singletonList(second), deleted.getNamedAreas());
+        assertEquals(
+            Collections.singletonList(new ProtectedLivestock("second", secondAnimal)),
+            deleted.getProtectedLivestock());
+        assertEquals(
+            Collections.emptyList(),
+            editor.unprotectLivestock("second", secondAnimal)
+                .getProtectedLivestock());
     }
 
     @Test

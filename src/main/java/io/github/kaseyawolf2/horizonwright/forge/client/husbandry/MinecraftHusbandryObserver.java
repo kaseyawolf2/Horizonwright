@@ -6,6 +6,7 @@ import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Set;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.entity.Entity;
@@ -140,20 +141,23 @@ public final class MinecraftHusbandryObserver {
         List<EntityAnimal> candidates = MinecraftRuntimeAccess
             .getEntitiesWithinAabb(minecraft.theWorld, EntityAnimal.class, bounds);
         List<AnimalObservation> animals = new ArrayList<>();
+        Set<String> protectedIdentities = configuration.protectedIdentities(pen.getId());
         for (EntityAnimal entity : candidates) {
             VanillaLivestockClassifier.Descriptor descriptor = descriptor(entity);
             if (descriptor == null || entity.isDead) continue;
             boolean adult = !entity.isChild();
             boolean breedingEngaged = adult && entity.isInLove();
             boolean readyToBreed = adult && !breedingEngaged && entity.getGrowingAge() == 0;
+            String entityIdentity = identity(entity);
+            boolean protectedStock = protectedIdentities.contains(entityIdentity);
             AnimalObservation observation = new AnimalObservation(
-                identity(entity),
+                entityIdentity,
                 descriptor.getSpecies(),
                 policyPosition(pen, entity),
                 adult,
                 entity.hasCustomNameTag(),
                 false,
-                false,
+                protectedStock,
                 readyToBreed,
                 breedingEngaged);
             animals.add(observation);
@@ -170,6 +174,8 @@ public final class MinecraftHusbandryObserver {
                 observation.isAdult(),
                 "named",
                 observation.isNamed(),
+                "protected",
+                observation.isProtectedStock(),
                 "ready",
                 observation.isReadyToBreed(),
                 "engaged",
@@ -282,6 +288,10 @@ public final class MinecraftHusbandryObserver {
                 .append(animal.isAdult())
                 .append(':')
                 .append(animal.isNamed())
+                .append(':')
+                .append(animal.isTamed())
+                .append(':')
+                .append(animal.isProtectedStock())
                 .append(':')
                 .append(animal.isReadyToBreed())
                 .append(':')

@@ -82,6 +82,9 @@ public class ProfileLoadoutPersistenceTest {
         assertTrue(
             reloaded.getNamedAreas()
                 .isEmpty());
+        assertTrue(
+            reloaded.getProtectedLivestock()
+                .isEmpty());
     }
 
     @Test
@@ -129,6 +132,7 @@ public class ProfileLoadoutPersistenceTest {
         String legacy = encoded.replaceFirst(",?\\s*\"namedStorageEndpoints\"\\s*:\\s*\\[\\s*\\]", "");
         legacy = legacy.replaceFirst(",?\\s*\"namedRepairStations\"\\s*:\\s*\\[\\s*\\]", "");
         legacy = legacy.replaceFirst(",?\\s*\"namedAreas\"\\s*:\\s*\\[\\s*\\]", "");
+        legacy = legacy.replaceFirst(",?\\s*\"protectedLivestock\"\\s*:\\s*\\[\\s*\\]", "");
 
         PersistenceJsonCodec.DecodeResult<ProfileEnvelope> decoded = codec
             .decodeProfile(legacy.getBytes(StandardCharsets.UTF_8));
@@ -146,6 +150,55 @@ public class ProfileLoadoutPersistenceTest {
             decoded.getValue()
                 .getNamedAreas()
                 .isEmpty());
+        assertTrue(
+            decoded.getValue()
+                .getProtectedLivestock()
+                .isEmpty());
+    }
+
+    @Test
+    public void protectedLivestockRoundTripsOnlyAgainstAnExistingNamedPen() throws Exception {
+        NamedArea pen = new NamedArea(
+            "cow-pen",
+            "Cow pen",
+            new BasePosition(0, 1, 64, 1),
+            new BasePosition(0, 4, 66, 4));
+        ProtectedLivestock protectedCow = new ProtectedLivestock(pen.getId(), "00000000-0000-0000-0000-000000000123");
+        ProfileEnvelope profile = new ProfileEnvelope(
+            20L,
+            identity(),
+            Collections.emptyList(),
+            Collections.emptyList(),
+            Collections.emptyList(),
+            Collections.emptyList(),
+            Collections.emptyList(),
+            Collections.emptyList(),
+            Collections.singletonList(pen),
+            Collections.singletonList(protectedCow));
+        HorizonwrightPersistenceStore store = store();
+        ProfileStatePaths paths = store.pathsForProfile("profile");
+
+        store.saveProfile(paths, profile);
+
+        assertEquals(
+            profile,
+            store.loadProfile(paths)
+                .getValue());
+    }
+
+    @Test(expected = IllegalArgumentException.class)
+    public void protectedLivestockCannotReferenceAnUnknownPen() {
+        new ProfileEnvelope(
+            20L,
+            identity(),
+            Collections.emptyList(),
+            Collections.emptyList(),
+            Collections.emptyList(),
+            Collections.emptyList(),
+            Collections.emptyList(),
+            Collections.emptyList(),
+            Collections.emptyList(),
+            Collections.singletonList(new ProtectedLivestock("missing", "00000000-0000-0000-0000-000000000123")));
     }
 
     @Test

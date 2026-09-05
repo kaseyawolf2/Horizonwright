@@ -213,6 +213,13 @@ captures adult, named, breeding-ready/engaged, position, and item-drop state;
 and emits complete per-candidate development traces plus an opaque snapshot
 fingerprint. Areas captured as support blocks include the two-block animal
 space above them while policy positions remain normalized to the saved area.
+An operator can look directly at one supported animal and use
+`/hw husbandryprotect <pen-id>` to persist that exact UUID as protected stock in
+the active world profile; `/hw husbandryunprotect <pen-id>` removes the mark.
+Both commands require a complete loaded-pen scan proving the targeted animal is
+inside the named pen. Protection survives rejoin and profile reassociation,
+participates in the observation fingerprint, and is removed automatically if
+its named pen is deleted.
 The bound live vanilla executor now enables only the non-destructive subset.
 Baritone approaches the exact freshly observed adult or item drop. Feeding
 requires the exact vanilla species feed, can transactionally stage it from the
@@ -231,7 +238,7 @@ pen, interval, and compact `minimum/maximum/actions` policy. Deleting the saved
 area cancels farm, tree, and husbandry schedules and unfinished occurrences bound
 to it before removing the area. **Scan loaded pen** runs only the read-only
 observer and reports the selected species' total adults, breeding-ready and
-already-engaged animals, protected/excluded targets, and item drops. It is the
+already-engaged animals, operator-protected/excluded targets, and item drops. It is the
 physical-validation path for pen bounds and exact entity classification before
 the action executor is enabled. The equivalent read-only command is
 `/hw husbandryscan <pen-id>`. Finite policies can also be configured with

@@ -14,6 +14,7 @@ import io.github.kaseyawolf2.horizonwright.core.persistence.PersistenceException
 import io.github.kaseyawolf2.horizonwright.core.persistence.PersistenceLoadResult;
 import io.github.kaseyawolf2.horizonwright.core.persistence.ProfileEnvelope;
 import io.github.kaseyawolf2.horizonwright.core.persistence.ProfileStatePaths;
+import io.github.kaseyawolf2.horizonwright.core.persistence.ProtectedLivestock;
 import io.github.kaseyawolf2.horizonwright.core.persistence.WorldProfileIdentity;
 
 /** Identity-bound atomic editor for named assets in one active world profile. */
@@ -60,6 +61,9 @@ public final class ProfileAssetEditor {
                 .size(),
             "areas",
             profile.getNamedAreas()
+                .size(),
+            "protectedLivestock",
+            profile.getProtectedLivestock()
                 .size());
         return profile;
     }
@@ -80,7 +84,8 @@ public final class ProfileAssetEditor {
             mergeLoadouts(previous.getNamedLoadouts(), update.getLoadouts()),
             mergeStorage(previous.getNamedStorageEndpoints(), update.getStorageEndpoints()),
             mergeStations(previous.getNamedRepairStations(), update.getRepairStations()),
-            mergeAreas(previous.getNamedAreas(), update.getAreas()));
+            mergeAreas(previous.getNamedAreas(), update.getAreas()),
+            previous.getProtectedLivestock());
         DevelopmentTrace.event(
             "profile-assets",
             "apply",
@@ -134,7 +139,8 @@ public final class ProfileAssetEditor {
             previous.getNamedLoadouts(),
             previous.getNamedStorageEndpoints(),
             previous.getNamedRepairStations(),
-            remaining);
+            remaining,
+            protectedOutsideArea(previous.getProtectedLivestock(), areaId.trim()));
         try {
             store.saveProfile(paths, replacement);
         } catch (PersistenceException failure) {
@@ -150,6 +156,83 @@ public final class ProfileAssetEditor {
             "remainingAreas",
             remaining.size());
         return replacement;
+    }
+
+    /** Atomically records one exact animal identity as protected in one existing named pen. */
+    public synchronized ProfileEnvelope protectLivestock(String penId, String entityIdentity) {
+        ProfileEnvelope previous = requireExactProfile();
+        requireArea(previous, penId);
+        ProtectedLivestock protectedAnimal = new ProtectedLivestock(penId.trim(), entityIdentity);
+        List<ProtectedLivestock> protectedLivestock = new ArrayList<>(previous.getProtectedLivestock());
+        if (protectedLivestock.contains(protectedAnimal)) {
+            throw new ProfileAssetEditingException("animal is already protected in pen '" + penId.trim() + "'");
+        }
+        protectedLivestock.add(protectedAnimal);
+        return saveProtected(previous, protectedLivestock, "livestock-protected", penId.trim(), entityIdentity);
+    }
+
+    /** Atomically removes protection from one exact animal identity in one named pen. */
+    public synchronized ProfileEnvelope unprotectLivestock(String penId, String entityIdentity) {
+        ProfileEnvelope previous = requireExactProfile();
+        requireArea(previous, penId);
+        String normalizedPen = penId.trim();
+        List<ProtectedLivestock> protectedLivestock = new ArrayList<>(previous.getProtectedLivestock());
+        boolean removed = protectedLivestock.removeIf(
+            value -> normalizedPen.equals(value.getPenId()) && entityIdentity.equals(value.getEntityIdentity()));
+        if (!removed) {
+            throw new ProfileAssetEditingException("animal is not protected in pen '" + normalizedPen + "'");
+        }
+        return saveProtected(previous, protectedLivestock, "livestock-unprotected", normalizedPen, entityIdentity);
+    }
+
+    private ProfileEnvelope saveProtected(ProfileEnvelope previous, List<ProtectedLivestock> protectedLivestock,
+        String event, String penId, String entityIdentity) {
+        long now = clock.nowEpochMillis();
+        if (now < 0L) throw new ProfileAssetEditingException("profile editor clock returned a negative timestamp");
+        ProfileEnvelope replacement = new ProfileEnvelope(
+            Math.max(previous.getWrittenAtEpochMillis(), now),
+            previous.getIdentity(),
+            previous.getReassociations(),
+            previous.getNamedLocations(),
+            previous.getNamedRoutes(),
+            previous.getNamedLoadouts(),
+            previous.getNamedStorageEndpoints(),
+            previous.getNamedRepairStations(),
+            previous.getNamedAreas(),
+            protectedLivestock);
+        try {
+            store.saveProfile(paths, replacement);
+        } catch (PersistenceException failure) {
+            throw new ProfileAssetEditingException("could not atomically update protected livestock", failure);
+        }
+        DevelopmentTrace.event(
+            "profile-assets",
+            event,
+            "identity",
+            identity,
+            "pen",
+            penId,
+            "entity",
+            entityIdentity,
+            "protectedLivestock",
+            protectedLivestock.size());
+        return replacement;
+    }
+
+    private static void requireArea(ProfileEnvelope profile, String penId) {
+        if (penId == null || penId.trim()
+            .isEmpty()) throw new IllegalArgumentException("penId must not be blank");
+        for (NamedArea area : profile.getNamedAreas()) {
+            if (area.getId()
+                .equals(penId.trim())) return;
+        }
+        throw new ProfileAssetEditingException("named livestock pen no longer exists: " + penId.trim());
+    }
+
+    private static List<ProtectedLivestock> protectedOutsideArea(List<ProtectedLivestock> values, String areaId) {
+        List<ProtectedLivestock> remaining = new ArrayList<>(values);
+        remaining.removeIf(value -> areaId.equals(value.getPenId()));
+        return remaining;
     }
 
     private ProfileEnvelope requireExactProfile() {

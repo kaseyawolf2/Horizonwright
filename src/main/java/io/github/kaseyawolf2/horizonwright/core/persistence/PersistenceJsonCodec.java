@@ -61,6 +61,9 @@ final class PersistenceJsonCodec {
                         : java.util.Collections.<NamedRepairStation>emptyList();
                     java.util.List<NamedArea> areas = root.has("namedAreas") ? value.getNamedAreas()
                         : java.util.Collections.<NamedArea>emptyList();
+                    java.util.List<ProtectedLivestock> protectedLivestock = root.has("protectedLivestock")
+                        ? value.getProtectedLivestock()
+                        : java.util.Collections.<ProtectedLivestock>emptyList();
                     if (loadouts == null) {
                         throw new IllegalArgumentException("namedLoadouts must not be null");
                     }
@@ -73,6 +76,9 @@ final class PersistenceJsonCodec {
                     if (areas == null) {
                         throw new IllegalArgumentException("namedAreas must not be null");
                     }
+                    if (protectedLivestock == null) {
+                        throw new IllegalArgumentException("protectedLivestock must not be null");
+                    }
                     return new ProfileEnvelope(
                         value.getWrittenAtEpochMillis(),
                         value.getIdentity(),
@@ -82,7 +88,8 @@ final class PersistenceJsonCodec {
                         loadouts,
                         storageEndpoints,
                         repairStations,
-                        areas);
+                        areas,
+                        protectedLivestock);
                 }
             });
     }

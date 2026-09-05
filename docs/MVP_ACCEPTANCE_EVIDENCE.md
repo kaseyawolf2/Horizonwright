@@ -18,7 +18,7 @@ but cannot replace the disposable-world observation run required by the plan.
 | Excavation resumes after each interruption | Real scheduler synthetic scenario and physical excavation/farm/sleep interruption testing | Partially proven; combined observation run pending |
 | Excavation resumes after reconnect | Export/restore tests preserve exact checkpoint and reject stale epochs; physical excavation rejoin was confirmed | Proven for current tested workflow |
 | Reserved items are not lost | Container transition tokens, cursor/slot postconditions, staged repair-material return, and physical repair testing | Partially proven; full observation run pending |
-| Population bounds are never violated | Pure planner preserves breeding pair; excludes babies/named/tamed/protected and currently breeding-engaged adults; live boundary refuses all culls pending authorization | Non-destructive actions cannot reduce population; authorized live culling and physical evidence missing |
+| Population bounds are never violated | Pure planner preserves breeding pair; excludes babies/named/tamed/operator-protected and currently breeding-engaged adults; exact protected UUIDs persist in the identity-bound world profile and invalidate stale observation fingerprints; live boundary refuses all culls pending authorization | Non-destructive actions cannot reduce population; protected-stock workflow and authorized live culling still need physical evidence |
 | Excavation checkpoint is not lost | Persistence and reconnect tests plus physical rejoin testing | Proven for current tested workflow |
 
 ## Milestone 4 functionality still missing or incomplete
@@ -59,7 +59,7 @@ but cannot replace the disposable-world observation run required by the plan.
   Automated planner/classifier coverage passes; physical validation on a
   disposable third-party crop is pending.
 - Physical validation of the installed livestock pen scan and new
-  non-destructive action executor.
+  non-destructive action executor, including protect/rejoin/unprotect.
 - The final configured-duration disposable-world observation run combining
   radius-250 excavation, recurring crops and livestock, nightly sleep, unloading,
   repair, interruption, and reconnect.
