@@ -47,6 +47,10 @@ wheat, carrots, potatoes, nether wart, and cocoa. Mature ordinary crops use a
 `BREAK_AND_REPLANT` outcome; immature crops wait. A generic `IGrowable`-style
 signal is treated as mature only when it explicitly reports that it cannot
 grow further. Missing adapter evidence fails closed with `HOLD_FOR_ADAPTER`.
+The live adapter adds stronger evidence before realizing that characterization:
+it requires an exact registered seed whose public `IPlantable` contract points
+back to the same block and whose current support accepts it. Persistent
+growables and dedicated optional-mod classes never enter this generic path.
 Pam and CropsNH behavior are deliberately not inferred by this ordinary-crop
 fixture and will require exact-version, black-box observations of their own.
 

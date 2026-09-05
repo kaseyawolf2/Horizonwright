@@ -27,6 +27,7 @@ public final class MinecraftVanillaFarmObserver {
     private final Minecraft minecraft;
     private final ProfileFarmConfiguration configuration;
     private final VanillaCropClassifier classifier = new VanillaCropClassifier();
+    private final GenericGrowableCropAdapter genericGrowable = new GenericGrowableCropAdapter();
     private final PamHarvestCraftCropAdapter pam = new PamHarvestCraftCropAdapter();
     private final CropsNhCropAdapter cropsNh = new CropsNhCropAdapter();
     private final MinecraftContainerSnapshotter items = new MinecraftContainerSnapshotter();
@@ -182,17 +183,37 @@ public final class MinecraftVanillaFarmObserver {
         }
         VanillaCropClassifier.Descriptor descriptor = classifier
             .classify(block, registryName == null ? null : registryName.toString(), metadata);
-        if (descriptor == null) return null;
+        if (descriptor != null) {
+            return new CropObservation(
+                position,
+                descriptor.getFamily(),
+                descriptor.getObservationFingerprint() + (tile == null ? "|tile=none"
+                    : "|tile=" + tile.getClass()
+                        .getName()),
+                descriptor.getSeedFingerprint(),
+                true,
+                descriptor.isMature(),
+                tile != null);
+        }
+        GenericGrowableCropAdapter.Descriptor generic = genericGrowable
+            .read(
+                block,
+                registryName == null ? null : registryName.toString(),
+                metadata,
+                tile,
+                minecraft.theWorld,
+                position,
+                classifier.canRightClickHarvest(block))
+            .orElse(null);
+        if (generic == null) return null;
         return new CropObservation(
             position,
-            descriptor.getFamily(),
-            descriptor.getObservationFingerprint() + (tile == null ? "|tile=none"
-                : "|tile=" + tile.getClass()
-                    .getName()),
-            descriptor.getSeedFingerprint(),
+            generic.getFamily(),
+            generic.getObservationFingerprint() + "|tile=none",
+            generic.getReplantIdentity(),
             true,
-            descriptor.isMature(),
-            tile != null);
+            generic.isMature(),
+            false);
     }
 
     private void requireClient() {

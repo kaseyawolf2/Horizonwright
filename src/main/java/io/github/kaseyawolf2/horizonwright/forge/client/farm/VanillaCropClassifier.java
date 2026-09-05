@@ -23,9 +23,13 @@ final class VanillaCropClassifier {
     Descriptor classify(Block block, String registeredBlockId, int metadata) {
         String canonicalId = canonicalVanillaId(block);
         String blockId = canonicalId == null ? registeredBlockId : canonicalId;
-        boolean rightClick = block instanceof BlockCrops && hungerOverhaul.isAvailable()
-            && HungerOverhaulCompatibilityProbe.rightClickHarvestingEnabled(block);
+        boolean rightClick = canRightClickHarvest(block);
         return classify(blockId, metadata, rightClick);
+    }
+
+    boolean canRightClickHarvest(Block block) {
+        return block instanceof BlockCrops && hungerOverhaul.isAvailable()
+            && HungerOverhaulCompatibilityProbe.rightClickHarvestingEnabled(block);
     }
 
     Descriptor classify(String blockId, int metadata) {

@@ -78,6 +78,7 @@ public final class FarmPlanner {
 
     private static boolean usesNonDestructiveHarvest(CropFamily family) {
         return family == CropFamily.VANILLA || family == CropFamily.PAM_CROP
+            || family == CropFamily.GENERIC_RIGHT_CLICK
             || family == CropFamily.PAM_HANGING_FRUIT
             || family == CropFamily.PAM_FRUITING_LOG
             || family == CropFamily.CROPS_NH;

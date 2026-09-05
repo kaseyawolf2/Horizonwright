@@ -53,6 +53,11 @@ but cannot replace the disposable-world observation run required by the plan.
   through harvesting, but it used the build that still retried at 30 seconds.
 - Physical validation of the exact Pam HarvestCraft 1.3.11-GTNH ground-crop,
   hanging-fruit, and non-destructive fruiting-log adapter.
+- The public-API `IGrowable` adapter now requires a same-block `IPlantable`
+  replacement and current supporting-block acceptance, while excluding
+  persistent vanilla growables and dedicated optional-mod integrations.
+  Automated planner/classifier coverage passes; physical validation on a
+  disposable third-party crop is pending.
 - Physical validation of the installed livestock pen scan and new
   non-destructive action executor.
 - The final configured-duration disposable-world observation run combining

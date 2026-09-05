@@ -153,6 +153,17 @@ Operators can queue one pass from **Profile assets > Work areas** or with
 `/hw farm <task-id> <plot-id> [seed-reserve]`. This live path is automated-test
 covered at its planner, runner, authority, classifier, and proof boundaries but
 remains physically unverified.
+
+Other public `IGrowable` implementations are admitted only through a conservative
+live proof: their baseline dropped item must implement `IPlantable`, report the
+same block as its replacement, and be accepted by the current supporting block.
+`IGrowable#func_149851_a` supplies the frozen growing/mature state, and the
+baseline drop metadata supplies the exact replant identity. Stems, saplings,
+grass, mushrooms, tall grass, double plants, tile-backed crops, and classes
+owned by the dedicated Pam, CropsNH, or Natura integrations are excluded. A
+modded `BlockCrops` subclass may instead use non-destructive right-click harvest
+when the exact Hunger Overhaul integration proves that behavior. Missing any
+piece of this evidence leaves the block untouched rather than guessing.
 An ordinary-tree CHORE contract now complements crop farming. A finite tree
 pass freezes only trees wholly contained by one named area, binds the exact
 root/replant position, captured block set, sapling identity, observation

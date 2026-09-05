@@ -49,8 +49,8 @@ public class FarmPlannerTest {
         assertFalse(unknown.requiresMutation());
         assertFalse(young.requiresMutation());
 
-        for (CropFamily family : new CropFamily[] { CropFamily.PAM_CROP, CropFamily.PAM_HANGING_FRUIT,
-            CropFamily.PAM_FRUITING_LOG, CropFamily.CROPS_NH }) {
+        for (CropFamily family : new CropFamily[] { CropFamily.GENERIC_RIGHT_CLICK, CropFamily.PAM_CROP,
+            CropFamily.PAM_HANGING_FRUIT, CropFamily.PAM_FRUITING_LOG, CropFamily.CROPS_NH }) {
             FarmDecision decision = plan(
                 crop(family, family.name(), "adapter:" + family.name(), true, true, false),
                 seeds("adapter:" + family.name(), 0, 0));

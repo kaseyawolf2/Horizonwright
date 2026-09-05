@@ -217,6 +217,16 @@ new immature block. With Hunger Overhaul missing, byte-changed, version-changed,
 or its setting disabled, the three `BlockCrops` must also use the explicit
 break-and-replant path rather than issuing an ineffective right click.
 
+For one disposable third-party crop that implements `IGrowable`, confirm its
+seed item implements `IPlantable`, resolves back to the same planted block, and
+is accepted by the current soil. A young plant must be observed but skipped; a
+mature plant whose API reports it can no longer grow must break, replant with
+the exact seed metadata, and confirm a newly growing replacement. Repeat with a
+sapling, melon or pumpkin stem, grass, mushroom, tall grass, and double plant in
+the same area: every one must remain untouched. A Pam, CropsNH, or Natura block
+whose dedicated adapter is unavailable must also remain untouched instead of
+falling through to generic destructive harvesting.
+
 Then schedule the same plot every two connected minutes from the guided page or
 with `/hw farmschedule smoke-farm-recurring smoke-plot 2 2`. Keep a long
 excavation active and confirm the farm CHORE suspends it at a safe frontier,
