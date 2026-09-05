@@ -84,11 +84,14 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
         }
         BackendAvailability status = navigation.availability();
         PamHarvestCraftCompatibilityStatus pamStatus = observer.pamCompatibility();
+        HungerOverhaulCompatibilityStatus hungerStatus = observer.hungerOverhaulCompatibility();
         Availability result = status.isAvailable()
             ? Availability.available(
                 "Exact vanilla and CropsNH farm actions ready through " + status.getDiagnostic()
                     + "; Pam HarvestCraft: "
-                    + pamStatus.getDiagnostic())
+                    + pamStatus.getDiagnostic()
+                    + "; Hunger Overhaul right-click harvest: "
+                    + hungerStatus.getDiagnostic())
             : Availability.unavailable("Farm navigation unavailable: " + status.getDiagnostic());
         DevelopmentTrace.event(
             "farm-live",

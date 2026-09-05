@@ -91,3 +91,24 @@ guessed. Production availability additionally requires exactly one Forge mod
 container with the recorded ID, version, and full binary hash; development
 directories and remapped bytes are accepted only in a deobfuscated environment
 and never reported as reference bytes.
+
+## Hunger Overhaul runtime observation
+
+The ordinary-crop right-click contract was characterized from the separate
+runtime artifact installed in the disposable GTNH instance:
+
+| Field | Recorded value |
+| --- | --- |
+| Runtime filename | `HungerOverhaul-1.7.10-1.0.0.jenkins104.jar` |
+| Forge mod ID | `HungerOverhaul` |
+| Version | `1.0.0.jenkins104` |
+| Binary SHA-256 | `800e55c375575941e7eb6ce1f5c13be518453016171af1ba77a7b607c92641f9` |
+| Interaction handler | `iguanaman.hungeroverhaul.util.IguanaEventHook#onPlayerInteraction` |
+
+The handler's exact bytecode checks the public
+`IguanaConfig.enableRightClickHarvesting` flag, accepts mature `BlockCrops` at
+metadata 7, emits their configured drops, and resets metadata to 0. It does not
+apply that behavior to nether wart or cocoa. Horizonwright therefore gates
+wheat/carrot/potato right clicks on the exact artifact and live flag, while
+those two other vanilla crops use exact break-and-replant material identities.
+No Hunger Overhaul class is a compile-time dependency or ships in Horizonwright.

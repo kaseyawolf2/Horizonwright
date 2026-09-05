@@ -129,12 +129,16 @@ Pause cancels an unconfirmed action at the same crop. A version-isolated backend
 contract now carries all scan, target, seed-reserve, action, and confirmation
 authority. The live observation half now resolves only an exact identity-bound
 named area, refuses cross-dimension, oversized, or partially unloaded plots,
-and recognizes pinned vanilla wheat, carrots, potatoes, and nether wart;
+and recognizes pinned vanilla wheat, carrots, potatoes, nether wart, and cocoa;
 CropsNH 2.0.91 crop sticks; and the exact Pam HarvestCraft 1.3.11-GTNH crop,
 hanging-fruit, and fruiting-log classes. Pam crop and fruit support is enabled
 only when their pinned right-click configuration flags are active. Maturity is
-bound to each adapter's exact metadata/API state, and fruiting logs receive only
-a non-destructive right-click action. Its finite scan order, crop-state
+bound to each adapter's exact metadata/API state. Wheat, carrots, and potatoes
+receive non-destructive right clicks only when the separately installed Hunger
+Overhaul `1.0.0.jenkins104` artifact passes exact version/hash validation and
+its public right-click setting is enabled. Nether wart and cocoa instead retain
+explicit break-and-replant behavior with an exact hotbar material and reserve;
+fruiting logs receive only a non-destructive right-click action. Its finite scan order, crop-state
 fingerprint, material identity, full inventory digest, current count, and
 configured reserve cross the backend boundary without mod objects. Unknown mod
 crops are never guessed. The live mutation half approaches under the same task

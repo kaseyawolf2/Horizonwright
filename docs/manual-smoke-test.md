@@ -208,6 +208,15 @@ pass with `/hw farm smoke-farm smoke-plot 2`; missing plots, seeds outside the
 hotbar, insufficient reserve, oversized plots, unloaded plot chunks, and
 unknown mod crops must stop without a harvest.
 
+Exercise ordinary crops in two groups. With the pinned Hunger Overhaul artifact
+and `enableRightClickHarvesting=true`, mature wheat, carrots, and potatoes must
+receive one normal right click, reset to metadata 0, and leave the planted block
+in place. Mature nether wart and cocoa must instead require the exact wart or
+cocoa-bean material above reserve, break normally, replant once, and confirm the
+new immature block. With Hunger Overhaul missing, byte-changed, version-changed,
+or its setting disabled, the three `BlockCrops` must also use the explicit
+break-and-replant path rather than issuing an ineffective right click.
+
 Then schedule the same plot every two connected minutes from the guided page or
 with `/hw farmschedule smoke-farm-recurring smoke-plot 2 2`. Keep a long
 excavation active and confirm the farm CHORE suspends it at a safe frontier,

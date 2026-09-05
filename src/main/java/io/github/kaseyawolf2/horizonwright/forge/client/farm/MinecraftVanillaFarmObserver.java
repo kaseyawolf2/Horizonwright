@@ -51,6 +51,10 @@ public final class MinecraftVanillaFarmObserver {
         return pam.compatibility();
     }
 
+    HungerOverhaulCompatibilityStatus hungerOverhaulCompatibility() {
+        return classifier.hungerOverhaulCompatibility();
+    }
+
     public List<CropObservation> scan(NamedArea plot) {
         requireClient();
         requireCurrentDimension(plot);
