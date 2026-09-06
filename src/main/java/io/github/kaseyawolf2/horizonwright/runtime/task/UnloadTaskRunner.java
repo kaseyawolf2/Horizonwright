@@ -36,6 +36,10 @@ final class UnloadTaskRunner implements TaskRunner {
     private UnloadActionRequest activeRequest;
     private UnloadActionHandle activeHandle;
     private ActionLease activeLease;
+    private UnloadActionHandle accessHandle;
+    private ActionLease accessLease;
+    private UnloadBackend accessBackend;
+    private String accessRequestId;
 
     UnloadTaskRunner(TaskSpec spec, TaskCheckpoint checkpoint, UnloadRuntimeAccess runtime) {
         if (spec == null || checkpoint == null || runtime == null) {
@@ -68,8 +72,13 @@ final class UnloadTaskRunner implements TaskRunner {
                 "Disable dry-run, then resume this unload task.");
         }
         UnloadBackend backend = runtime.getUnloadBackend();
+        if (accessHandle != null) return pollStorageAccess(context, backend);
         UnloadBackendAvailability availability = availability(backend);
         if (backend == null || !availability.isAvailable()) {
+            if (backend != null && activeHandle == null) {
+                StepResult access = beginStorageAccess(context, backend);
+                if (access != null) return access;
+            }
             return blocked(
                 context,
                 availability.getDiagnostic(),
@@ -108,6 +117,72 @@ final class UnloadTaskRunner implements TaskRunner {
         if (failure != null) {
             throw failure;
         }
+    }
+
+    private StepResult beginStorageAccess(TaskStepContext context, UnloadBackend backend) {
+        Optional<ActionLease> acquired = context.getActions()
+            .tryAcquire(EnumSet.of(ActionCapability.MOVEMENT, ActionCapability.LOOK, ActionCapability.USE));
+        if (!acquired.isPresent()) return StepResult
+            .waitFor(context.getActionEpoch(), taskCheckpoint, 0L, "Waiting for storage approach/open authority");
+        ActionLease lease = acquired.get();
+        String requestId = spec.getId() + "-storage-access-" + context.getActionEpoch();
+        UnloadActionHandle handle = null;
+        try {
+            handle = backend.accessStorage(requestId, UnloadTask.storageId(spec), context.getActionEpoch(), lease);
+            if (handle == null) {
+                lease.close();
+                return null;
+            }
+            if (!requestId.equals(handle.getRequestId()))
+                throw new IllegalStateException("Storage access returned a mismatched handle");
+            accessHandle = handle;
+            accessLease = lease;
+            accessBackend = backend;
+            accessRequestId = requestId;
+            return StepResult
+                .progress(context.getActionEpoch(), taskCheckpoint, "Approaching and opening saved storage");
+        } catch (RuntimeException failure) {
+            RuntimeException cleanup = cancelAndClose(handle, lease);
+            if (cleanup != null) failure.addSuppressed(cleanup);
+            return failed(context, "Storage access could not start: " + describe(failure), null, true);
+        }
+    }
+
+    private StepResult pollStorageAccess(TaskStepContext context, UnloadBackend backend) {
+        try {
+            if (backend != accessBackend || !accessLease.isValid()
+                || accessLease.getEpoch() != context.getActionEpoch())
+                throw new IllegalStateException("Storage access authority/backend changed");
+            UnloadActionProgress progress = accessHandle.progress();
+            if (progress == null || !accessRequestId.equals(progress.getRequestId()))
+                throw new IllegalStateException("Stale storage access progress");
+            switch (progress.getState()) {
+                case SUBMITTED:
+                case EXECUTING:
+                    return StepResult.waitFor(context.getActionEpoch(), taskCheckpoint, 0L, progress.getDetail());
+                case CONFIRMED:
+                    RuntimeException cleanup = stopStorageAccess(false);
+                    if (cleanup != null) throw cleanup;
+                    return StepResult.progress(
+                        context.getActionEpoch(),
+                        taskCheckpoint,
+                        "Storage opened; ready for exact inventory revalidation");
+                default:
+                    throw new IllegalStateException(progress.getDetail());
+            }
+        } catch (RuntimeException failure) {
+            return failed(context, "Storage access failed: " + describe(failure), stopActive(), true);
+        }
+    }
+
+    private RuntimeException stopStorageAccess(boolean cancel) {
+        UnloadActionHandle handle = accessHandle;
+        ActionLease lease = accessLease;
+        accessHandle = null;
+        accessLease = null;
+        accessBackend = null;
+        accessRequestId = null;
+        return cancelAndClose(cancel ? handle : null, lease);
     }
 
     private StepResult prepare(TaskStepContext context, UnloadBackend backend) {
@@ -384,10 +459,14 @@ final class UnloadTaskRunner implements TaskRunner {
     }
 
     private RuntimeException stopActive() {
+        RuntimeException accessFailure = stopStorageAccess(true);
         UnloadActionHandle handle = activeHandle;
         ActionLease lease = activeLease;
         clearActive();
-        return cancelAndClose(handle, lease);
+        RuntimeException transactionFailure = cancelAndClose(handle, lease);
+        if (accessFailure == null) return transactionFailure;
+        if (transactionFailure != null) accessFailure.addSuppressed(transactionFailure);
+        return accessFailure;
     }
 
     private void clearActive() {

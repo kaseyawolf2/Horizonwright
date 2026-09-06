@@ -7,6 +7,11 @@ public interface UnloadBackend {
 
     UnloadBackendAvailability availability();
 
+    /** Optional approach/open operation. Null means manual access is required. No inventory transfers here. */
+    default UnloadActionHandle accessStorage(String requestId, String storageId, long epoch, ActionLease lease) {
+        return null;
+    }
+
     UnloadObservationResult observe(UnloadObservationRequest request);
 
     UnloadActionHandle execute(UnloadActionRequest request, ActionLease lease);

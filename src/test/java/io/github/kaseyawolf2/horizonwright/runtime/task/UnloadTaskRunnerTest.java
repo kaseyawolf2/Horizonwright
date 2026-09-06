@@ -42,6 +42,40 @@ public class UnloadTaskRunnerTest {
     }
 
     @Test
+    public void opensStorageBeforePlanningAndReleasesAccessLease() {
+        harness = new Harness();
+        harness.backend.needsAccess = true;
+        TaskSpec spec = UnloadTask.create("access", "mining", "ore-chest");
+        harness.controller.submit(spec);
+        harness.controller.tick();
+        assertTrue(harness.backend.accessLease.isValid());
+        assertTrue(
+            harness.backend.accessLease.getCapabilities()
+                .contains(ActionCapability.MOVEMENT));
+        assertEquals(0, harness.backend.submissions);
+        harness.controller.tick();
+        assertTrue(!harness.backend.accessLease.isValid());
+        TaskSnapshot prepared = task(harness.controller.tick(), spec.getId());
+        assertEquals(
+            "PREPARED",
+            prepared.getCheckpoint()
+                .getValues()
+                .get("phase"));
+    }
+
+    @Test
+    public void pausingRunnerCancelsStorageApproach() {
+        harness = new Harness();
+        harness.backend.needsAccess = true;
+        harness.controller.submit(UnloadTask.create("access-cancel", "mining", "ore-chest"));
+        harness.controller.tick();
+        harness.controller.pause("access-cancel");
+        harness.controller.tick();
+        assertTrue(harness.backend.accessCancelled);
+        assertTrue(!harness.backend.accessLease.isValid());
+    }
+
+    @Test
     public void persistsExactPlanBeforeExecutingAndCompletesOnlyAfterConfirmation() {
         harness = new Harness();
         TaskSpec spec = UnloadTask.create("unload-one", "mining", "ore-chest");
@@ -229,9 +263,33 @@ public class UnloadTaskRunnerTest {
         private int submissions;
         private ActionLease lastLease;
         private Handle active;
+        private boolean needsAccess;
+        private boolean accessCancelled;
+        private ActionLease accessLease;
+
+        @Override
+        public UnloadActionHandle accessStorage(String id, String storage, long epoch, ActionLease lease) {
+            accessLease = lease;
+            return new UnloadActionHandle() {
+
+                public String getRequestId() {
+                    return id;
+                }
+
+                public UnloadActionProgress progress() {
+                    needsAccess = false;
+                    return new UnloadActionProgress(id, UnloadActionState.CONFIRMED, "opened");
+                }
+
+                public void cancel() {
+                    accessCancelled = true;
+                }
+            };
+        }
 
         @Override
         public UnloadBackendAvailability availability() {
+            if (needsAccess) return UnloadBackendAvailability.unavailable("closed");
             return UnloadBackendAvailability.available("test chest open");
         }
 
