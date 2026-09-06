@@ -1,7 +1,6 @@
 package io.github.kaseyawolf2.horizonwright.forge.client;
 
 import net.minecraft.client.Minecraft;
-import net.minecraft.tileentity.TileEntityChest;
 import net.minecraft.util.MovingObjectPosition;
 
 import io.github.kaseyawolf2.horizonwright.core.logistics.StorageItemFilter;
@@ -26,8 +25,7 @@ final class BaseAssetCapture {
     static void chest(Minecraft mc, ProfileAssetEditor editor, String id) {
         NamedLocation location = location(mc, id + "-location");
         Object tile = MinecraftRuntimeAccess.tileEntity(mc.theWorld, location.getX(), location.getY(), location.getZ());
-        if (tile == null || tile.getClass() != TileEntityChest.class)
-            throw new IllegalArgumentException("Look directly at a vanilla chest first.");
+        io.github.kaseyawolf2.horizonwright.forge.client.container.SupportedStorageTarget.requireSupported(tile);
         editor.apply(
             ProfileAssetUpdate.of(
                 location,

@@ -10,7 +10,7 @@ The adapter recognizes exact vanilla ContainerChest, cpw.mods.ironchest.Containe
 
 ## Still required before acceptance
 
-- Profile GUI capture for supported modded storage blocks.
+- Profile/default/area storage capture now recognizes the installed Iron Chests tile classes and Et Futurum's TileEntityBarrel (which uses ContainerChestGeneric). Exact vanilla TileEntityChest capture remains supported. Entity storage such as chest boats is not treated as block storage. These capture paths still need physical tests.
 - Travel/open/identity verification/close and return-to-excavation lifecycle.
 - Dedicated live tests for each chest tier, rejected items, full storage, double chests, interrupted transactions, and unloading supplies preservation.
 - JABBA, Storage Drawers and Binnie require separate protocol/interaction inspection and are not supported by this adapter.

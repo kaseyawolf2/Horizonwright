@@ -9,7 +9,6 @@ import net.minecraft.client.gui.GuiTextField;
 import net.minecraft.init.Blocks;
 import net.minecraft.item.ItemStack;
 import net.minecraft.tileentity.TileEntity;
-import net.minecraft.tileentity.TileEntityChest;
 import net.minecraft.util.MovingObjectPosition;
 
 import org.lwjgl.input.Keyboard;
@@ -94,7 +93,7 @@ public final class GuiProfileAssets extends GuiReadableScreen {
                 top + 132,
                 196,
                 20,
-                "Save targeted vanilla chest"));
+                "Save targeted storage chest"));
         buttonList.add(
             new GuiHorizonwrightButton(
                 SAVE_STATION_BUTTON,
@@ -182,9 +181,7 @@ public final class GuiProfileAssets extends GuiReadableScreen {
 
     private void saveChest(ProfileAssetEditor editor) {
         Target target = target();
-        if (!(target.tile instanceof TileEntityChest) || target.tile.getClass() != TileEntityChest.class) {
-            throw new IllegalArgumentException("look directly at a vanilla chest block first");
-        }
+        io.github.kaseyawolf2.horizonwright.forge.client.container.SupportedStorageTarget.requireSupported(target.tile);
         String id = ProfileAssetInput.stableId(storageId.getText(), "storage name");
         String locationId = id + "-location";
         NamedLocation location = target.location(locationId, displayName(id) + " location");
@@ -194,7 +191,7 @@ public final class GuiProfileAssets extends GuiReadableScreen {
             locationId,
             StorageItemFilter.acceptAll());
         editor.apply(ProfileAssetUpdate.of(location, null, endpoint, null));
-        status = "Saved vanilla chest '" + id + "' at " + target.coordinates() + ". Filter: accept all.";
+        status = "Saved storage chest '" + id + "' at " + target.coordinates() + ". Filter: accept all.";
     }
 
     private void saveStation(ProfileAssetEditor editor) {
@@ -311,7 +308,7 @@ public final class GuiProfileAssets extends GuiReadableScreen {
         label("Chest name", left + 18, top + 138);
         drawString(
             fontRendererObj,
-            "2. Close this page, look at the vanilla chest, reopen and save.",
+            "2. Look at a supported storage chest, reopen and save.",
             left + 18,
             top + 158,
             0xFFB8C8DE);
