@@ -162,6 +162,7 @@ public final class BaritoneNavigationBackend
         Handle handle = new Handle(this, request, movementLease, goal, calculationContext);
         actionSessionGuard.begin(movementLease);
         active = handle;
+        suppressInventoryMoves();
         process.activate(handle);
         DevelopmentTrace.event(
             "navigation",
@@ -501,7 +502,27 @@ public final class BaritoneNavigationBackend
     private synchronized void clearPendingCleanup(PendingCleanup cleanup) {
         if (pendingCleanup == cleanup) {
             pendingCleanup = null;
+            restoreInventoryMoves();
         }
+    }
+
+    private final NavigationInventorySuppression inventorySuppression = new NavigationInventorySuppression();
+
+    private void suppressInventoryMoves() {
+        Settings settings = BaritoneAPI.getSettings();
+        synchronized (settings) {
+            settings.allowInventory.value = inventorySuppression.begin(settings.allowInventory.value);
+        }
+        DevelopmentTrace.event("navigation", "inventory-moves-suppressed");
+    }
+
+    private void restoreInventoryMoves() {
+        Settings settings = BaritoneAPI.getSettings();
+        synchronized (settings) {
+            // Do not overwrite an explicit change made while navigation was active.
+            settings.allowInventory.value = inventorySuppression.end(settings.allowInventory.value);
+        }
+        DevelopmentTrace.event("navigation", "inventory-moves-restored");
     }
 
     private void clearInputs() {

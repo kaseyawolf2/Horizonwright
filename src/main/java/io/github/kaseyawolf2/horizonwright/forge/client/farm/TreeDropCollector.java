@@ -35,6 +35,8 @@ final class TreeDropCollector implements TreeBackend.CollectionHandle {
     private int emptySince = -1;
     private int arrivalTick = -1;
     private int sequence;
+    private BasePosition trackedPosition;
+    private int approachAttempt;
     private boolean cancelled;
     private String detail = "Scanning tree-farm drops";
 
@@ -88,6 +90,8 @@ final class TreeDropCollector implements TreeBackend.CollectionHandle {
             moving = null;
             target = null;
             arrivalTick = -1;
+            trackedPosition = null;
+            approachAttempt = 0;
         }
         if (drops.isEmpty()) {
             if (!guard.isReadyForSession()) {
@@ -107,26 +111,73 @@ final class TreeDropCollector implements TreeBackend.CollectionHandle {
         }
         if (System.nanoTime() - deadline >= 0)
             throw new IllegalStateException("Timed out collecting tree drop " + target.getEntityId());
+        BasePosition currentPosition = new BasePosition(
+            min.getDimensionId(),
+            (int) Math.floor(target.posX),
+            (int) Math.floor(target.posY),
+            (int) Math.floor(target.posZ));
+        if (!currentPosition.equals(trackedPosition)) {
+            if (moving != null) moving.cancel();
+            moving = null;
+            arrivalTick = -1;
+            approachAttempt = 0;
+            trackedPosition = currentPosition;
+            DevelopmentTrace.event(
+                "tree-collection",
+                "drop-position-updated",
+                "target",
+                target.getEntityId(),
+                "position",
+                currentPosition);
+        }
         if (moving != null) {
             NavigationProgress progress = moving.progress();
-            if (progress.getState() == NavigationState.FAILED || progress.getState() == NavigationState.CANCELLED)
-                throw new IllegalStateException("Cannot reach tree drops: " + progress.getDetail());
+            if (progress.getState() == NavigationState.FAILED || progress.getState() == NavigationState.CANCELLED) {
+                moving = null;
+                if (approachAttempt >= 5 || progress.getDetail()
+                    .contains("firewall"))
+                    throw new IllegalStateException("Cannot reach tree drops: " + progress.getDetail());
+                detail = "Trying another pickup position: " + progress.getDetail();
+                return false;
+            }
             if (progress.getState() == NavigationState.COMPLETED) {
                 moving = null;
                 arrivalTick = tick;
             }
         } else if (arrivalTick >= 0) {
-            if (tick - arrivalTick >= 60) throw new IllegalStateException(
-                "Tree drop remains after pickup approach; check inventory space or inaccessible drops. Resume to retry before planting.");
+            if (tick - arrivalTick >= 20) {
+                if (approachAttempt >= 5) throw new IllegalStateException(
+                    "Tree drop remains after alternate pickup approaches; check inventory space or inaccessible drops. Resume to retry before planting.");
+                arrivalTick = -1;
+            }
         } else if (guard.isReadyForSession()) {
+            int[][] offsets = { { 0, 0 }, { -1, 0 }, { 1, 0 }, { 0, -1 }, { 0, 1 } };
+            int[] offset = offsets[approachAttempt++];
+            DevelopmentTrace.event(
+                "tree-collection",
+                "pickup-goal",
+                "target",
+                target.getEntityId(),
+                "attempt",
+                approachAttempt,
+                "x",
+                currentPosition.getX() + offset[0],
+                "y",
+                currentPosition.getY(),
+                "z",
+                currentPosition.getZ() + offset[1],
+                "onGround",
+                target.onGround,
+                "playerFeetY",
+                minecraft.thePlayer.boundingBox.minY);
             moving = navigation.submit(
                 new NavigationRequest(
                     task + "-tree-drops-" + (++sequence),
                     lease.getEpoch(),
                     min.getDimensionId(),
-                    (int) Math.floor(target.posX),
-                    (int) Math.floor(target.posY),
-                    (int) Math.floor(target.posZ),
+                    currentPosition.getX() + offset[0],
+                    currentPosition.getY(),
+                    currentPosition.getZ() + offset[1],
                     0,
                     System.nanoTime(),
                     NavigationRequest.MAX_RUNTIME_NANOS),
