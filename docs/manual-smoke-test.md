@@ -274,12 +274,47 @@ scheduled-jobs page, and verify deleting the saved area cancels the unfinished
 tree occurrence and schedule. This path is automated-build green but has not
 yet been physically recorded.
 
-## Pending non-destructive husbandry checkpoint
+## Breed-first husbandry checkpoint (2026-09-06)
+
+Newly created passes and saved schedules use a finite breeding cohort. Existing
+queued tasks and unchanged saved schedules retain their old population policy;
+create a new pass or save the schedule again to use breed-then-replace. The GUI
+now exposes minimum adults rather than the old maximum/actions controls.
+
+Use a closed, completely loaded pen. Do not import animals during the pass:
+newborn evidence is a newly observed baby identity absent from the starting
+scan, not parentage tracking. Existing babies never grant replacement credits.
+All eligible ready adult pairs are fed once (an odd unpaired adult is skipped).
+The cycle waits for babies and then replaces at most one adult per new baby,
+bounded by confirmed feeds, the original total herd size, minimum adult stock,
+and two eligible surviving adult breeders. It does not wait for babies to mature.
+
+Test eight ready adult cows, minimum two, enough wheat and a usable GregTech
+knife. Enable attacks explicitly. Expect eight feeds, four births, four adult
+culls, then drop collection: four adults plus four calves remain. With attacks
+OFF, expect feeding and collection but no culling. With only two adults, expect
+a baby but no cull. Test pre-existing calves and protected/named adults too.
+
+Pause/rejoin during feeding, birth waiting and culling. The cohort, feed evidence,
+new baby identities and reserved replacement credits persist. An interrupted
+unconfirmed feed grants no credit; an uncertain dispatched cull consumes its
+reservation conservatively, so interruption can produce fewer culls, never an
+extra replacement for the same credit. Review the task's final dispatched count.
+After two active minutes without another newborn, zero births blocks with a
+diagnostic; partial births allow only their corresponding replacement count.
+
+There are no longer fixed successful-action caps on feeding, culling or pickup.
+Confirm a pass exceeding 16 actions finishes normally. Unchanged target/pen
+evidence after a purportedly confirmed action still blocks an immediate repeat,
+and the live backend retains its reach checks and per-action timeouts. Search
+development logs for `husbandry-cycle` for phase progress and action totals.
+
+### Feeding and protection checks
 
 Create a small loaded named pen containing exactly two unnamed adult vanilla
 animals of one supported species. Put their exact vanilla breeding item anywhere
-in the player inventory. Configure the selected species with a minimum above the
-current adult count, then queue one husbandry pass. Confirm Baritone approaches
+in the player inventory. Leave attacks OFF and queue a new husbandry pass.
+Confirm Baritone approaches
 the exact observed adult, the correct feed is staged and returned safely, one
 normal entity interaction occurs, and the action advances only after a fresh
 complete scan shows that exact adult in breeding state. The next plan may feed
@@ -304,19 +339,13 @@ Confirm Horizonwright walks through that exact item position and advances only
 after the same item-entity identity disappears from a fresh complete scan. Test
 with a full inventory: an uncollected drop must remain unconfirmed rather than
 being reported as collected. Pause during each approach and confirm no action is
-recorded before its postcondition. Finally configure a maximum below the current
-eligible adult count with **Allow animal attacks: OFF**. The pass must collect
-available drops, then finish with an above-maximum diagnostic without acquiring
-attack authority or damaging an animal.
+recorded before its postcondition. With **Allow animal attacks: OFF**, the pass
+must collect available drops without acquiring attack authority or damaging an animal.
 
 ## Pending explicitly authorized culling checkpoint (2026-09-06)
 
-The configured action limit counts feeding and culling only. Confirmed pickups
-have a separate 256-action limit per pass. Both counters persist across rejoin;
-older checkpoints retain their previous work count conservatively but can still
-use the new collection allowance. Reproduce with an action cap of 1: complete
-one cull, then collect its drops and finish without an action-cap error. A second
-cull must still be blocked when that same work cap is exhausted.
+Legacy maximum-actions fields remain readable for compatibility but no longer
+limit execution. Counters persist for diagnostics, not as stopping thresholds.
 
 In the livestock setup page, **Allow animal attacks** defaults to OFF. Existing
 saved jobs without this parameter also default to OFF. Turn it ON deliberately
@@ -324,7 +353,7 @@ for a new pass, or select a livestock schedule in Scheduled jobs, toggle it ON,
 and click Save settings. Editing a schedule applies to future occurrences;
 existing queued/blocked tasks retain the permission with which they were created.
 
-Use five ordinary adult cows, minimum 2 / maximum 4, and provide a usable GregTech
+Use eight ready adult cows, minimum 2, enough wheat, and provide a usable GregTech
 knife or butchery knife anywhere in the player inventory. Culling selects the
 highest effective Looting level (including GregTech material enchantments), then
 remaining durability for a tie. Bare-hand culling is no longer permitted: this

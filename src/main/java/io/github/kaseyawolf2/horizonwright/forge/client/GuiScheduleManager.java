@@ -222,10 +222,11 @@ public final class GuiScheduleManager extends GuiScreen {
             int minutes = ProfileAssetInput.positiveInteger(intervalField.getText(), "interval minutes");
             String[] bounds = reserveField.getText()
                 .split("/");
-            if (bounds.length != 3) throw new IllegalArgumentException("use minimum/maximum/actions");
+            if (bounds.length != 1 && bounds.length != 3)
+                throw new IllegalArgumentException("enter minimum adults (at least 2)");
             int minimum = ProfileAssetInput.positiveInteger(bounds[0], "minimum adults");
-            int maximum = ProfileAssetInput.positiveInteger(bounds[1], "maximum adults");
-            int actions = ProfileAssetInput.positiveInteger(bounds[2], "maximum actions");
+            int maximum = Math.max(minimum, 8);
+            int actions = 16;
             runtime.updateHusbandrySchedule(
                 selectedScheduleId,
                 target,
@@ -240,12 +241,8 @@ public final class GuiScheduleManager extends GuiScreen {
             message = "Saved '" + selectedScheduleId
                 + "': pen '"
                 + target
-                + "', policy "
+                + "', breed then replace; minimum adults "
                 + minimum
-                + "/"
-                + maximum
-                + "/"
-                + actions
                 + ".";
         } else {
             throw new IllegalStateException("this schedule type is currently view-only");
@@ -323,7 +320,7 @@ public final class GuiScheduleManager extends GuiScreen {
         drawString(fontRendererObj, "Minutes", left + 256, top + 230, 0xFFE0E0E0);
         drawString(
             fontRendererObj,
-            selected != null && isHusbandry(selected) ? "Policy" : "Seed reserve",
+            selected != null && isHusbandry(selected) ? "Min adults" : "Seed reserve",
             left + 372,
             top + 230,
             0xFFE0E0E0);
@@ -445,17 +442,10 @@ public final class GuiScheduleManager extends GuiScreen {
                     selected.getRule()
                         .getIntervalMillis() / 60_000L));
             reserveField.setText(
-                HusbandryTask.minimumAdults(
-                    selected.getRule()
-                        .getTask())
-                    + "/"
-                    + HusbandryTask.maximumAdults(
+                Integer.toString(
+                    HusbandryTask.minimumAdults(
                         selected.getRule()
-                            .getTask())
-                    + "/"
-                    + HusbandryTask.maximumActions(
-                        selected.getRule()
-                            .getTask()));
+                            .getTask())));
         } else {
             targetField.setText("view only");
             intervalField.setText("n/a");

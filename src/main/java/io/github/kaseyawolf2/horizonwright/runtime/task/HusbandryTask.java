@@ -54,6 +54,7 @@ public final class HusbandryTask {
         parameters.put(MAXIMUM_ADULTS, Integer.toString(maximumAdults));
         parameters.put(MAXIMUM_ACTIONS, Integer.toString(maximumActions));
         parameters.put(ALLOW_CULLING, Boolean.toString(allowCulling));
+        parameters.put("breedingCycle", "true");
         return new ScheduledTaskSpec(
             TYPE,
             "Husbandry pass: " + pen + " / " + species.name(),
@@ -133,6 +134,14 @@ public final class HusbandryTask {
     public static boolean allowCulling(TaskSpec spec) {
         requireType(spec);
         return allowCulling(spec.getParameters());
+    }
+
+    /** Missing on existing population-maintenance jobs; never reinterpret a partially completed cull. */
+    public static boolean breedingCycle(TaskSpec spec) {
+        requireType(spec);
+        return "true".equals(
+            spec.getParameters()
+                .get("breedingCycle"));
     }
 
     public static boolean allowCulling(ScheduledTaskSpec spec) {

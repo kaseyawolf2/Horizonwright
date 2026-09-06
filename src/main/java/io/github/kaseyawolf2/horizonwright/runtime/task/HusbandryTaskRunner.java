@@ -7,10 +7,12 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
+import io.github.kaseyawolf2.horizonwright.DevelopmentTrace;
 import io.github.kaseyawolf2.horizonwright.core.action.ActionCapability;
 import io.github.kaseyawolf2.horizonwright.core.action.ActionLease;
 import io.github.kaseyawolf2.horizonwright.core.base.HusbandryAction;
 import io.github.kaseyawolf2.horizonwright.core.base.HusbandryActionKind;
+import io.github.kaseyawolf2.horizonwright.core.base.HusbandryBreedingCycle;
 import io.github.kaseyawolf2.horizonwright.core.base.HusbandryObservation;
 import io.github.kaseyawolf2.horizonwright.core.base.HusbandryPlan;
 import io.github.kaseyawolf2.horizonwright.core.base.HusbandryPlanner;
@@ -33,7 +35,10 @@ final class HusbandryTaskRunner implements TaskRunner {
     private int verifiedActions;
     private int verifiedCollections;
     private HusbandryActionKind activeKind;
-    private static final int MAX_COLLECTIONS_PER_PASS = 256;
+    private String activeIdentity;
+    private String activeEvidence;
+    private String lastConfirmedEvidence;
+    private final HusbandryBreedingCycle breedingCycle;
     private HusbandryBackend activeBackend;
     private HusbandryBackend.ActionHandle activeHandle;
     private ActionLease activeLease;
@@ -52,6 +57,10 @@ final class HusbandryTaskRunner implements TaskRunner {
         this.checkpoint = checkpoint;
         this.verifiedActions = decode(checkpoint);
         this.verifiedCollections = decodeCollections(checkpoint, verifiedActions);
+        this.breedingCycle = HusbandryTask.breedingCycle(spec) ? new HusbandryBreedingCycle(checkpoint.getValues())
+            : null;
+        this.lastConfirmedEvidence = checkpoint.getValues()
+            .get("lastConfirmedEvidence");
     }
 
     @Override
@@ -96,31 +105,45 @@ final class HusbandryTaskRunner implements TaskRunner {
                 1L,
                 HusbandryTask.minimumAdults(spec),
                 HusbandryTask.maximumAdults(spec));
-            HusbandryPlan plan = planner.plan(policy, observation, HusbandryTask.allowCulling(spec));
+            HusbandryPlan plan = breedingCycle == null
+                ? planner.plan(policy, observation, HusbandryTask.allowCulling(spec))
+                : breedingCycle.plan(policy, observation, HusbandryTask.allowCulling(spec), context.getNowMillis());
+            if (breedingCycle != null) {
+                checkpoint = encode(verifiedActions);
+                DevelopmentTrace.event(
+                    "husbandry-cycle",
+                    "plan",
+                    "task",
+                    spec.getId(),
+                    "detail",
+                    breedingCycle.getDiagnostic(),
+                    "held",
+                    plan.isHeld(),
+                    "actions",
+                    verifiedActions,
+                    "collections",
+                    verifiedCollections,
+                    "checkpoint",
+                    checkpoint.getRevision());
+                if (breedingCycle.isWaiting()) return StepResult
+                    .waitFor(context.getActionEpoch(), checkpoint, 500L, breedingCycle.getDiagnostic());
+            }
             if (plan.isHeld()) return blocked(context, plan.getHoldReason(), "a complete, loaded, safe named pen");
             if (plan.getActions()
                 .isEmpty())
                 return completed(
                     context,
-                    "Husbandry pass finished after " + verifiedActions
-                        + " action(s)"
-                        + (!HusbandryTask.allowCulling(spec) && plan.getObservedAdults() > policy.getMaximumAdults()
-                            ? "; population above maximum; culling disabled"
-                            : "; population policy satisfied"));
-            boolean collection = plan.getActions()
-                .get(0)
-                .getKind() == HusbandryActionKind.COLLECT_DROPS;
-            if (collection && verifiedCollections >= MAX_COLLECTIONS_PER_PASS) {
+                    breedingCycle != null ? breedingCycle.getDiagnostic()
+                        : "Husbandry pass finished after " + verifiedActions
+                            + " action(s)"
+                            + (!HusbandryTask.allowCulling(spec) && plan.getObservedAdults() > policy.getMaximumAdults()
+                                ? "; population above maximum; culling disabled"
+                                : "; population policy satisfied"));
+            if (evidence(plan).equals(lastConfirmedEvidence)) {
                 return blocked(
                     context,
-                    "Husbandry collection reached its separate 256-pickup limit",
-                    "a new pass to collect remaining drops");
-            }
-            if (!collection && verifiedActions - verifiedCollections >= HusbandryTask.maximumActions(spec)) {
-                return blocked(
-                    context,
-                    "Husbandry pass reached its configured feed/cull action cap",
-                    "operator review of the pen policy");
+                    "Husbandry confirmed an action but the target and pen evidence show no progress",
+                    "a fresh observable change before retrying the same action");
             }
             HusbandryBackend.ActionReadiness readiness = backend.readiness(plan);
             if (readiness == null || !readiness.isReady()) {
@@ -157,6 +180,11 @@ final class HusbandryTaskRunner implements TaskRunner {
         try {
             if (!lease.isValid() || runtime.getHusbandryBackend() != backend)
                 throw new IllegalStateException("husbandry authority changed");
+            if (breedingCycle != null) {
+                // Reserve replacement credit before dispatch; interrupted/uncertain kills must never be repeated.
+                breedingCycle.dispatched(action);
+                checkpoint = encode(verifiedActions);
+            }
             HusbandryBackend.ActionHandle handle = backend.execute(request, lease);
             if (handle == null || !requestId.equals(handle.getRequestId()))
                 throw new IllegalStateException("mismatched husbandry handle");
@@ -165,6 +193,8 @@ final class HusbandryTaskRunner implements TaskRunner {
             activeLease = lease;
             activeRequestId = requestId;
             activeKind = action.getKind();
+            activeIdentity = action.getAnimalIdentity();
+            activeEvidence = evidence(plan);
             return StepResult.progress(context.getActionEpoch(), checkpoint, "Submitted " + action.getKind());
         } catch (RuntimeException failure) {
             lease.close();
@@ -193,6 +223,8 @@ final class HusbandryTaskRunner implements TaskRunner {
             }
             if (progress.getState() == HusbandryBackend.ActionState.CONFIRMED) {
                 if (activeKind == HusbandryActionKind.COLLECT_DROPS) verifiedCollections++;
+                if (breedingCycle != null) breedingCycle.confirmed(activeKind, activeIdentity);
+                lastConfirmedEvidence = activeEvidence;
                 releaseActive();
                 verifiedActions++;
                 checkpoint = encode(verifiedActions);
@@ -243,6 +275,7 @@ final class HusbandryTaskRunner implements TaskRunner {
     }
 
     private void cancelActive() {
+        if (breedingCycle != null) breedingCycle.pauseClock();
         HusbandryBackend.ActionHandle handle = activeHandle;
         ActionLease lease = activeLease;
         clearActive();
@@ -256,6 +289,8 @@ final class HusbandryTaskRunner implements TaskRunner {
         activeLease = null;
         activeRequestId = null;
         activeKind = null;
+        activeIdentity = null;
+        activeEvidence = null;
     }
 
     private void requireContext(TaskStepContext context) {
@@ -269,20 +304,22 @@ final class HusbandryTaskRunner implements TaskRunner {
         Map<String, String> values = new LinkedHashMap<>();
         values.put("verifiedActions", Integer.toString(actions));
         values.put("verifiedCollections", Integer.toString(verifiedCollections));
+        if (lastConfirmedEvidence != null) values.put("lastConfirmedEvidence", lastConfirmedEvidence);
+        if (breedingCycle != null) breedingCycle.save(values);
         return new TaskCheckpoint(checkpoint.getRevision() + 1L, values);
     }
 
     private static int decode(TaskCheckpoint checkpoint) {
         if (checkpoint.getRevision() == 0L && checkpoint.getValues()
             .isEmpty()) return 0;
-        if ((checkpoint.getValues()
-            .size() != 1
-            && !(checkpoint.getValues()
-                .size() == 2 && checkpoint.getValues()
-                    .containsKey("verifiedCollections")))
-            || !checkpoint.getValues()
-                .containsKey("verifiedActions"))
-            throw new IllegalArgumentException("invalid husbandry checkpoint");
+        if (!checkpoint.getValues()
+            .containsKey("verifiedActions")) throw new IllegalArgumentException("invalid husbandry checkpoint");
+        for (String key : checkpoint.getValues()
+            .keySet()) {
+            if (!key.equals("verifiedActions") && !key.equals("verifiedCollections")
+                && !key.equals("lastConfirmedEvidence")
+                && !key.startsWith("cycle.")) throw new IllegalArgumentException("unknown husbandry checkpoint field");
+        }
         try {
             int value = Integer.parseInt(
                 checkpoint.getValues()
@@ -297,13 +334,11 @@ final class HusbandryTaskRunner implements TaskRunner {
     private static int decodeCollections(TaskCheckpoint checkpoint, int total) {
         String value = checkpoint.getValues()
             .get("verifiedCollections");
-        // Old checkpoints did not distinguish pickups. Retain their work count conservatively,
-        // but give them the separate collection allowance so existing blocked jobs can finish.
+        // Old checkpoints did not distinguish pickups. Retain the known totals for diagnostics.
         if (value == null) return 0;
         try {
             int count = Integer.parseInt(value);
-            if (count < 0 || count > total || count > MAX_COLLECTIONS_PER_PASS)
-                throw new IllegalArgumentException("invalid husbandry collection count");
+            if (count < 0 || count > total) throw new IllegalArgumentException("invalid husbandry collection count");
             return count;
         } catch (NumberFormatException failure) {
             throw new IllegalArgumentException("invalid husbandry collection count", failure);
@@ -315,6 +350,17 @@ final class HusbandryTaskRunner implements TaskRunner {
         HusbandryBackend.Availability value = backend.availability();
         return value == null ? HusbandryBackend.Availability.unavailable("Husbandry backend returned no availability")
             : value;
+    }
+
+    private static String evidence(HusbandryPlan plan) {
+        HusbandryAction action = plan.getActions()
+            .get(0);
+        return action.getKind() + ":"
+            + (action.getAnimalIdentity() != null ? action.getAnimalIdentity()
+                : action.getDropTarget()
+                    .getIdentity())
+            + ":"
+            + plan.getObservationFingerprint();
     }
 
     private static void validate(HusbandryBackend.ObservationRequest request,

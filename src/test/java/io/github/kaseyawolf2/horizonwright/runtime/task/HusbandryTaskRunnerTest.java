@@ -130,7 +130,7 @@ public class HusbandryTaskRunnerTest {
     }
 
     @Test
-    public void hardActionCapBlocksAnOtherwiseRepeatingPolicy() {
+    public void RepeatedConfirmedActionWithoutObservableProgressBlocks() {
         HusbandryObservation repeat = observation(1L, twoReadyAdults());
         harness = new Harness(repeat, repeat);
         TaskSpec spec = task(4, 6, 1);
@@ -144,7 +144,7 @@ public class HusbandryTaskRunnerTest {
             blocked.getBlockedReason()
                 .get()
                 .getDetail()
-                .contains("action cap"));
+                .contains("no progress"));
         assertEquals(1, harness.backend.actions);
     }
 
@@ -171,7 +171,80 @@ public class HusbandryTaskRunnerTest {
     }
 
     private static TaskSpec task(int minimum, int maximum, int actionCap) {
-        return HusbandryTask.finitePass("animals", "cow-pen", LivestockSpecies.COW, minimum, maximum, actionCap);
+        return legacy(
+            HusbandryTask.finitePass("animals", "cow-pen", LivestockSpecies.COW, minimum, maximum, actionCap));
+    }
+
+    @Test
+    public void breedingCycleFeedsAndReplacesBeyondLegacyActionCap() {
+        java.util.List<AnimalObservation> animals = new java.util.ArrayList<>(
+            Arrays.asList(adult("a", true), adult("b", true), adult("c", true), adult("d", true)));
+        harness = new Harness(observation(1L, animals), null);
+        TaskSpec spec = HusbandryTask.finitePass("cycle", "cow-pen", LivestockSpecies.COW, 2, 8, 1, true);
+        harness.controller.submit(spec);
+        for (int index = 0; index < 4; index++) {
+            TaskSnapshot submitted = task(harness.controller.tick(), spec.getId());
+            assertEquals(TaskState.RUNNING, submitted.getState());
+            assertEquals(HusbandryActionKind.FEED_ADULT, harness.backend.kind);
+            assertTrue(
+                submitted.getCheckpoint()
+                    .getValues()
+                    .containsKey("cycle.phase"));
+            harness.backend.handle.state = HusbandryBackend.ActionState.CONFIRMED;
+            task(harness.controller.tick(), spec.getId());
+        }
+        animals.add(
+            new AnimalObservation(
+                "calf-1",
+                LivestockSpecies.COW,
+                new BasePosition(0, 2, 64, 2),
+                false,
+                false,
+                false,
+                false,
+                false,
+                false));
+        animals.add(
+            new AnimalObservation(
+                "calf-2",
+                LivestockSpecies.COW,
+                new BasePosition(0, 2, 64, 2),
+                false,
+                false,
+                false,
+                false,
+                false,
+                false));
+        for (int index = 0; index < 2; index++) {
+            harness.backend.current = observation(2L + index, animals);
+            task(harness.controller.tick(), spec.getId());
+            assertEquals(HusbandryActionKind.CULL_EXCESS_ADULT, harness.backend.kind);
+            String identity = harness.backend.identity;
+            animals.removeIf(
+                animal -> animal.getIdentity()
+                    .equals(identity));
+            harness.backend.handle.state = HusbandryBackend.ActionState.CONFIRMED;
+            task(harness.controller.tick(), spec.getId());
+        }
+        harness.backend.current = observation(4L, animals);
+        TaskSnapshot completed = task(harness.controller.tick(), spec.getId());
+        assertEquals(TaskState.COMPLETED, completed.getState());
+        assertEquals(
+            "6",
+            completed.getCheckpoint()
+                .getValues()
+                .get("verifiedActions"));
+        assertEquals(4, animals.size());
+    }
+
+    private static TaskSpec legacy(TaskSpec spec) {
+        java.util.Map<String, String> parameters = new java.util.LinkedHashMap<>(spec.getParameters());
+        parameters.remove("breedingCycle");
+        return new io.github.kaseyawolf2.horizonwright.core.task.ScheduledTaskSpec(
+            spec.getType(),
+            spec.getDisplayName(),
+            spec.getLane(),
+            parameters).instantiate(spec.getId());
     }
 
     @Test
@@ -191,7 +264,7 @@ public class HusbandryTaskRunnerTest {
     @Test
     public void authorizedCullWaitsForConfirmationThenRescansAndStopsAtMaximum() {
         harness = new Harness(observation(1L, fourStableAdults()), observation(2L, stableAdults()));
-        TaskSpec spec = HusbandryTask.finitePass("animals", "cow-pen", LivestockSpecies.COW, 2, 3, 8, true);
+        TaskSpec spec = legacy(HusbandryTask.finitePass("animals", "cow-pen", LivestockSpecies.COW, 2, 3, 8, true));
         harness.controller.submit(spec);
         task(harness.controller.tick(), spec.getId());
         assertEquals(HusbandryActionKind.CULL_EXCESS_ADULT, harness.backend.kind);
@@ -244,7 +317,7 @@ public class HusbandryTaskRunnerTest {
             true,
             true);
         harness = new Harness(observation(1L, fourStableAdults()), drops);
-        TaskSpec spec = HusbandryTask.finitePass("animals", "cow-pen", LivestockSpecies.COW, 2, 3, 1, true);
+        TaskSpec spec = legacy(HusbandryTask.finitePass("animals", "cow-pen", LivestockSpecies.COW, 2, 3, 1, true));
         harness.controller.submit(spec);
         task(harness.controller.tick(), spec.getId());
         assertEquals(HusbandryActionKind.CULL_EXCESS_ADULT, harness.backend.kind);
@@ -386,6 +459,7 @@ public class HusbandryTaskRunnerTest {
         private int observations;
         private int actions;
         private HusbandryActionKind kind;
+        private String identity;
         private ActionLease lease;
         private Handle handle;
         private boolean ready = true;
@@ -427,6 +501,10 @@ public class HusbandryTaskRunnerTest {
                 .getActions()
                 .get(0)
                 .getKind();
+            identity = request.getPlan()
+                .getActions()
+                .get(0)
+                .getAnimalIdentity();
             handle = new Handle(request.getRequestId());
             return handle;
         }
