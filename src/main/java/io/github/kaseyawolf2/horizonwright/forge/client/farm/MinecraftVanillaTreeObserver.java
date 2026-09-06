@@ -229,7 +229,14 @@ public final class MinecraftVanillaTreeObserver {
     private TreeObservation observeStanding(TreeWorkCheckpoint work) {
         int species = saplingSpecies(work.getRequiredSaplingFingerprint());
         for (BasePosition block : work.getCapturedBlocks()) {
-            if (logSpecies(block) != species) throw new IllegalStateException("captured tree changed before felling");
+            if (minecraft.theWorld.isAirBlock(block.getX(), block.getY(), block.getZ())) {
+                DevelopmentTrace
+                    .event("tree-observer", "captured-log-already-air", "tree", work.getTreeId(), "position", block);
+                continue;
+            }
+            if (!minecraft.theWorld.isAirBlock(block.getX(), block.getY(), block.getZ())
+                && logSpecies(block) != species)
+                throw new IllegalStateException("captured tree replaced by an unexpected block at " + block);
         }
         String fingerprint = standingFingerprint(work.getCapturedBlocks(), species);
         if (!work.getExpectedObservationFingerprint()

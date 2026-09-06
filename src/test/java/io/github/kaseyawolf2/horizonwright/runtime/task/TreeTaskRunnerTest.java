@@ -42,6 +42,69 @@ public class TreeTaskRunnerTest {
 
     private Harness harness;
 
+    @Test
+    public void allTreesAreFelledBeforeCollectionAndPlantingAndCollectionResumes() {
+        harness = new Harness(standing(), 8);
+        TreeObservation second = secondTree(standing());
+        harness.backend.scanTrees = Arrays.asList(standing(), second);
+        harness.backend.observed.put(second.getTreeId(), second);
+        TaskSpec spec = TreeTask.finitePass("two-trees", "woodlot", 2);
+        harness.controller.submit(spec);
+        harness.controller.tick();
+        harness.controller.tick();
+        harness.backend.confirm(clear());
+        harness.controller.tick();
+        assertEquals(0, harness.backend.collections);
+        harness.controller.tick();
+        assertEquals(2, harness.backend.actions);
+        assertTrue(
+            harness.backend.lease.getCapabilities()
+                .contains(ActionCapability.DIG));
+        harness.backend.confirm(secondTree(clear()));
+        TaskSnapshot bothFelled = task(harness.controller.tick(), spec.getId());
+        TreeTaskCheckpointCodec.State restored = TreeTaskCheckpointCodec.decode(spec, bothFelled.getCheckpoint());
+        assertTrue(restored.collecting());
+        assertEquals(2, restored.pending.size());
+        harness.backend.collectionReady = false;
+        harness.controller.tick();
+        assertEquals(2, harness.backend.actions);
+        harness.controller.pause(spec.getId());
+        TaskSnapshot suspended = task(harness.controller.tick(), spec.getId());
+        assertEquals(TaskState.SUSPENDED, suspended.getState());
+        assertTrue(
+            TreeTaskCheckpointCodec.decode(spec, suspended.getCheckpoint())
+                .collecting());
+        harness.controller.resume(spec.getId());
+        harness.backend.collectionReady = true;
+        harness.controller.tick();
+        harness.controller.tick();
+        assertEquals(3, harness.backend.actions);
+        assertFalse(
+            harness.backend.lease.getCapabilities()
+                .contains(ActionCapability.DIG));
+        harness.backend.confirm(planted());
+        harness.controller.tick();
+        harness.controller.tick();
+        assertEquals(4, harness.backend.actions);
+        harness.backend.confirm(secondTree(planted()));
+        assertEquals(TaskState.COMPLETED, task(harness.controller.tick(), spec.getId()).getState());
+    }
+
+    private static TreeObservation secondTree(TreeObservation original) {
+        return new TreeObservation(
+            "second-oak",
+            original.getRevision(),
+            original.getObservationFingerprint(),
+            original.getRequiredSaplingFingerprint(),
+            original.getState() == TreeObservationState.STANDING
+                ? Arrays.asList(new BasePosition(0, 5, 64, 4), new BasePosition(0, 5, 65, 4))
+                : Collections.emptyList(),
+            new BasePosition(0, 5, 64, 4),
+            original.getState(),
+            original.isMature(),
+            false);
+    }
+
     @After
     public void closeHarness() {
         if (harness != null) harness.close();
@@ -74,13 +137,16 @@ public class TreeTaskRunnerTest {
             "READY_TO_REPLANT",
             clearConfirmed.getCheckpoint()
                 .getValues()
-                .get("work.stage"));
+                .get("pending.0.work.stage"));
         assertEquals(
-            "0",
+            "1",
             clearConfirmed.getCheckpoint()
                 .getValues()
                 .get("nextIndex"));
 
+        task(harness.controller.tick(), spec.getId()); // collection, before planting
+        assertEquals(1, harness.backend.actions);
+        assertEquals(1, harness.backend.collections);
         task(harness.controller.tick(), spec.getId());
         assertEquals(2, harness.backend.actions);
         assertTrue(
@@ -121,6 +187,7 @@ public class TreeTaskRunnerTest {
         harness.controller.tick();
         harness.backend.confirm(clear());
         harness.controller.tick();
+        harness.controller.tick(); // collect before planting
         TaskSnapshot replantSubmitted = task(harness.controller.tick(), spec.getId());
         RecordingBackend.Handle firstReplant = harness.backend.handle;
 
@@ -212,6 +279,8 @@ public class TreeTaskRunnerTest {
             .instantiate("plant-empty");
         harness.controller.submit(spec);
         harness.controller.tick();
+        harness.controller.tick(); // defer empty planting site
+        harness.controller.tick(); // collect before planting
         TaskSnapshot submitted = task(harness.controller.tick(), spec.getId());
         assertEquals(1, harness.backend.actions);
         assertTrue(
@@ -305,6 +374,10 @@ public class TreeTaskRunnerTest {
         private final int saplings;
         private TreeObservation current;
         private int actions;
+        private int collections;
+        private boolean collectionReady = true;
+        private java.util.List<TreeObservation> scanTrees;
+        private final java.util.Map<String, TreeObservation> observed = new java.util.HashMap<>();
         private ActionLease lease;
         private Handle handle;
 
@@ -324,7 +397,7 @@ public class TreeTaskRunnerTest {
                 request.getTaskId(),
                 request.getActionEpoch(),
                 area,
-                Collections.singletonList(current));
+                scanTrees == null ? Collections.singletonList(current) : scanTrees);
         }
 
         @Override
@@ -334,13 +407,36 @@ public class TreeTaskRunnerTest {
                 request.getPassRevision(),
                 request.getActionEpoch(),
                 request.getIndex(),
-                current,
+                observed.getOrDefault(
+                    request.getWork()
+                        .getTreeId(),
+                    current),
                 new SaplingReserveEvidence(
                     1L,
                     "inventory",
                     "minecraft:sapling:0",
                     saplings,
                     request.getMinimumSaplingReserve()));
+        }
+
+        @Override
+        public CollectionHandle collectDrops(String taskId, NamedArea collectionArea, ActionLease collectionLease) {
+            collections++;
+            assertFalse(
+                collectionLease.getCapabilities()
+                    .contains(ActionCapability.DIG));
+            return new CollectionHandle() {
+
+                public boolean poll() {
+                    return collectionReady;
+                }
+
+                public String detail() {
+                    return "collected";
+                }
+
+                public void cancel() {}
+            };
         }
 
         @Override
@@ -355,6 +451,7 @@ public class TreeTaskRunnerTest {
         private void confirm(TreeObservation after) {
             assertNotNull(handle);
             current = after;
+            observed.put(after.getTreeId(), after);
             handle.after = after;
             handle.state = ActionState.CONFIRMED;
         }

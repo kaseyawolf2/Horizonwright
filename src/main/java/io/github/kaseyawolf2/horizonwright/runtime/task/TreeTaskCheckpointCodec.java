@@ -36,6 +36,14 @@ final class TreeTaskCheckpointCodec {
             writeTree(values, "tree." + index + ".", state.trees.get(index));
         values.put("hasWork", Boolean.toString(state.work != null));
         if (state.work != null) writeWork(values, state.work);
+        values.put("plantingPhase", Boolean.toString(state.planting));
+        values.put("pendingCount", Integer.toString(state.pending.size()));
+        for (int i = 0; i < state.pending.size(); i++) {
+            Map<String, String> workValues = new LinkedHashMap<>();
+            writeWork(workValues, state.pending.get(i));
+            for (Map.Entry<String, String> entry : workValues.entrySet())
+                values.put("pending." + i + "." + entry.getKey(), entry.getValue());
+        }
         return new TaskCheckpoint(revision, values);
     }
 
@@ -58,7 +66,29 @@ final class TreeTaskCheckpointCodec {
         int nextIndex = integer(values, "nextIndex");
         int verifiedTrees = integer(values, "verifiedTrees");
         TreeWorkCheckpoint work = bool(values, "hasWork") ? readWork(values, area) : null;
-        return new State(area, passRevision, trees, nextIndex, verifiedTrees, work);
+        List<TreeWorkCheckpoint> pending = new ArrayList<>();
+        int pendingCount = values.containsKey("pendingCount") ? integer(values, "pendingCount") : 0;
+        if (pendingCount < 0 || pendingCount > 4096) throw new IllegalArgumentException("invalid pending tree count");
+        for (int i = 0; i < pendingCount; i++) {
+            Map<String, String> workValues = new LinkedHashMap<>();
+            String prefix = "pending." + i + ".";
+            for (Map.Entry<String, String> entry : values.entrySet()) if (entry.getKey()
+                .startsWith(prefix))
+                workValues.put(
+                    entry.getKey()
+                        .substring(prefix.length()),
+                    entry.getValue());
+            pending.add(readWork(workValues, area));
+        }
+        return new State(
+            area,
+            passRevision,
+            trees,
+            nextIndex,
+            verifiedTrees,
+            work,
+            values.containsKey("plantingPhase") && bool(values, "plantingPhase"),
+            pending);
     }
 
     private static void writeArea(Map<String, String> values, NamedArea area) {
@@ -248,9 +278,16 @@ final class TreeTaskCheckpointCodec {
         final int nextIndex;
         final int verifiedTrees;
         final TreeWorkCheckpoint work;
+        final boolean planting;
+        final List<TreeWorkCheckpoint> pending;
 
         State(NamedArea area, long passRevision, List<TreeObservation> trees, int nextIndex, int verifiedTrees,
             TreeWorkCheckpoint work) {
+            this(area, passRevision, trees, nextIndex, verifiedTrees, work, false, Collections.emptyList());
+        }
+
+        State(NamedArea area, long passRevision, List<TreeObservation> trees, int nextIndex, int verifiedTrees,
+            TreeWorkCheckpoint work, boolean planting, List<TreeWorkCheckpoint> pending) {
             if (area == null || passRevision < 1L
                 || trees == null
                 || trees.contains(null)
@@ -258,31 +295,78 @@ final class TreeTaskCheckpointCodec {
                 || nextIndex < 0
                 || nextIndex > trees.size()
                 || verifiedTrees < 0
-                || verifiedTrees > nextIndex
+                || verifiedTrees > 4096
+                || pending == null
+                || pending.contains(null)
+                || pending.size() > 4096
                 || (work != null && (nextIndex >= trees.size() || !work.getTreeId()
                     .equals(
                         trees.get(nextIndex)
                             .getTreeId())))) {
                 throw new IllegalArgumentException("invalid tree pass state");
             }
+            java.util.Set<String> pendingIds = new java.util.HashSet<>();
+            for (TreeWorkCheckpoint item : pending) {
+                if (item.getStage() != TreeWorkStage.READY_TO_REPLANT || !area.equals(item.getTreeFarm())
+                    || !pendingIds.add(item.getTreeId()))
+                    throw new IllegalArgumentException("invalid deferred planting frontier");
+            }
+            if (planting && pending.size() != trees.size())
+                throw new IllegalArgumentException("planting queue does not match the frozen sites");
             this.area = area;
             this.passRevision = passRevision;
             this.trees = Collections.unmodifiableList(new ArrayList<>(trees));
             this.nextIndex = nextIndex;
             this.verifiedTrees = verifiedTrees;
             this.work = work;
+            this.planting = planting;
+            this.pending = Collections.unmodifiableList(new ArrayList<>(pending));
         }
 
         boolean isComplete() {
-            return nextIndex == trees.size();
+            return nextIndex == trees.size() && (planting || trees.isEmpty());
         }
 
         State withWork(TreeWorkCheckpoint nextWork) {
-            return new State(area, passRevision, trees, nextIndex, verifiedTrees, nextWork);
+            return new State(area, passRevision, trees, nextIndex, verifiedTrees, nextWork, planting, pending);
         }
 
         State advance(boolean verified) {
-            return new State(area, passRevision, trees, nextIndex + 1, verifiedTrees + (verified ? 1 : 0), null);
+            return new State(
+                area,
+                passRevision,
+                trees,
+                nextIndex + 1,
+                verifiedTrees + (verified ? 1 : 0),
+                null,
+                planting,
+                pending);
+        }
+
+        State defer(TreeWorkCheckpoint cleared) {
+            List<TreeWorkCheckpoint> next = new ArrayList<>(pending);
+            next.add(cleared);
+            return new State(area, passRevision, trees, nextIndex + 1, verifiedTrees, null, false, next);
+        }
+
+        boolean collecting() {
+            return !planting && nextIndex == trees.size() && !trees.isEmpty();
+        }
+
+        State beginPlanting() {
+            List<TreeObservation> sites = new ArrayList<>();
+            for (TreeWorkCheckpoint item : pending) sites.add(
+                new TreeObservation(
+                    item.getTreeId(),
+                    item.getExpectedObservationRevision(),
+                    item.getExpectedObservationFingerprint(),
+                    item.getRequiredSaplingFingerprint(),
+                    Collections.emptyList(),
+                    item.getReplantPosition(),
+                    TreeObservationState.FELLED_CLEAR,
+                    false,
+                    false));
+            return new State(area, passRevision, sites, 0, verifiedTrees, null, true, pending);
         }
     }
 }

@@ -28,7 +28,7 @@ import io.github.kaseyawolf2.horizonwright.runtime.task.TreeBackend.ActionReques
 import io.github.kaseyawolf2.horizonwright.runtime.task.TreeBackend.ActionState;
 import io.github.kaseyawolf2.horizonwright.runtime.task.TreeTaskCheckpointCodec.State;
 
-/** Restart-safe one-tree-at-a-time runner with separately durable fell and replant frontiers. */
+/** Restart-safe pass: all bounded felling, live drop collection, then deferred planting. */
 final class TreeTaskRunner implements TaskRunner {
 
     private final TaskSpec spec;
@@ -42,6 +42,7 @@ final class TreeTaskRunner implements TaskRunner {
     private TreeObservation activeBefore;
     private SaplingReserveEvidence activeReserve;
     private TreeDecision activeDecision;
+    private TreeBackend.CollectionHandle collection;
 
     TreeTaskRunner(TaskSpec spec, TaskCheckpoint checkpoint, FarmRuntimeAccess runtime) {
         if (checkpoint == null || runtime == null)
@@ -91,6 +92,7 @@ final class TreeTaskRunner implements TaskRunner {
         if (activeHandle != null && activeBackend != backend)
             return failure(context, "Tree backend changed during an action", true);
         if (pass == null) return freeze(context, backend);
+        if (pass.collecting()) return collect(context, backend);
         if (activeHandle != null) return observeAction(context, backend);
         return plan(context, backend);
     }
@@ -130,9 +132,15 @@ final class TreeTaskRunner implements TaskRunner {
         TreeObservation frozen = pass.trees.get(pass.nextIndex);
         TreeWorkCheckpoint work = pass.work;
         if (work == null) {
-            work = TreeWorkCheckpoint.start(pass.area, pass.passRevision, frozen);
+            work = pass.planting ? pass.pending.get(pass.nextIndex)
+                : TreeWorkCheckpoint.start(pass.area, pass.passRevision, frozen);
             pass = pass.withWork(work);
             checkpoint = TreeTaskCheckpointCodec.encode(spec, pass, nextRevision());
+        }
+        if (!pass.planting
+            && work.getStage() == io.github.kaseyawolf2.horizonwright.core.base.TreeWorkStage.READY_TO_REPLANT) {
+            pass = pass.defer(work);
+            return persist(context, "Deferred planting until all trees are felled and drops collected");
         }
         TreeBackend.TargetRequest request = new TreeBackend.TargetRequest(
             spec.getId(),
@@ -235,7 +243,7 @@ final class TreeTaskRunner implements TaskRunner {
                     .orElseThrow(() -> new IllegalStateException("confirmed tree action omitted its observation"));
                 TreeWorkCheckpoint advanced = pass.work.advance(activeDecision, activeBefore, after, activeReserve);
                 boolean completedTree = advanced.isComplete();
-                pass = completedTree ? pass.advance(true) : pass.withWork(advanced);
+                pass = completedTree ? pass.advance(true) : pass.defer(advanced);
                 releaseActive();
                 return persist(context, progress.getDetail());
             }
@@ -253,6 +261,31 @@ final class TreeTaskRunner implements TaskRunner {
                 checkpoint,
                 "Tree pass completed with " + pass.verifiedTrees + " verified fell-and-replant cycle(s)")
             : StepResult.progress(context.getActionEpoch(), checkpoint, detail);
+    }
+
+    private StepResult collect(TaskStepContext context, TreeBackend backend) {
+        try {
+            if (collection == null) {
+                Optional<ActionLease> acquired = context.getActions()
+                    .tryAcquire(EnumSet.of(ActionCapability.MOVEMENT, ActionCapability.LOOK));
+                if (!acquired.isPresent()) return StepResult
+                    .waitFor(context.getActionEpoch(), checkpoint, 0L, "Waiting for tree drop collection authority");
+                activeLease = acquired.get();
+                activeBackend = backend;
+                collection = backend.collectDrops(spec.getId(), pass.area, activeLease);
+            }
+            if (activeBackend != backend || activeLease == null || !activeLease.isValid())
+                return failure(context, "Tree collection authority changed", true);
+            if (!collection.poll())
+                return StepResult.waitFor(context.getActionEpoch(), checkpoint, 0L, collection.detail());
+            collection.cancel();
+            collection = null;
+            releaseActive();
+            pass = pass.beginPlanting();
+            return persist(context, "Tree drops collected; beginning deferred sapling planting");
+        } catch (RuntimeException failure) {
+            return failure(context, "Tree drop collection failed: " + describe(failure), true);
+        }
     }
 
     private StepResult suspend(TaskStepContext context) {
@@ -275,6 +308,10 @@ final class TreeTaskRunner implements TaskRunner {
     }
 
     private void cancelActive() {
+        if (collection != null) {
+            collection.cancel();
+            collection = null;
+        }
         ActionHandle handle = activeHandle;
         ActionLease lease = activeLease;
         clearActive();

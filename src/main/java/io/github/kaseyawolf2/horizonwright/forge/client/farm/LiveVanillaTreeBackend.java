@@ -109,6 +109,13 @@ public final class LiveVanillaTreeBackend implements TreeBackend {
     }
 
     @Override
+    public CollectionHandle collectDrops(String taskId, NamedArea area, ActionLease lease) {
+        requireClient(area);
+        if (active != null && !active.isTerminal()) throw new IllegalStateException("Tree action is still active");
+        return new TreeDropCollector(minecraft, guard, navigationSource.getNavigationBackend(), taskId, area, lease);
+    }
+
+    @Override
     public TargetSnapshot observe(TargetRequest request) {
         requireClient(request);
         TreeObservation tree = observer.observe(request.getWork());

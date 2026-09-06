@@ -23,6 +23,19 @@ public interface TreeBackend {
 
     ActionHandle execute(ActionRequest request, ActionLease lease);
 
+    default CollectionHandle collectDrops(String taskId, NamedArea area, ActionLease lease) {
+        throw new UnsupportedOperationException("Tree drop collection is not supported by this backend");
+    }
+
+    interface CollectionHandle {
+
+        boolean poll();
+
+        String detail();
+
+        void cancel();
+    }
+
     final class ScanRequest {
 
         private final String taskId;
