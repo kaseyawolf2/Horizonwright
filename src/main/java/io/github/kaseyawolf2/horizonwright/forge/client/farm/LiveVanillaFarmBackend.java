@@ -396,6 +396,8 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
         private boolean slotChanged;
         private boolean cropTravelSafetyHeld;
         private int collectionSettleTicks;
+        private int[][] fruitLogApproaches;
+        private int fruitLogApproachIndex;
         private Vec3 interactionPoint;
         private int interactionSide = 1;
         private volatile boolean cancellationRequested;
@@ -532,6 +534,7 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
                 phase = Phase.WAITING_FOR_ACTION_SESSION;
                 detail = "Approach complete; waiting for packet drain";
             } else if (progress.getState() == NavigationState.FAILED) {
+                if (tryFruitLogReposition()) return;
                 fail("Could not approach farm target: " + progress.getDetail());
             } else if (progress.getState() == NavigationState.CANCELLED) {
                 state = ActionState.CANCELLED;
@@ -570,6 +573,7 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
                 "plannedFingerprint",
                 request.getDecision()
                     .getObservationFingerprint());
+            if (sameCrop && mature && !reachable && tryFruitLogReposition()) return;
             if (!sameCrop || !mature || !reachable) {
                 fail("Farm target changed or lost reach after approach");
                 return;
@@ -1113,6 +1117,49 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
                 centerHit == null ? "none"
                     : centerHit.typeOfHit + ":" + centerHit.blockX + "," + centerHit.blockY + "," + centerHit.blockZ);
             return false;
+        }
+
+        private boolean tryFruitLogReposition() {
+            if (plannedBefore.getFamily() != CropFamily.PAM_FRUITING_LOG || minecraft.thePlayer == null
+                || deadline.approachExpired(System.nanoTime())) return false;
+            BasePosition target = request.getDecision()
+                .getTarget();
+            if (fruitLogApproaches == null) {
+                fruitLogApproaches = FarmReachability.fruitLogApproachPoints(
+                    target.getX(),
+                    FarmReachability.collectionFeetY(minecraft.thePlayer.boundingBox.minY),
+                    target.getZ(),
+                    minecraft.thePlayer.posX,
+                    minecraft.thePlayer.posZ);
+            }
+            if (fruitLogApproachIndex >= fruitLogApproaches.length) return false;
+            int[] point = fruitLogApproaches[fruitLogApproachIndex++];
+            navigationHandle = navigation.submit(
+                new NavigationRequest(
+                    request.getRequestId() + "-log-view-" + fruitLogApproachIndex,
+                    request.getActionEpoch(),
+                    target.getDimensionId(),
+                    point[0],
+                    point[1],
+                    point[2],
+                    0,
+                    System.nanoTime(),
+                    APPROACH_TIMEOUT_NANOS),
+                lease);
+            phase = Phase.APPROACHING;
+            state = ActionState.EXECUTING;
+            detail = "Repositioning for an exposed fruiting-log face (" + fruitLogApproachIndex + "/4)";
+            trace(
+                "fruit-log-reposition",
+                "attempt",
+                fruitLogApproachIndex,
+                "goalX",
+                point[0],
+                "goalY",
+                point[1],
+                "goalZ",
+                point[2]);
+            return true;
         }
 
         private boolean isExactTargetHit(MovingObjectPosition hit, BasePosition target) {

@@ -8,6 +8,16 @@ final class FarmReachability {
 
     private FarmReachability() {}
 
+    /** Stand back from a stacked trunk rather than hugging its collision box. */
+    static int[][] fruitLogApproachPoints(int x, int feetY, int z, double playerX, double playerZ) {
+        int[][] points = { { x - 2, feetY, z }, { x + 2, feetY, z }, { x, feetY, z - 2 }, { x, feetY, z + 2 } };
+        java.util.Arrays.sort(
+            points,
+            java.util.Comparator.comparingDouble(
+                point -> Math.pow(point[0] + 0.5D - playerX, 2) + Math.pow(point[2] + 0.5D - playerZ, 2)));
+        return points;
+    }
+
     static boolean canInteract(double distanceSquared, double reachSquared, boolean rayHitPresent,
         boolean rayHitTarget) {
         if (distanceSquared < 0.0D || reachSquared < 0.0D || distanceSquared > reachSquared) return false;

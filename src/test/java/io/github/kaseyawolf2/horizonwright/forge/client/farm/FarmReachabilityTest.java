@@ -10,6 +10,17 @@ import org.junit.Test;
 public class FarmReachabilityTest {
 
     @Test
+    public void stackedLogRecoveryStepsBackOnFootLayerNearestSideFirst() {
+        int[][] points = FarmReachability.fruitLogApproachPoints(191, 65, -93, 191.5039D, -93.4603D);
+        assertEquals(4, points.length);
+        assertArrayEquals(new int[] { 191, 65, -95 }, points[0]);
+        for (int[] point : points) {
+            assertEquals(65, point[1]);
+            assertEquals(2, Math.abs(point[0] - 191) + Math.abs(point[2] + 93));
+        }
+    }
+
+    @Test
     public void clearNullPlantRayIsReachableAtNormalDistance() {
         assertTrue(FarmReachability.canInteract(2.84D, 25.0D, false, false));
     }
