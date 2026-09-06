@@ -57,6 +57,18 @@ public final class ExcavationTaskSubmission {
         if (profile == null) throw new IllegalArgumentException("active profile is required for named services");
         NamedLoadout loadout = loadout(profile, loadoutId);
         storage(profile, storageId);
+        if ("automatic-inventory".equals(loadoutId)) {
+            NamedRepairStation automaticStation = null;
+            for (NamedRepairStation candidate : profile.getNamedRepairStations()) if (candidate.getId()
+                .equals(repairStationId)) automaticStation = candidate;
+            if (automaticStation == null) return ExcavationServicePolicy.unloadOnly(loadout.getId(), storageId);
+            return ExcavationServicePolicy.unloadAndRepair(
+                loadout.getId(),
+                storageId,
+                automaticStation.getId(),
+                reservedToolSlot,
+                predictedWorkDamage);
+        }
         NamedRepairStation station = station(profile, repairStationId);
         if (!station.getLoadoutId()
             .equals(loadout.getId())) {

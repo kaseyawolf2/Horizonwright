@@ -233,6 +233,11 @@ final class HusbandryTaskRunner implements TaskRunner {
                     checkpoint,
                     progress.getDetail() + "; reobserving complete pen");
             }
+            if (activeKind == HusbandryActionKind.FEED_ADULT
+                && progress.getState() == HusbandryBackend.ActionState.FAILED) {
+                cancelActive();
+                return blocked(context, progress.getDetail(), "usable breeding feed and an eligible reachable adult");
+            }
             return failure(context, progress.getDetail(), progress.getState() == HusbandryBackend.ActionState.FAILED);
         } catch (RuntimeException failure) {
             return failure(context, "Husbandry confirmation failed: " + describe(failure), false);

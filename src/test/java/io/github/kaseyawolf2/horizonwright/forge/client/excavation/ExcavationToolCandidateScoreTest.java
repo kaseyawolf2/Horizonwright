@@ -47,6 +47,18 @@ public class ExcavationToolCandidateScoreTest {
             score(0, true, true, 0.10F, true, 0.8D, false).isBetterThan(score(1, true, true, 0.10F, true, 0.8D, true)));
     }
 
+    @Test
+    public void inventoryToolCanBeatAHotbarTool() {
+        assertTrue(
+            score(35, true, true, 0.2F, true, 1D, false).isBetterThan(score(0, true, true, 0.1F, true, 1D, true)));
+    }
+
+    @Test
+    public void outsideInventorySlotsAreRejected() {
+        org.junit.Assert
+            .assertThrows(IllegalArgumentException.class, () -> score(36, true, true, 0.2F, true, 1D, false));
+    }
+
     private static ExcavationToolCandidateScore score(int slot, boolean usable, boolean canHarvest, float progress,
         boolean effective, double remaining, boolean preferred) {
         return new ExcavationToolCandidateScore(slot, usable, canHarvest, progress, effective, remaining, preferred);

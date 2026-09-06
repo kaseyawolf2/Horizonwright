@@ -256,6 +256,7 @@ public final class LiveVanillaHusbandryBackend implements HusbandryBackend {
         private int sourceSlot = -1;
         private int hotbarSlot = -1;
         private boolean interactionDispatched;
+        private boolean feedItemDispatched;
         private EntityAnimal cullTarget;
         private long nextAttackNanos;
         private long cullDeadlineNanos;
@@ -336,7 +337,8 @@ public final class LiveVanillaHusbandryBackend implements HusbandryBackend {
             else if (phase == Phase.WAITING_FOR_SESSION) {
                 if (action.getKind() == HusbandryActionKind.CULL_EXCESS_ADULT) cullWhenReady();
                 else feedWhenReady();
-            } else if (phase == Phase.WAITING_FOR_DISPATCH) awaitDispatch();
+            } else if (phase == Phase.WAITING_FOR_FEED_ITEM) feedWithSelectedItem();
+            else if (phase == Phase.WAITING_FOR_DISPATCH) awaitDispatch();
             else if (phase == Phase.CONFIRMING) confirm();
             return snapshot();
         }
@@ -428,6 +430,44 @@ public final class LiveVanillaHusbandryBackend implements HusbandryBackend {
             }
             minecraft.thePlayer.inventory.currentItem = hotbarSlot;
             minecraft.playerController.updateController();
+            feedItemDispatched = false;
+            phase = Phase.WAITING_FOR_FEED_ITEM;
+            detail = "Staging inventory feed and waiting for held-slot dispatch";
+            trace("feed-item-staged");
+            ActionPacketDispatch.afterPendingWrites(minecraft, () -> {
+                synchronized (LiveHandle.this) {
+                    feedItemDispatched = true;
+                }
+            });
+        }
+
+        private void feedWithSelectedItem() {
+            if (!feedItemDispatched) return;
+            if (!guard.isActiveLease(lease)) {
+                fail("Feeding lost inventory authority");
+                return;
+            }
+            EntityAnimal animal = exactAnimal();
+            VanillaLivestockClassifier.Descriptor descriptor = observer.descriptor(animal);
+            if (!eligibleFeedTarget(request.getPlan(), animal, descriptor) || !canReachAnimal()) {
+                fail("Exact adult changed or moved before staged feeding");
+                return;
+            }
+            if (!observer.isBreedingFeed(descriptor, minecraft.thePlayer.inventory.getCurrentItem())) {
+                // A consumed stack or an intervening slot change is not an entity-interaction failure.
+                // Return any temporary swap, then rescan all inventory slots through the normal preflight.
+                int available = observer.findBreedingItemSlot(descriptor, 0, 36);
+                stopSession();
+                if (available < 0) {
+                    fail("No usable " + descriptor.getBreedingItemId() + " remains in the 36 inventory slots");
+                    return;
+                }
+                phase = Phase.WAITING_FOR_SESSION;
+                detail = "Feed selection changed; rescanning inventory before feeding";
+                trace("feed-item-rescan");
+                return;
+            }
+            trace("feed-item-verified");
             aimAt(animal.posX, animal.posY + animal.height * 0.5D, animal.posZ);
             boolean accepted = minecraft.playerController.interactWithEntitySendPacket(minecraft.thePlayer, animal);
             minecraft.thePlayer.swingItem();
@@ -783,6 +823,7 @@ public final class LiveVanillaHusbandryBackend implements HusbandryBackend {
     }
 
     private enum Phase {
+        WAITING_FOR_FEED_ITEM,
         APPROACHING,
         WAITING_FOR_SESSION,
         WAITING_FOR_DISPATCH,

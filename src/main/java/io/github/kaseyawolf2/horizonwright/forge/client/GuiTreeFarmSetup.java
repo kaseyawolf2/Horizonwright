@@ -15,7 +15,7 @@ import io.github.kaseyawolf2.horizonwright.runtime.persistence.session.CurrentRu
 import io.github.kaseyawolf2.horizonwright.runtime.task.TreeTask;
 
 /** Guided one-pass and recurring ordinary-tree controls for one saved area. */
-public final class GuiTreeFarmSetup extends GuiScreen {
+public final class GuiTreeFarmSetup extends GuiReadableScreen {
 
     private static final int QUEUE_BUTTON = 1;
     private static final int SCHEDULE_BUTTON = 2;
@@ -43,6 +43,7 @@ public final class GuiTreeFarmSetup extends GuiScreen {
 
     @Override
     public void initGui() {
+        super.initGui();
         Keyboard.enableRepeatEvents(true);
         buttonList.clear();
         panelWidth = Math.min(500, width - 24);
@@ -175,7 +176,7 @@ public final class GuiTreeFarmSetup extends GuiScreen {
     }
 
     @Override
-    public void drawScreen(int mouseX, int mouseY, float partialTicks) {
+    protected void drawContents(int mouseX, int mouseY, float partialTicks) {
         drawDefaultBackground();
         drawRect(left, top, left + panelWidth, top + 232, 0xEE10141B);
         drawCenteredString(fontRendererObj, "Ordinary tree farm", width / 2, top + 14, 0xFFF0C674);
@@ -185,27 +186,29 @@ public final class GuiTreeFarmSetup extends GuiScreen {
             width / 2,
             top + 31,
             0xFF8FAAD0);
-        fontRendererObj.drawSplitString(
+        drawParagraph(
             status,
             left + 18,
             top + 52,
             panelWidth - 36,
+            30,
             status.startsWith("Nothing") ? 0xFFFF7777 : 0xFFB8C8DE);
         drawString(fontRendererObj, "Keep saplings", left + 18, top + 97, 0xFFE0E0E0);
         drawString(fontRendererObj, "Every minutes", left + 270, top + 97, 0xFFE0E0E0);
-        fontRendererObj.drawSplitString(
+        drawParagraph(
             "The area must include every log from ground to canopy. Trees crossing its boundary and dark-oak 2x2 trees are skipped.",
             left + 18,
             top + 166,
             panelWidth - 36,
+            30,
             0xFF98A8BD);
         reserve.drawTextBox();
         interval.drawTextBox();
-        super.drawScreen(mouseX, mouseY, partialTicks);
+        super.drawContents(mouseX, mouseY, partialTicks);
     }
 
     private GuiTextField field(int x, int y, int width, String value) {
-        GuiTextField field = new GuiTextField(fontRendererObj, x, y, width, 18);
+        GuiTextField field = readableField(fontRendererObj, x, y, width, 18);
         field.setMaxStringLength(12);
         field.setText(value);
         return field;

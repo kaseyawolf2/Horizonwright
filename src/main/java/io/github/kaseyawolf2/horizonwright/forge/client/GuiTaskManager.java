@@ -13,7 +13,7 @@ import io.github.kaseyawolf2.horizonwright.core.task.TaskState;
 import io.github.kaseyawolf2.horizonwright.runtime.persistence.session.CurrentRuntimeProvider;
 
 /** Operator-facing task history and safe deletion screen. */
-public final class GuiTaskManager extends GuiScreen {
+public final class GuiTaskManager extends GuiReadableScreen {
 
     private static final int BACK_BUTTON = 1;
     private static final int DELETE_BUTTON = 2;
@@ -24,6 +24,7 @@ public final class GuiTaskManager extends GuiScreen {
     private static final int TASKS_PER_PAGE = 5;
 
     private final GuiScreen parent;
+    private final io.github.kaseyawolf2.horizonwright.runtime.persistence.profile.ProfileAssetEditorProvider editorProvider;
     private final CurrentRuntimeProvider runtimeProvider;
     private final List<GuiButton> taskButtons = new ArrayList<>();
     private List<String> visibleTaskIds = Collections.emptyList();
@@ -42,6 +43,12 @@ public final class GuiTaskManager extends GuiScreen {
     private String message = "Select a task to inspect it.";
 
     public GuiTaskManager(GuiScreen parent, CurrentRuntimeProvider runtimeProvider) {
+        this(parent, runtimeProvider, () -> java.util.Optional.empty());
+    }
+
+    public GuiTaskManager(GuiScreen parent, CurrentRuntimeProvider runtimeProvider,
+        io.github.kaseyawolf2.horizonwright.runtime.persistence.profile.ProfileAssetEditorProvider editorProvider) {
+        this.editorProvider = editorProvider;
         if (parent == null || runtimeProvider == null) {
             throw new IllegalArgumentException("parent and runtimeProvider must not be null");
         }
@@ -51,6 +58,7 @@ public final class GuiTaskManager extends GuiScreen {
 
     @Override
     public void initGui() {
+        super.initGui();
         buttonList.clear();
         panelWidth = Math.min(470, width - 24);
         panelHeight = Math.min(340, height - 16);
@@ -95,6 +103,10 @@ public final class GuiTaskManager extends GuiScreen {
 
     @Override
     protected void actionPerformed(GuiButton button) {
+        if (button.id == 21) {
+            mc.displayGuiScreen(new GuiScheduleManager(parent, runtimeProvider, editorProvider));
+            return;
+        }
         if (button.id == BACK_BUTTON) {
             mc.displayGuiScreen(parent);
             return;
@@ -147,10 +159,9 @@ public final class GuiTaskManager extends GuiScreen {
     }
 
     @Override
-    public void drawScreen(int mouseX, int mouseY, float partialTicks) {
+    protected void drawContents(int mouseX, int mouseY, float partialTicks) {
         drawDefaultBackground();
         drawRect(left, top, left + panelWidth, top + panelHeight, 0xEE10141B);
-        drawCenteredString(fontRendererObj, "Horizonwright tasks", width / 2, top + 14, 0xFFF0C674);
 
         CurrentRuntimeUiResolver.Resolution resolution = CurrentRuntimeUiResolver.resolve(runtimeProvider);
         List<TaskSnapshot> tasks = resolution.isAvailable() ? resolution.getRuntime()
@@ -165,7 +176,7 @@ public final class GuiTaskManager extends GuiScreen {
 
         drawString(fontRendererObj, "Task details", left + 16, top + 194, 0xFFAAAAAA);
         String details = selected == null ? message : taskDetails(selected);
-        fontRendererObj.drawSplitString(details, left + 16, top + 208, panelWidth - 32, 0xFFE0E0E0);
+        drawParagraph(details, left + 16, top + 208, panelWidth - 32, panelHeight - 256, 0xFFE0E0E0);
         drawString(
             fontRendererObj,
             message,
@@ -181,7 +192,7 @@ public final class GuiTaskManager extends GuiScreen {
         clearCompletedButton.enabled = completedCount > 0;
         clearCompletedButton.displayString = confirmClearCompleted ? "Confirm clear (" + completedCount + ")"
             : "Clear completed";
-        super.drawScreen(mouseX, mouseY, partialTicks);
+        super.drawContents(mouseX, mouseY, partialTicks);
     }
 
     private void clearCompletedTasks() {
@@ -310,8 +321,8 @@ public final class GuiTaskManager extends GuiScreen {
         confirmClearCompleted = false;
     }
 
-    private static String truncate(String value, int maximumLength) {
-        return value.length() <= maximumLength ? value : value.substring(0, maximumLength - 3) + "...";
+    private static String truncate(String value, int maximum) {
+        return value;
     }
 
     private static String safeMessage(RuntimeException failure) {

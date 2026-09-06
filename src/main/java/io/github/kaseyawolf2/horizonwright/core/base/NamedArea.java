@@ -9,8 +9,18 @@ public final class NamedArea {
     private final String displayName;
     private final BasePosition minimum;
     private final BasePosition maximum;
+    private final AreaKind kind;
+    private final String storageId;
 
     public NamedArea(String id, String displayName, BasePosition first, BasePosition second) {
+        this(id, displayName, first, second, AreaKind.UNASSIGNED, null);
+    }
+
+    public NamedArea(String id, String displayName, BasePosition first, BasePosition second, AreaKind kind,
+        String storageId) {
+        this.kind = kind == null ? AreaKind.UNASSIGNED : kind;
+        this.storageId = storageId == null || storageId.trim()
+            .isEmpty() ? null : storageId.trim();
         if (id == null || id.trim()
             .isEmpty()
             || displayName == null
@@ -51,6 +61,22 @@ public final class NamedArea {
         return maximum;
     }
 
+    public AreaKind getKind() {
+        return kind == null ? AreaKind.UNASSIGNED : kind;
+    }
+
+    public String getStorageId() {
+        return storageId;
+    }
+
+    public String resolvedStorageId() {
+        return storageId == null ? "default-chest" : storageId;
+    }
+
+    public NamedArea withSettings(AreaKind selectedKind, String chest) {
+        return new NamedArea(id, displayName, minimum, maximum, selectedKind, chest);
+    }
+
     public boolean contains(BasePosition position) {
         return position != null && position.getDimensionId() == minimum.getDimensionId()
             && position.getX() >= minimum.getX()
@@ -72,12 +98,14 @@ public final class NamedArea {
         NamedArea that = (NamedArea) other;
         return id.equals(that.id) && displayName.equals(that.displayName)
             && minimum.equals(that.minimum)
-            && maximum.equals(that.maximum);
+            && maximum.equals(that.maximum)
+            && getKind() == that.getKind()
+            && Objects.equals(storageId, that.storageId);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(id, displayName, minimum, maximum);
+        return Objects.hash(id, displayName, minimum, maximum, getKind(), storageId);
     }
 
     @Override

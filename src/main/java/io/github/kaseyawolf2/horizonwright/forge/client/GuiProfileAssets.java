@@ -31,7 +31,7 @@ import io.github.kaseyawolf2.horizonwright.runtime.persistence.session.CurrentRu
 import io.github.kaseyawolf2.horizonwright.runtime.task.SleepTask;
 
 /** Guided named-asset editor which captures inventory and world evidence instead of requiring JSON. */
-public final class GuiProfileAssets extends GuiScreen {
+public final class GuiProfileAssets extends GuiReadableScreen {
 
     private static final int BACK_BUTTON = 1;
     private static final int SAVE_LOADOUT_BUTTON = 2;
@@ -73,6 +73,7 @@ public final class GuiProfileAssets extends GuiScreen {
 
     @Override
     public void initGui() {
+        super.initGui();
         Keyboard.enableRepeatEvents(true);
         buttonList.clear();
         panelWidth = Math.min(500, width - 24);
@@ -286,7 +287,7 @@ public final class GuiProfileAssets extends GuiScreen {
     }
 
     @Override
-    public void drawScreen(int mouseX, int mouseY, float partialTicks) {
+    protected void drawContents(int mouseX, int mouseY, float partialTicks) {
         drawDefaultBackground();
         drawRect(left, top, left + panelWidth, top + 342, 0xE010141B);
         drawCenteredString(fontRendererObj, "Horizonwright profile assets", width / 2, top + 14, 0xFFF0C674);
@@ -329,7 +330,7 @@ public final class GuiProfileAssets extends GuiScreen {
             top + 288,
             status.startsWith("Nothing") ? 0xFFFF7777 : 0xFFB8C8DE);
         for (GuiTextField field : fields()) field.drawTextBox();
-        super.drawScreen(mouseX, mouseY, partialTicks);
+        super.drawContents(mouseX, mouseY, partialTicks);
     }
 
     @Override
@@ -361,7 +362,7 @@ public final class GuiProfileAssets extends GuiScreen {
     }
 
     private GuiTextField field(int x, int y, int width, String value) {
-        GuiTextField field = new GuiTextField(fontRendererObj, x, y, width, 18);
+        GuiTextField field = readableField(fontRendererObj, x, y, width, 18);
         field.setMaxStringLength(48);
         field.setText(value);
         return field;
@@ -423,8 +424,8 @@ public final class GuiProfileAssets extends GuiScreen {
             .getSimpleName() : failure.getMessage();
     }
 
-    private static String truncate(String value, int maximumLength) {
-        return value.length() <= maximumLength ? value : value.substring(0, maximumLength - 3) + "...";
+    private static String truncate(String value, int maximum) {
+        return value;
     }
 
     private static final class Target {

@@ -59,7 +59,8 @@ final class ExcavationTaskRunner implements TaskRunner {
             ActionCapability.LOOK,
             ActionCapability.DIG,
             ActionCapability.PLACE,
-            ActionCapability.HELD_USE));
+            ActionCapability.HELD_USE,
+            ActionCapability.CONTAINER));
     private static final Set<ActionCapability> MANAGED_REQUIRED_CAPABILITIES = Collections.unmodifiableSet(
         EnumSet.of(
             ActionCapability.MOVEMENT,

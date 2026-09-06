@@ -85,10 +85,31 @@ public final class MinecraftHusbandryObserver {
         for (int slot = startInclusive; slot < endExclusive; slot++) {
             ItemStack stack = minecraft.thePlayer.inventory.mainInventory[slot];
             Object registryName = stack == null ? null : Item.itemRegistry.getNameForObject(stack.getItem());
-            if (registryName != null && descriptor.getBreedingItemId()
-                .equals(registryName.toString())) return slot;
+            boolean matches = descriptor.acceptsFeed(
+                registryName == null ? null : registryName.toString(),
+                stack == null ? 0 : stack.stackSize);
+            DevelopmentTrace.event(
+                "husbandry-inventory",
+                "feed-scan",
+                "slot",
+                slot,
+                "required",
+                descriptor.getBreedingItemId(),
+                "item",
+                registryName,
+                "count",
+                stack == null ? 0 : stack.stackSize,
+                "matches",
+                matches);
+            if (matches) return slot;
         }
         return -1;
+    }
+
+    public boolean isBreedingFeed(VanillaLivestockClassifier.Descriptor descriptor, ItemStack stack) {
+        if (descriptor == null || stack == null) return false;
+        Object name = Item.itemRegistry.getNameForObject(stack.getItem());
+        return descriptor.acceptsFeed(name == null ? null : name.toString(), stack.stackSize);
     }
 
     public boolean matchesDrop(EntityItem drop, HusbandryDropObservation expected) {

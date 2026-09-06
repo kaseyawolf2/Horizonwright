@@ -24,7 +24,7 @@ import io.github.kaseyawolf2.horizonwright.runtime.task.SleepTask;
 import io.github.kaseyawolf2.horizonwright.runtime.task.TreeTask;
 
 /** Operator-facing recurring-job list and type-safe settings editor. */
-public final class GuiScheduleManager extends GuiScreen {
+public final class GuiScheduleManager extends GuiReadableScreen {
 
     private static final int BACK_BUTTON = 1;
     private static final int PREVIOUS_BUTTON = 2;
@@ -72,12 +72,17 @@ public final class GuiScheduleManager extends GuiScreen {
 
     @Override
     public void initGui() {
+        super.initGui();
         Keyboard.enableRepeatEvents(true);
         buttonList.clear();
         panelWidth = Math.min(500, width - 24);
         panelHeight = Math.min(350, height - 16);
         left = (width - panelWidth) / 2;
         top = Math.max(8, (height - panelHeight) / 2);
+        buttonList.add(new GuiHorizonwrightButton(20, left + 16, top + 12, 120, 20, "Tasks"));
+        GuiButton activeTab = new GuiHorizonwrightButton(21, left + 144, top + 12, 120, 20, "Schedules");
+        activeTab.enabled = false;
+        buttonList.add(activeTab);
 
         scheduleButtons.clear();
         for (int index = 0; index < SCHEDULES_PER_PAGE; index++) {
@@ -99,9 +104,9 @@ public final class GuiScheduleManager extends GuiScreen {
         cullButton = new GuiHorizonwrightButton(CULL_BUTTON, left + 244, top + 166, 240, 20, "");
         buttonList.add(cullButton);
 
-        targetField = field(left + 92, top + 224, 132);
-        intervalField = field(left + 314, top + 224, 54);
-        reserveField = field(left + 430, top + 224, 48);
+        targetField = field(left + 16, top + 240, 218);
+        intervalField = field(left + 250, top + 240, 96);
+        reserveField = field(left + 362, top + 240, 116);
 
         int actionY = top + panelHeight - 28;
         stateButton = new GuiHorizonwrightButton(STATE_BUTTON, left + 16, actionY, 86, 20, "Pause");
@@ -121,6 +126,10 @@ public final class GuiScheduleManager extends GuiScreen {
 
     @Override
     protected void actionPerformed(GuiButton button) {
+        if (button.id == 20) {
+            mc.displayGuiScreen(new GuiTaskManager(parent, runtimeProvider, editorProvider));
+            return;
+        }
         if (button.id == BACK_BUTTON) {
             mc.displayGuiScreen(parent);
             return;
@@ -291,12 +300,11 @@ public final class GuiScheduleManager extends GuiScreen {
     }
 
     @Override
-    public void drawScreen(int mouseX, int mouseY, float partialTicks) {
+    protected void drawContents(int mouseX, int mouseY, float partialTicks) {
         refreshSchedules();
         configureButtons();
         drawDefaultBackground();
         drawRect(left, top, left + panelWidth, top + panelHeight, 0xEE10141B);
-        drawCenteredString(fontRendererObj, "Scheduled jobs", width / 2, top + 14, 0xFFF0C674);
 
         ScheduleSnapshot selected = selectedSchedule();
         drawString(
@@ -315,19 +323,19 @@ public final class GuiScheduleManager extends GuiScreen {
             fontRendererObj,
             selected == null ? "Target" : targetLabel(selected),
             left + 16,
-            top + 230,
+            top + 226,
             0xFFE0E0E0);
-        drawString(fontRendererObj, "Minutes", left + 256, top + 230, 0xFFE0E0E0);
+        drawString(fontRendererObj, "Minutes", left + 250, top + 226, 0xFFE0E0E0);
         drawString(
             fontRendererObj,
             selected != null && isHusbandry(selected) ? "Min adults" : "Seed reserve",
-            left + 372,
-            top + 230,
+            left + 362,
+            top + 226,
             0xFFE0E0E0);
         targetField.drawTextBox();
         intervalField.drawTextBox();
         reserveField.drawTextBox();
-        super.drawScreen(mouseX, mouseY, partialTicks);
+        super.drawContents(mouseX, mouseY, partialTicks);
     }
 
     private void refreshSchedules() {
@@ -552,11 +560,11 @@ public final class GuiScheduleManager extends GuiScreen {
     }
 
     private static String truncate(String value, int maximum) {
-        return value.length() <= maximum ? value : value.substring(0, maximum - 3) + "...";
+        return value;
     }
 
     private GuiTextField field(int x, int y, int width) {
-        GuiTextField field = new GuiTextField(fontRendererObj, x, y, width, 18);
+        GuiTextField field = readableField(fontRendererObj, x, y, width, 18);
         field.setMaxStringLength(48);
         return field;
     }

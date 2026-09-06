@@ -21,7 +21,7 @@ import io.github.kaseyawolf2.horizonwright.runtime.persistence.session.CurrentRu
 import io.github.kaseyawolf2.horizonwright.runtime.task.HusbandryTask;
 
 /** Type-safe husbandry task and recurring-schedule editor for one saved pen. */
-public final class GuiHusbandrySetup extends GuiScreen {
+public final class GuiHusbandrySetup extends GuiReadableScreen {
 
     private static final int BACK_BUTTON = 1;
     private static final int CLOSE_BUTTON = 2;
@@ -59,6 +59,7 @@ public final class GuiHusbandrySetup extends GuiScreen {
 
     @Override
     public void initGui() {
+        super.initGui();
         Keyboard.enableRepeatEvents(true);
         buttonList.clear();
         panelWidth = Math.min(460, width - 24);
@@ -300,7 +301,7 @@ public final class GuiHusbandrySetup extends GuiScreen {
     }
 
     @Override
-    public void drawScreen(int mouseX, int mouseY, float partialTicks) {
+    protected void drawContents(int mouseX, int mouseY, float partialTicks) {
         drawDefaultBackground();
         drawRect(left, top, left + panelWidth, top + 292, 0xEE10141B);
         drawCenteredString(
@@ -315,14 +316,15 @@ public final class GuiHusbandrySetup extends GuiScreen {
         label("Breed then replace", top + 128);
         label("1 adult per new baby; no fixed action cap", top + 158);
         label("Every minutes", top + 188);
-        fontRendererObj.drawSplitString(
+        drawParagraph(
             status,
             left + 18,
             top + 244,
             panelWidth - 36,
+            20,
             status.startsWith("Nothing") ? 0xFFFF7777 : 0xFFB8C8DE);
         for (GuiTextField field : fields()) field.drawTextBox();
-        super.drawScreen(mouseX, mouseY, partialTicks);
+        super.drawContents(mouseX, mouseY, partialTicks);
     }
 
     private void label(String value, int y) {
@@ -335,7 +337,7 @@ public final class GuiHusbandrySetup extends GuiScreen {
     }
 
     private GuiTextField field(int x, int y, int width, String value) {
-        GuiTextField field = new GuiTextField(fontRendererObj, x, y, width, 18);
+        GuiTextField field = readableField(fontRendererObj, x, y, width, 18);
         field.setMaxStringLength(8);
         field.setText(value);
         return field;

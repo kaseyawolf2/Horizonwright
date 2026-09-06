@@ -20,12 +20,13 @@ import io.github.kaseyawolf2.horizonwright.runtime.persistence.session.CurrentRu
 import io.github.kaseyawolf2.horizonwright.runtime.task.ExcavationTaskSubmission;
 
 /** Guided clean-volume task submission centered at the player's current position. */
-public final class GuiExcavationSetup extends GuiScreen {
+public final class GuiExcavationSetup extends GuiReadableScreen {
 
     private static final int BACK_BUTTON = 1;
     private static final int SUBMIT_BUTTON = 2;
     private static final int SERVICES_BUTTON = 3;
 
+    private io.github.kaseyawolf2.horizonwright.core.base.NamedArea boundArea;
     private final GuiScreen parent;
     private final CurrentRuntimeProvider runtimeProvider;
     private final ProfileAssetEditorProvider editorProvider;
@@ -55,8 +56,15 @@ public final class GuiExcavationSetup extends GuiScreen {
         this.editorProvider = editorProvider;
     }
 
+    public GuiExcavationSetup(GuiScreen parent, CurrentRuntimeProvider runtimeProvider,
+        ProfileAssetEditorProvider editorProvider, io.github.kaseyawolf2.horizonwright.core.base.NamedArea area) {
+        this(parent, runtimeProvider, editorProvider);
+        this.boundArea = area;
+    }
+
     @Override
     public void initGui() {
+        super.initGui();
         Keyboard.enableRepeatEvents(true);
         buttonList.clear();
         panelWidth = Math.min(500, width - 24);
@@ -77,6 +85,37 @@ public final class GuiExcavationSetup extends GuiScreen {
             new GuiHorizonwrightButton(SUBMIT_BUTTON, left + 18, top + 268, panelWidth - 36, 22, "Queue excavation"));
         buttonList.add(new GuiHorizonwrightButton(BACK_BUTTON, left + panelWidth - 82, top + 296, 70, 20, "Back"));
         populateSavedNames();
+        loadoutId.setText(AutomaticInventory.ID);
+        loadoutId.setVisible(false);
+        toolSlot.setVisible(false);
+        storageId.setText(boundArea == null ? "default-chest" : boundArea.resolvedStorageId());
+        stationId.setText("default-repair");
+        if (boundArea != null) {
+            taskId.setText(boundArea.getId());
+            int span = Math.min(
+                boundArea.getMaximum()
+                    .getX()
+                    - boundArea.getMinimum()
+                        .getX(),
+                boundArea.getMaximum()
+                    .getZ()
+                    - boundArea.getMinimum()
+                        .getZ());
+            radius.setText(Integer.toString(span / 2));
+            bottomY.setText(
+                Integer.toString(
+                    boundArea.getMinimum()
+                        .getY()));
+            topY.setText(
+                Integer.toString(
+                    boundArea.getMaximum()
+                        .getY()));
+            radius.setEnabled(false);
+            bottomY.setEnabled(false);
+            topY.setEnabled(false);
+            storageId.setEnabled(false);
+            status = "Cylinder is fitted inside this saved area's bounds; edit bounds from the area page.";
+        }
     }
 
     @Override
@@ -102,9 +141,26 @@ public final class GuiExcavationSetup extends GuiScreen {
             if (mc.thePlayer == null || mc.theWorld == null || mc.theWorld.provider == null) {
                 throw new IllegalStateException("join the bound world first");
             }
-            int centerX = MathHelper.floor_double(mc.thePlayer.posX);
-            int centerZ = MathHelper.floor_double(mc.thePlayer.posZ);
+            int centerX = boundArea == null ? MathHelper.floor_double(mc.thePlayer.posX)
+                : boundArea.getMinimum()
+                    .getX()
+                    + (boundArea.getMaximum()
+                        .getX()
+                        - boundArea.getMinimum()
+                            .getX())
+                        / 2;
+            int centerZ = boundArea == null ? MathHelper.floor_double(mc.thePlayer.posZ)
+                : boundArea.getMinimum()
+                    .getZ()
+                    + (boundArea.getMaximum()
+                        .getZ()
+                        - boundArea.getMinimum()
+                            .getZ())
+                        / 2;
             String id = ProfileAssetInput.stableId(taskId.getText(), "task name");
+            if (boundArea != null && boundArea.getMinimum()
+                .getDimensionId() != mc.theWorld.provider.dimensionId)
+                throw new IllegalArgumentException("Travel to the area's dimension first.");
             int parsedRadius = ProfileAssetInput.nonNegativeInteger(radius.getText(), "radius");
             int parsedBottom = integer(bottomY.getText(), "bottom Y");
             int parsedTop = integer(topY.getText(), "top Y");
@@ -121,6 +177,9 @@ public final class GuiExcavationSetup extends GuiScreen {
             } else {
                 ProfileAssetEditor editor = editorProvider.getCurrentProfileAssetEditor()
                     .orElseThrow(() -> new IllegalStateException("active profile assets are unavailable"));
+                editor.apply(
+                    io.github.kaseyawolf2.horizonwright.runtime.persistence.profile.ProfileAssetUpdate
+                        .of(null, AutomaticInventory.inspect(mc, editor.load()), null, null));
                 spec = ExcavationTaskSubmission.withServices(
                     editor.load(),
                     id,
@@ -165,7 +224,7 @@ public final class GuiExcavationSetup extends GuiScreen {
     }
 
     @Override
-    public void drawScreen(int mouseX, int mouseY, float partialTicks) {
+    protected void drawContents(int mouseX, int mouseY, float partialTicks) {
         drawDefaultBackground();
         drawRect(left, top, left + panelWidth, top + 322, 0xE010141B);
         drawCenteredString(fontRendererObj, "New clean-volume excavation", width / 2, top + 14, 0xFFF0C674);
@@ -180,10 +239,10 @@ public final class GuiExcavationSetup extends GuiScreen {
         label("Bottom Y", left + 18, top + 82);
         label("Top Y", left + 270, top + 82);
         drawString(fontRendererObj, "Optional shared services", left + 18, top + 116, 0xFFF0C674);
-        label("Loadout", left + 18, top + 146);
+        drawString(fontRendererObj, "Tools: automatic", left + 18, top + 156, 0xFFB8C8DE);
         label("Storage", left + 270, top + 146);
         label("Repair station", left + 18, top + 174);
-        label("Tool slot", left + 270, top + 174);
+
         label("Work damage", left + 18, top + 202);
         drawString(fontRendererObj, "Center now: " + centerSummary(), left + 18, top + 230, 0xFFB8C8DE);
         drawString(
@@ -193,7 +252,7 @@ public final class GuiExcavationSetup extends GuiScreen {
             top + 246,
             status.startsWith("Nothing") ? 0xFFFF7777 : 0xFFB8C8DE);
         for (GuiTextField field : fields()) field.drawTextBox();
-        super.drawScreen(mouseX, mouseY, partialTicks);
+        super.drawContents(mouseX, mouseY, partialTicks);
     }
 
     @Override
@@ -233,15 +292,14 @@ public final class GuiExcavationSetup extends GuiScreen {
     }
 
     private GuiTextField field(int x, int y, int width, String value) {
-        GuiTextField field = new GuiTextField(fontRendererObj, x, y, width, 18);
+        GuiTextField field = readableField(fontRendererObj, x, y, width, 18);
         field.setMaxStringLength(48);
         field.setText(value);
         return field;
     }
 
     private GuiTextField[] fields() {
-        return new GuiTextField[] { taskId, radius, bottomY, topY, loadoutId, storageId, stationId, toolSlot,
-            workDamage };
+        return new GuiTextField[] { taskId, radius, bottomY, topY, storageId, stationId, workDamage };
     }
 
     private void label(String text, int x, int y) {
@@ -253,6 +311,11 @@ public final class GuiExcavationSetup extends GuiScreen {
     }
 
     private String centerSummary() {
+        if (boundArea != null) return "saved area " + boundArea.getDisplayName()
+            + " (dimension "
+            + boundArea.getMinimum()
+                .getDimensionId()
+            + ")";
         if (mc == null || mc.thePlayer == null || mc.theWorld == null || mc.theWorld.provider == null)
             return "unavailable";
         return "dimension " + mc.theWorld.provider.dimensionId
@@ -276,6 +339,6 @@ public final class GuiExcavationSetup extends GuiScreen {
     }
 
     private static String truncate(String value, int maximum) {
-        return value.length() <= maximum ? value : value.substring(0, maximum - 3) + "...";
+        return value;
     }
 }

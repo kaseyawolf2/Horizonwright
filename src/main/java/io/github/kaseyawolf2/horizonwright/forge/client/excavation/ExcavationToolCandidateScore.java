@@ -1,6 +1,6 @@
 package io.github.kaseyawolf2.horizonwright.forge.client.excavation;
 
-/** Ordered evidence for choosing one hotbar slot without sacrificing harvest eligibility. */
+/** Ordered evidence for choosing one inventory slot without sacrificing harvest eligibility. */
 final class ExcavationToolCandidateScore {
 
     private static final float PROGRESS_EPSILON = 0.000001F;
@@ -15,13 +15,13 @@ final class ExcavationToolCandidateScore {
 
     ExcavationToolCandidateScore(int slot, boolean usable, boolean canHarvest, float progressPerTick,
         boolean effectiveToolClass, double remainingFraction, boolean preferred) {
-        if (slot < 0 || slot > 8
+        if (slot < 0 || slot > 35
             || Float.isNaN(progressPerTick)
             || progressPerTick < 0.0F
             || Double.isNaN(remainingFraction)
             || remainingFraction < 0.0D
             || remainingFraction > 1.0D) {
-            throw new IllegalArgumentException("valid hotbar tool evidence is required");
+            throw new IllegalArgumentException("valid inventory tool evidence is required");
         }
         this.slot = slot;
         this.usable = usable;

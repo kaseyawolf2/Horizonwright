@@ -74,7 +74,8 @@ public final class LiveExcavationBackend implements ExcavationBackend {
         ActionCapability.LOOK,
         ActionCapability.DIG,
         ActionCapability.PLACE,
-        ActionCapability.HELD_USE);
+        ActionCapability.HELD_USE,
+        ActionCapability.CONTAINER);
     private static final EnumSet<ActionCapability> MANAGED_REQUIRED = EnumSet.of(
         ActionCapability.MOVEMENT,
         ActionCapability.LOOK,
@@ -498,6 +499,8 @@ public final class LiveExcavationBackend implements ExcavationBackend {
         private boolean ownsDigSession;
         private int priorHotbarSlot = -1;
         private boolean toolSlotChanged;
+        private boolean stagedToolReady;
+        private ItemStack stagedToolExpected;
         private int approachAttempt;
         private String pendingApproachReason;
         private BlockPosition workingPosition;
@@ -684,6 +687,7 @@ public final class LiveExcavationBackend implements ExcavationBackend {
             if (phase == Phase.APPROACHING) pollApproach();
             else if (phase == Phase.WAITING_FOR_APPROACH_SESSION) retryApproachWhenReady();
             else if (phase == Phase.WAITING_FOR_DIG_SESSION) beginDigWhenReady();
+            else if (phase == Phase.WAITING_FOR_TOOL) finishToolStaging();
             else if (phase == Phase.DIGGING) digOneTick();
             else if (phase == Phase.FINISHING) finishWhenReady();
             return snapshot();
@@ -806,7 +810,29 @@ public final class LiveExcavationBackend implements ExcavationBackend {
             ownsDigSession = true;
             ClientBootstrap.blockDamageShield()
                 .acquire(request.getRequestId());
-            selectBestHotbarTool();
+            if (selectBestInventoryTool()) return;
+            startSelectedDig();
+        }
+
+        private void finishToolStaging() {
+            if (!guard.isActiveLease(lease)) {
+                fail("Tool staging lost inventory authority");
+                return;
+            }
+            if (!stagedToolReady) return;
+            if (!ItemStack.areItemStacksEqual(stagedToolExpected, minecraft.thePlayer.inventory.getCurrentItem())
+                || minecraft.thePlayer.inventory.getItemStack() != null) {
+                fail("Inventory changed while staging the automatically selected tool");
+                return;
+            }
+            startSelectedDig();
+        }
+
+        private void startSelectedDig() {
+            if (!guard.isActiveLease(lease) || !canReachTarget() || !sameFingerprint(currentObservation())) {
+                fail("Target or authority changed while selecting a tool");
+                return;
+            }
             phase = Phase.DIGGING;
             detail = "Digging one fingerprint-bound block";
             aimAtTarget();
@@ -950,36 +976,69 @@ public final class LiveExcavationBackend implements ExcavationBackend {
             ownsDigSession = false;
         }
 
-        private void selectBestHotbarTool() {
+        private boolean selectBestInventoryTool() {
             BlockPosition position = workingPosition;
             Block target = MinecraftRuntimeAccess
                 .block(minecraft.theWorld, position.getX(), position.getY(), position.getZ());
             int metadata = MinecraftRuntimeAccess
                 .blockMetadata(minecraft.theWorld, position.getX(), position.getY(), position.getZ());
-            int preferred = request.getPreferredToolSlot();
             int previous = minecraft.thePlayer.inventory.currentItem;
+            ItemStack originalHeld = minecraft.thePlayer.inventory.mainInventory[previous];
             ExcavationToolCandidateScore best = null;
             try {
-                for (int slot = 0; slot < 9; slot++) {
-                    minecraft.thePlayer.inventory.currentItem = slot;
+                for (int slot = 0; slot < 36; slot++) {
                     ItemStack stack = minecraft.thePlayer.inventory.mainInventory[slot];
-                    ExcavationToolCandidateScore candidate = scoreTool(
-                        slot,
-                        stack,
-                        target,
-                        metadata,
-                        position,
-                        slot == preferred);
-                    traceToolCandidate(candidate, stack, target, metadata);
-                    if (candidate.isBetterThan(best)) best = candidate;
+                    // Forge's harvest hooks inspect the held stack. Probe locally, restore before any packet is sent.
+                    minecraft.thePlayer.inventory.currentItem = slot < 9 ? slot : previous;
+                    if (slot >= 9) minecraft.thePlayer.inventory.mainInventory[previous] = stack;
+                    try {
+                        ExcavationToolCandidateScore candidate = scoreTool(
+                            slot,
+                            stack,
+                            target,
+                            metadata,
+                            position,
+                            slot == previous);
+                        traceToolCandidate(candidate, stack, target, metadata);
+                        if (candidate.isBetterThan(best)) best = candidate;
+                    } finally {
+                        minecraft.thePlayer.inventory.mainInventory[previous] = originalHeld;
+                    }
                 }
             } finally {
                 minecraft.thePlayer.inventory.currentItem = previous;
+                minecraft.thePlayer.inventory.mainInventory[previous] = originalHeld;
             }
-            if (best == null) throw new IllegalStateException("hotbar tool evaluation returned no candidates");
+            if (best == null || !best.isUsable()) throw new IllegalStateException("No usable inventory tool was found");
             int selected = best.getSlot();
             priorHotbarSlot = previous;
-            if (selected != priorHotbarSlot) {
+            if (selected >= 9) {
+                if (minecraft.thePlayer.openContainer != minecraft.thePlayer.inventoryContainer
+                    || minecraft.thePlayer.inventory.getItemStack() != null)
+                    throw new IllegalStateException(
+                        "Close the container and clear the cursor before automatic tool selection");
+                if (!lease.getCapabilities()
+                    .contains(ActionCapability.CONTAINER))
+                    throw new IllegalStateException("Tool staging requires inventory authority");
+                stagedToolExpected = minecraft.thePlayer.inventory.mainInventory[selected] == null ? null
+                    : minecraft.thePlayer.inventory.mainInventory[selected].copy();
+                stagedToolReady = false;
+                minecraft.playerController.windowClick(
+                    minecraft.thePlayer.inventoryContainer.windowId,
+                    selected,
+                    previous,
+                    2,
+                    minecraft.thePlayer);
+                phase = Phase.WAITING_FOR_TOOL;
+                detail = "Moving the best inventory tool into the hotbar";
+                ActionPacketDispatch.afterPendingWrites(minecraft, () -> {
+                    synchronized (LiveHandle.this) {
+                        stagedToolReady = true;
+                    }
+                });
+                return true;
+            }
+            if (selected != previous) {
                 minecraft.thePlayer.inventory.currentItem = selected;
                 minecraft.playerController.updateController();
                 toolSlotChanged = true;
@@ -989,9 +1048,9 @@ public final class LiveExcavationBackend implements ExcavationBackend {
                 "selected",
                 selected,
                 "previous",
-                priorHotbarSlot,
+                previous,
                 "preferred",
-                preferred,
+                previous,
                 "canHarvest",
                 best.canHarvest(),
                 "effectiveToolClass",
@@ -1002,6 +1061,7 @@ public final class LiveExcavationBackend implements ExcavationBackend {
                 best.getRemainingFraction(),
                 "changed",
                 toolSlotChanged);
+            return false;
         }
 
         private ExcavationToolCandidateScore scoreTool(int slot, ItemStack stack, Block target, int metadata,
@@ -2088,6 +2148,7 @@ public final class LiveExcavationBackend implements ExcavationBackend {
         APPROACHING,
         WAITING_FOR_APPROACH_SESSION,
         WAITING_FOR_DIG_SESSION,
+        WAITING_FOR_TOOL,
         DIGGING,
         FINISHING
     }

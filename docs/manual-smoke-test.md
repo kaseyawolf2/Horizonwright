@@ -276,6 +276,23 @@ yet been physically recorded.
 
 ## Breed-first husbandry checkpoint (2026-09-06)
 
+### Integrated GUI and inventory-feed follow-up
+
+The GUI from the isolated `Horizonwright-GUI` workspace is now integrated in the
+main build. Check Tasks/Schedules switching, Areas list and equal-width controls,
+area type/bounds/chest settings, Base destinations, and full text on hover at
+your usual GUI scale. Existing areas default to unassigned; their coordinates
+and identities remain intact. Chest overrides currently drive excavation/quarry
+unloading; other area types explicitly report that automatic delivery is pending.
+
+For feeding, place wheat only in main inventory (not the hotbar), then repeat
+with a completely occupied hotbar. Verify it stages wheat before interacting,
+returns the displaced item safely, and continues across stacks. Empty/consumed
+stacks are ignored. If the selected feed changes before interaction, it rescans
+all 36 slots. Truly missing feed or rejected feeding must block rather than
+automatically retry animals. Logs include `husbandry-inventory` slot scans and
+`feed-item-staged`, `feed-item-verified`, and `feed-item-rescan` events.
+
 Newly created passes and saved schedules use a finite breeding cohort. Existing
 queued tasks and unchanged saved schedules retain their old population policy;
 create a new pass or save the schedule again to use breed-then-replace. The GUI

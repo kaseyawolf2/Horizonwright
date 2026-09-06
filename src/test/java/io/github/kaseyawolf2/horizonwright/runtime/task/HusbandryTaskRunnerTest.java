@@ -170,6 +170,22 @@ public class HusbandryTaskRunnerTest {
                 .contains("feed unavailable"));
     }
 
+    @Test
+    public void rejectedFeedingBlocksInsteadOfAutomaticallyRetryingAnimals() {
+        harness = new Harness(observation(1L, twoReadyAdults()), null);
+        TaskSpec spec = HusbandryTask.finitePass("feed-failure", "cow-pen", LivestockSpecies.COW, 2, 8, 16);
+        harness.controller.submit(spec);
+        task(harness.controller.tick(), spec.getId());
+        harness.backend.handle.state = HusbandryBackend.ActionState.FAILED;
+        assertEquals(TaskState.BLOCKED, task(harness.controller.tick(), spec.getId()).getState());
+        for (int tick = 0; tick < 20; tick++) harness.controller.tick();
+        assertEquals(1, harness.backend.actions);
+        assertTrue(
+            harness.broker.snapshot()
+                .getActiveOwners()
+                .isEmpty());
+    }
+
     private static TaskSpec task(int minimum, int maximum, int actionCap) {
         return legacy(
             HusbandryTask.finitePass("animals", "cow-pen", LivestockSpecies.COW, minimum, maximum, actionCap));

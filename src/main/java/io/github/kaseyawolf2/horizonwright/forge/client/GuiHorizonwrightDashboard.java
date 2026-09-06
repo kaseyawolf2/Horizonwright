@@ -5,7 +5,6 @@ import java.util.Collections;
 import java.util.List;
 
 import net.minecraft.client.gui.GuiButton;
-import net.minecraft.client.gui.GuiScreen;
 import net.minecraft.util.EnumChatFormatting;
 
 import io.github.kaseyawolf2.horizonwright.HorizonwrightRuntime;
@@ -20,7 +19,7 @@ import io.github.kaseyawolf2.horizonwright.core.task.TaskSnapshot;
 import io.github.kaseyawolf2.horizonwright.runtime.persistence.profile.ProfileAssetEditorProvider;
 import io.github.kaseyawolf2.horizonwright.runtime.persistence.session.CurrentRuntimeProvider;
 
-public final class GuiHorizonwrightDashboard extends GuiScreen {
+public final class GuiHorizonwrightDashboard extends GuiReadableScreen {
 
     private static final int CLOSE_BUTTON = 1;
     private static final int AUTOMATION_STOP_BUTTON = 2;
@@ -73,8 +72,9 @@ public final class GuiHorizonwrightDashboard extends GuiScreen {
 
     @Override
     public void initGui() {
+        super.initGui();
         buttonList.clear();
-        panelWidth = Math.min(420, width - 24);
+        panelWidth = Math.min(500, width - 24);
         panelHeight = Math.min(320, height - 16);
         left = (width - panelWidth) / 2;
         top = Math.max(8, (height - panelHeight) / 2);
@@ -125,7 +125,7 @@ public final class GuiHorizonwrightDashboard extends GuiScreen {
                 navigationY,
                 tabWidth,
                 20,
-                "Schedules"));
+                "Areas"));
         buttonList.add(
             new GuiHorizonwrightButton(
                 PROFILE_ASSETS_TAB_BUTTON,
@@ -133,7 +133,7 @@ public final class GuiHorizonwrightDashboard extends GuiScreen {
                 navigationY,
                 tabWidth,
                 20,
-                "Profile"));
+                "Base"));
         buttonList.add(
             new GuiHorizonwrightButton(
                 BARITONE_TAB_BUTTON,
@@ -188,15 +188,15 @@ public final class GuiHorizonwrightDashboard extends GuiScreen {
             return;
         }
         if (button.id == PROFILE_ASSETS_TAB_BUTTON) {
-            mc.displayGuiScreen(new GuiProfileAssets(this, runtimeProvider, profileEditorProvider));
+            mc.displayGuiScreen(new GuiBaseSettings(this, runtimeProvider, profileEditorProvider));
             return;
         }
         if (button.id == TASKS_BUTTON) {
-            mc.displayGuiScreen(new GuiTaskManager(this, runtimeProvider));
+            mc.displayGuiScreen(new GuiTaskManager(this, runtimeProvider, profileEditorProvider));
             return;
         }
         if (button.id == SCHEDULES_BUTTON) {
-            mc.displayGuiScreen(new GuiScheduleManager(this, runtimeProvider, profileEditorProvider));
+            mc.displayGuiScreen(new GuiSavedAreas(this, profileEditorProvider, runtimeProvider));
             return;
         }
         CurrentRuntimeUiResolver.Resolution resolution = CurrentRuntimeUiResolver.resolve(runtimeProvider);
@@ -270,7 +270,7 @@ public final class GuiHorizonwrightDashboard extends GuiScreen {
     }
 
     @Override
-    public void drawScreen(int mouseX, int mouseY, float partialTicks) {
+    protected void drawContents(int mouseX, int mouseY, float partialTicks) {
         CurrentRuntimeUiResolver.Resolution resolution = CurrentRuntimeUiResolver.resolve(runtimeProvider);
         if (!resolution.isAvailable()) {
             drawUnavailableScreen(mouseX, mouseY, partialTicks, resolution.getDiagnostic());
@@ -411,7 +411,7 @@ public final class GuiHorizonwrightDashboard extends GuiScreen {
             drawResumeSelectorPanel(resumeCandidates.size());
         }
 
-        super.drawScreen(mouseX, mouseY, partialTicks);
+        super.drawContents(mouseX, mouseY, partialTicks);
         if (!resumeSelectorOpen && blockedTask != null
             && mouseX >= left + 108
             && mouseX <= left + panelWidth - 12
@@ -452,7 +452,7 @@ public final class GuiHorizonwrightDashboard extends GuiScreen {
             left + 16,
             top + 244,
             0xFFCC7777);
-        super.drawScreen(mouseX, mouseY, partialTicks);
+        super.drawContents(mouseX, mouseY, partialTicks);
     }
 
     private void configureResumeSelector(TaskResumeCandidates candidates) {
@@ -597,11 +597,8 @@ public final class GuiHorizonwrightDashboard extends GuiScreen {
         return false;
     }
 
-    private static String truncate(String value, int maximumLength) {
-        if (value == null || value.length() <= maximumLength) {
-            return value;
-        }
-        return value.substring(0, maximumLength - 3) + "...";
+    private static String truncate(String value, int maximum) {
+        return value;
     }
 
     private static String queueSummary(ControllerSnapshot snapshot) {

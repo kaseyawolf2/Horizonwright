@@ -38,5 +38,9 @@ public final class VanillaLivestockClassifier {
         public String getBreedingItemId() {
             return breedingItemId;
         }
+
+        public boolean acceptsFeed(String itemId, int count) {
+            return count > 0 && breedingItemId.equals(itemId);
+        }
     }
 }

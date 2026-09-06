@@ -18,7 +18,7 @@ import io.github.kaseyawolf2.horizonwright.runtime.persistence.profile.ProfileAs
 import io.github.kaseyawolf2.horizonwright.runtime.persistence.session.CurrentRuntimeProvider;
 
 /** Nontechnical two-corner named work-area editor for farms, pens, and later bounded jobs. */
-public final class GuiProfileAreas extends GuiScreen {
+public final class GuiProfileAreas extends GuiReadableScreen {
 
     private static final ProfileAreaCaptureDrafts CAPTURE_DRAFTS = new ProfileAreaCaptureDrafts();
 
@@ -52,12 +52,13 @@ public final class GuiProfileAreas extends GuiScreen {
 
     @Override
     public void initGui() {
+        super.initGui();
         Keyboard.enableRepeatEvents(true);
         buttonList.clear();
         panelWidth = Math.min(440, width - 24);
         left = (width - panelWidth) / 2;
         top = Math.max(8, (height - 250) / 2);
-        areaId = new GuiTextField(fontRendererObj, left + 100, top + 52, 172, 18);
+        areaId = readableField(fontRendererObj, left + 100, top + 52, 172, 18);
         areaId.setMaxStringLength(48);
         areaId.setText("north-field");
         restoreCaptureDraft();
@@ -121,6 +122,12 @@ public final class GuiProfileAreas extends GuiScreen {
         ProfileAssetEditor editor = editorProvider.getCurrentProfileAssetEditor()
             .orElseThrow(() -> new IllegalStateException("join the bound world before saving an area"));
         NamedArea area = capture.build(areaId.getText());
+        for (NamedArea existing : editor.load()
+            .getNamedAreas()) {
+            if (existing.getId()
+                .equals(area.getId()))
+                throw new IllegalArgumentException("An area with this name already exists; edit it from Areas.");
+        }
         ProfileEnvelope saved = editor.apply(ProfileAssetUpdate.ofArea(area));
         captureProfileId = saved.getIdentity()
             .getProfileId();
@@ -131,6 +138,7 @@ public final class GuiProfileAreas extends GuiScreen {
             + saved.getNamedAreas()
                 .size()
             + " work area(s) in this world.";
+        mc.displayGuiScreen(new GuiAreaSettings(parent, editorProvider, runtimeProvider, area));
     }
 
     private void restoreCaptureDraft() {
@@ -189,10 +197,10 @@ public final class GuiProfileAreas extends GuiScreen {
     }
 
     @Override
-    public void drawScreen(int mouseX, int mouseY, float partialTicks) {
+    protected void drawContents(int mouseX, int mouseY, float partialTicks) {
         drawDefaultBackground();
         drawRect(left, top, left + panelWidth, top + 250, 0xE010141B);
-        drawCenteredString(fontRendererObj, "Named work areas", width / 2, top + 15, 0xFFF0C674);
+        drawCenteredString(fontRendererObj, "New area", width / 2, top + 15, 0xFFF0C674);
         drawCenteredString(
             fontRendererObj,
             "Reusable boundaries for farms and animal pens",
@@ -219,7 +227,7 @@ public final class GuiProfileAreas extends GuiScreen {
             top + 174,
             status.startsWith("Nothing") ? 0xFFFF7777 : 0xFFB8C8DE);
         areaId.drawTextBox();
-        super.drawScreen(mouseX, mouseY, partialTicks);
+        super.drawContents(mouseX, mouseY, partialTicks);
     }
 
     @Override
@@ -233,6 +241,6 @@ public final class GuiProfileAreas extends GuiScreen {
     }
 
     private static String truncate(String value, int maximum) {
-        return value.length() <= maximum ? value : value.substring(0, maximum - 3) + "...";
+        return value;
     }
 }

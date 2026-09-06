@@ -47,6 +47,9 @@ public final class ProfileVanillaChestUnloadConfiguration implements LiveVanilla
                 break;
             }
         }
+        if (io.github.kaseyawolf2.horizonwright.forge.client.AutomaticInventory.ID.equals(loadoutId))
+            resolvedLoadout = io.github.kaseyawolf2.horizonwright.forge.client.AutomaticInventory
+                .inspect(minecraft, profile);
         if (resolvedLoadout == null) {
             throw new IllegalStateException("profile has no named loadout '" + loadoutId + "'");
         }

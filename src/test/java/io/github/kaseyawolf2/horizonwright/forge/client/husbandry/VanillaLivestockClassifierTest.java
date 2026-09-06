@@ -12,6 +12,17 @@ public class VanillaLivestockClassifierTest {
     private final VanillaLivestockClassifier classifier = new VanillaLivestockClassifier();
 
     @Test
+    public void rejectsEmptyWheatStacksAndWrongItems() {
+        VanillaLivestockClassifier.Descriptor cow = classifier.classify("net.minecraft.entity.passive.EntityCow");
+        org.junit.Assert.assertTrue(cow.acceptsFeed("minecraft:wheat", 64));
+        org.junit.Assert.assertTrue(cow.acceptsFeed("minecraft:wheat", 1));
+        org.junit.Assert.assertFalse(cow.acceptsFeed("minecraft:wheat", 0));
+        org.junit.Assert.assertFalse(cow.acceptsFeed("minecraft:wheat", -1));
+        org.junit.Assert.assertFalse(cow.acceptsFeed("minecraft:wheat_seeds", 64));
+        org.junit.Assert.assertFalse(cow.acceptsFeed(null, 0));
+    }
+
+    @Test
     public void pinsExactVanillaClassesAndFeeds() {
         assertDescriptor("net.minecraft.entity.passive.EntityCow", LivestockSpecies.COW, "minecraft:wheat");
         assertDescriptor("net.minecraft.entity.passive.EntitySheep", LivestockSpecies.SHEEP, "minecraft:wheat");

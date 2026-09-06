@@ -20,7 +20,7 @@ import io.github.kaseyawolf2.horizonwright.runtime.persistence.session.CurrentRu
 import io.github.kaseyawolf2.horizonwright.runtime.task.FarmTask;
 
 /** Safe editor for one existing named area's display name and inclusive block bounds. */
-public final class GuiSavedAreaEditor extends GuiScreen {
+public final class GuiSavedAreaEditor extends GuiReadableScreen {
 
     private static final int BACK_BUTTON = 1;
     private static final int SAVE_BUTTON = 2;
@@ -65,6 +65,7 @@ public final class GuiSavedAreaEditor extends GuiScreen {
 
     @Override
     public void initGui() {
+        super.initGui();
         Keyboard.enableRepeatEvents(true);
         buttonList.clear();
         panelWidth = Math.min(500, width - 24);
@@ -124,6 +125,9 @@ public final class GuiSavedAreaEditor extends GuiScreen {
         seedReserve = field(left + 112, top + 267, 60, "2");
         intervalMinutes = field(left + 408, top + 267, 70, "30");
         loadFarmScheduleDefaults();
+        boolean farm = original.getKind() == io.github.kaseyawolf2.horizonwright.core.base.AreaKind.FARM;
+        seedReserve.setVisible(farm);
+        intervalMinutes.setVisible(farm);
 
         buttonList
             .add(new GuiHorizonwrightButton(FIRST_HERE_BUTTON, left + 350, top + 103, 128, 20, "Use my feet here"));
@@ -146,6 +150,11 @@ public final class GuiSavedAreaEditor extends GuiScreen {
             .add(new GuiHorizonwrightButton(HUSBANDRY_BUTTON, left + 94, top + 332, 136, 20, "Livestock settings"));
         buttonList.add(new GuiHorizonwrightButton(TREE_FARM_BUTTON, left + 238, top + 332, 136, 20, "Tree farm"));
         buttonList.add(new GuiHorizonwrightButton(BACK_BUTTON, left + panelWidth - 82, top + 332, 64, 20, "Back"));
+        for (Object value : buttonList) {
+            GuiButton control = (GuiButton) value;
+            if (control.id == HUSBANDRY_BUTTON || control.id == TREE_FARM_BUTTON) control.visible = false;
+            if (control.id == QUEUE_FARM_BUTTON || control.id == SCHEDULE_FARM_BUTTON) control.visible = farm;
+        }
     }
 
     @Override
@@ -211,7 +220,9 @@ public final class GuiSavedAreaEditor extends GuiScreen {
             : displayName.getText()
                 .trim();
         if (name.isEmpty()) throw new IllegalArgumentException("display name must not be blank");
-        editor.apply(ProfileAssetUpdate.ofArea(new NamedArea(original.getId(), name, first, second)));
+        editor.apply(
+            ProfileAssetUpdate.ofArea(
+                new NamedArea(original.getId(), name, first, second, original.getKind(), original.getStorageId())));
         status = "Saved area '" + original.getId() + "'. Schedules using it remain connected.";
     }
 
@@ -304,7 +315,7 @@ public final class GuiSavedAreaEditor extends GuiScreen {
     }
 
     @Override
-    public void drawScreen(int mouseX, int mouseY, float partialTicks) {
+    protected void drawContents(int mouseX, int mouseY, float partialTicks) {
         drawDefaultBackground();
         drawRect(left, top, left + panelWidth, top + 364, 0xEE10141B);
         drawCenteredString(fontRendererObj, "Edit saved work area", width / 2, top + 14, 0xFFF0C674);
@@ -315,17 +326,20 @@ public final class GuiSavedAreaEditor extends GuiScreen {
         coordinateLabels(top + 110);
         label("Corner 2", left + 18, top + 138);
         coordinateLabels(top + 164);
-        fontRendererObj.drawSplitString(
+        drawParagraph(
             status,
             left + 18,
             top + 194,
             panelWidth - 36,
+            32,
             status.startsWith("Nothing") ? 0xFFFF7777 : 0xFFB8C8DE);
-        drawCenteredString(fontRendererObj, "Farm actions for this saved area", width / 2, top + 258, 0xFFF0C674);
-        label("Seed reserve", left + 18, top + 273);
-        label("Every minutes", left + 300, top + 273);
+        if (original.getKind() == io.github.kaseyawolf2.horizonwright.core.base.AreaKind.FARM) {
+            drawCenteredString(fontRendererObj, "Farm actions for this saved area", width / 2, top + 258, 0xFFF0C674);
+            label("Seed reserve", left + 18, top + 273);
+            label("Every minutes", left + 300, top + 273);
+        }
         for (GuiTextField field : fields()) field.drawTextBox();
-        super.drawScreen(mouseX, mouseY, partialTicks);
+        super.drawContents(mouseX, mouseY, partialTicks);
     }
 
     private void coordinateLabels(int y) {
@@ -339,7 +353,7 @@ public final class GuiSavedAreaEditor extends GuiScreen {
     }
 
     private GuiTextField field(int x, int y, int width, String value) {
-        GuiTextField field = new GuiTextField(fontRendererObj, x, y, width, 18);
+        GuiTextField field = readableField(fontRendererObj, x, y, width, 18);
         field.setMaxStringLength(64);
         field.setText(value);
         return field;

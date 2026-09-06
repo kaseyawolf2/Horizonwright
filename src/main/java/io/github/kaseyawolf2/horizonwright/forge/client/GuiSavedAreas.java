@@ -13,7 +13,7 @@ import io.github.kaseyawolf2.horizonwright.runtime.persistence.profile.ProfileAs
 import io.github.kaseyawolf2.horizonwright.runtime.persistence.session.CurrentRuntimeProvider;
 
 /** Readable paginated view of all work areas saved in the active world profile. */
-public final class GuiSavedAreas extends GuiScreen {
+public final class GuiSavedAreas extends GuiReadableScreen {
 
     private static final int BACK_BUTTON = 1;
     private static final int CLOSE_BUTTON = 2;
@@ -21,6 +21,7 @@ public final class GuiSavedAreas extends GuiScreen {
     private static final int NEXT_BUTTON = 4;
     private static final int DELETE_BUTTON = 5;
     private static final int EDIT_BUTTON = 6;
+    private static final int CREATE_BUTTON = 7;
     private static final int AREA_BUTTON_BASE = 100;
     private static final int AREAS_PER_PAGE = 6;
 
@@ -53,10 +54,12 @@ public final class GuiSavedAreas extends GuiScreen {
 
     @Override
     public void initGui() {
+        super.initGui();
         buttonList.clear();
         panelWidth = Math.min(460, width - 24);
         left = (width - panelWidth) / 2;
-        top = Math.max(8, (height - 300) / 2);
+        top = Math.max(8, (height - 350) / 2);
+
         reload();
         areaButtons.clear();
         for (int index = 0; index < AREAS_PER_PAGE; index++) {
@@ -70,20 +73,48 @@ public final class GuiSavedAreas extends GuiScreen {
             areaButtons.add(button);
             buttonList.add(button);
         }
-        previousButton = new GuiHorizonwrightButton(PREVIOUS_BUTTON, left + 18, top + 202, 76, 20, "Previous");
-        nextButton = new GuiHorizonwrightButton(NEXT_BUTTON, left + 100, top + 202, 76, 20, "Next");
+        int actionGap = 8;
+        int actionWidth = (panelWidth - 36 - actionGap * 3) / 4;
+        int actionStep = actionWidth + actionGap;
+        previousButton = new GuiHorizonwrightButton(PREVIOUS_BUTTON, left + 18, top + 202, actionWidth, 20, "Previous");
+        nextButton = new GuiHorizonwrightButton(
+            NEXT_BUTTON,
+            left + 18 + actionStep,
+            top + 202,
+            actionWidth,
+            20,
+            "Next");
         buttonList.add(previousButton);
         buttonList.add(nextButton);
-        editButton = new GuiHorizonwrightButton(EDIT_BUTTON, left + 182, top + 202, 88, 20, "Edit selected");
+        editButton = new GuiHorizonwrightButton(
+            EDIT_BUTTON,
+            left + 18 + actionStep * 2,
+            top + 202,
+            actionWidth,
+            20,
+            "Edit area");
         buttonList.add(editButton);
-        deleteButton = new GuiHorizonwrightButton(DELETE_BUTTON, left + 276, top + 202, 120, 20, "Delete selected");
+
+        buttonList
+            .add(new GuiHorizonwrightButton(CREATE_BUTTON, left + 18, top + 228, panelWidth - 36, 20, "New area"));
+        deleteButton = new GuiHorizonwrightButton(
+            DELETE_BUTTON,
+            left + 18 + actionStep * 3,
+            top + 202,
+            actionWidth,
+            20,
+            "Delete selected");
         buttonList.add(deleteButton);
-        buttonList.add(new GuiHorizonwrightButton(CLOSE_BUTTON, left + 18, top + 270, 70, 20, "Close"));
-        buttonList.add(new GuiHorizonwrightButton(BACK_BUTTON, left + panelWidth - 88, top + 270, 70, 20, "Back"));
+        buttonList.add(new GuiHorizonwrightButton(CLOSE_BUTTON, left + 18, top + 320, 70, 20, "Close"));
+        buttonList.add(new GuiHorizonwrightButton(BACK_BUTTON, left + panelWidth - 88, top + 320, 70, 20, "Back"));
     }
 
     @Override
     protected void actionPerformed(GuiButton button) {
+        if (button.id == CREATE_BUTTON) {
+            mc.displayGuiScreen(new GuiProfileAreas(this, runtimeProvider, editorProvider));
+            return;
+        }
         if (button.id == BACK_BUTTON) {
             mc.displayGuiScreen(parent);
         } else if (button.id == CLOSE_BUTTON) {
@@ -97,7 +128,7 @@ public final class GuiSavedAreas extends GuiScreen {
         } else if (button.id == EDIT_BUTTON) {
             NamedArea selected = selectedArea();
             if (selected != null)
-                mc.displayGuiScreen(new GuiSavedAreaEditor(this, editorProvider, runtimeProvider, selected));
+                mc.displayGuiScreen(new GuiAreaSettings(this, editorProvider, runtimeProvider, selected));
         } else if (button.id >= AREA_BUTTON_BASE && button.id < AREA_BUTTON_BASE + AREAS_PER_PAGE) {
             int index = page * AREAS_PER_PAGE + button.id - AREA_BUTTON_BASE;
             if (index < areas.size()) {
@@ -110,19 +141,20 @@ public final class GuiSavedAreas extends GuiScreen {
     }
 
     @Override
-    public void drawScreen(int mouseX, int mouseY, float partialTicks) {
+    protected void drawContents(int mouseX, int mouseY, float partialTicks) {
+        if (selectedArea() == null) selectedAreaId = null;
         configureButtons();
         drawDefaultBackground();
-        drawRect(left, top, left + panelWidth, top + 300, 0xEE10141B);
-        drawCenteredString(fontRendererObj, "Saved work areas", width / 2, top + 15, 0xFFF0C674);
+        drawRect(left, top, left + panelWidth, top + 350, 0xEE10141B);
+        drawCenteredString(fontRendererObj, "Areas", width / 2, top + 15, 0xFFF0C674);
         drawCenteredString(
             fontRendererObj,
             areas.size() + " area(s) in this world profile",
             width / 2,
             top + 29,
             0xFF8FAAD0);
-        fontRendererObj.drawSplitString(detail, left + 18, top + 230, panelWidth - 36, 0xFFB8C8DE);
-        super.drawScreen(mouseX, mouseY, partialTicks);
+        drawParagraph(detail, left + 18, top + 256, panelWidth - 36, 50, 0xFFB8C8DE);
+        super.drawContents(mouseX, mouseY, partialTicks);
     }
 
     private void reload() {
@@ -176,6 +208,7 @@ public final class GuiSavedAreas extends GuiScreen {
                 .cancelAreaAutomation(removed) : 0;
             selectedAreaId = null;
             pendingDeleteAreaId = null;
+
             reload();
             detail = "Deleted saved work area '" + removed
                 + "' and cancelled "

@@ -13,7 +13,7 @@ import org.lwjgl.input.Keyboard;
 import io.github.kaseyawolf2.horizonwright.navigation.baritone.BaritoneSettingsCatalog;
 
 /** Searchable dashboard tab for every setting exposed by the installed Baritone build. */
-public final class GuiBaritoneSettings extends GuiScreen {
+public final class GuiBaritoneSettings extends GuiReadableScreen {
 
     private static final int BACK_TAB = 1;
     private static final int BARITONE_TAB = 2;
@@ -61,6 +61,7 @@ public final class GuiBaritoneSettings extends GuiScreen {
 
     @Override
     public void initGui() {
+        super.initGui();
         Keyboard.enableRepeatEvents(true);
         panelWidth = Math.min(900, width - 24);
         panelHeight = Math.min(520, height - 20);
@@ -84,7 +85,7 @@ public final class GuiBaritoneSettings extends GuiScreen {
         selectedTab.enabled = false;
         buttonList.add(selectedTab);
 
-        searchField = new GuiTextField(fontRendererObj, left + 12, top + 66, panelWidth - 24, 18);
+        searchField = readableField(fontRendererObj, left + 12, top + 66, panelWidth - 24, 18);
         searchField.setMaxStringLength(120);
         searchField.setFocused(true);
 
@@ -104,7 +105,7 @@ public final class GuiBaritoneSettings extends GuiScreen {
         nextButton = new GuiHorizonwrightButton(NEXT_PAGE, left + 104, pagerY, 86, 20, "Next");
 
         int editorY = top + panelHeight - 58;
-        valueField = new GuiTextField(fontRendererObj, detailsLeft + 8, editorY, detailsWidth - 16, 18);
+        valueField = readableField(fontRendererObj, detailsLeft + 8, editorY, detailsWidth - 16, 18);
         valueField.setMaxStringLength(4096);
         int actionY = top + panelHeight - 30;
         int actionWidth = Math.max(38, (detailsWidth - 28) / 3);
@@ -211,7 +212,7 @@ public final class GuiBaritoneSettings extends GuiScreen {
     }
 
     @Override
-    public void drawScreen(int mouseX, int mouseY, float partialTicks) {
+    protected void drawContents(int mouseX, int mouseY, float partialTicks) {
         drawDefaultBackground();
         drawRect(left, top, left + panelWidth, top + panelHeight, 0xE010141B);
         drawCenteredString(fontRendererObj, "Baritone configuration", width / 2, top + 16, 0xFFF0C674);
@@ -282,7 +283,7 @@ public final class GuiBaritoneSettings extends GuiScreen {
             top + panelHeight - 80,
             0xFFB8C8DE);
         valueField.drawTextBox();
-        super.drawScreen(mouseX, mouseY, partialTicks);
+        super.drawContents(mouseX, mouseY, partialTicks);
         drawSettingTooltip(mouseX, mouseY);
     }
 
@@ -388,15 +389,7 @@ public final class GuiBaritoneSettings extends GuiScreen {
     }
 
     private String fit(String value, int maximumWidth) {
-        if (value == null || fontRendererObj.getStringWidth(value) <= maximumWidth) {
-            return value;
-        }
-        String ellipsis = "...";
-        int end = value.length();
-        while (end > 0 && fontRendererObj.getStringWidth(value.substring(0, end) + ellipsis) > maximumWidth) {
-            end--;
-        }
-        return value.substring(0, end) + ellipsis;
+        return value;
     }
 
     private static String safeMessage(RuntimeException failure) {
