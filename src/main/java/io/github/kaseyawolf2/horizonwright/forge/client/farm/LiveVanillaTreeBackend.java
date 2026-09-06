@@ -229,6 +229,8 @@ public final class LiveVanillaTreeBackend implements TreeBackend {
         private int saplingSourceSlot = -1;
         private int saplingHotbarSlot = -1;
         private String pendingApproachReason;
+        private int[][] standBackPositions;
+        private int stableSinceTick = -1;
         private TreeObservation confirmedAfter;
         private volatile boolean cancellationRequested;
 
@@ -305,6 +307,7 @@ public final class LiveVanillaTreeBackend implements TreeBackend {
                 }
                 target = candidate;
                 approachAttempt = 0;
+                standBackPositions = null;
                 approachOrAct("Approaching the next bottom-up tree log");
                 return;
             }
@@ -322,6 +325,8 @@ public final class LiveVanillaTreeBackend implements TreeBackend {
                 return;
             }
             approachAttempt = 0;
+            standBackPositions = null;
+            stableSinceTick = -1;
             approachOrAct("Approaching the exact replant position");
         }
 
@@ -339,6 +344,10 @@ public final class LiveVanillaTreeBackend implements TreeBackend {
         }
 
         private void submitApproach(String reason) {
+            if (approachAttempt >= 5) {
+                fail("Tree target remained inaccessible after adjacent and four stand-back views");
+                return;
+            }
             pendingApproachReason = reason;
             phase = Phase.WAITING_FOR_NAVIGATION;
             state = ActionState.EXECUTING;
@@ -380,6 +389,31 @@ public final class LiveVanillaTreeBackend implements TreeBackend {
                         target.getZ(),
                         now,
                         APPROACH_TIMEOUT_NANOS);
+            // A second adjacent goal selects the same obstructed spot. Try distinct views instead.
+            if (approachAttempt > 1) {
+                if (standBackPositions == null) {
+                    standBackPositions = TreeInteractionGeometry.standBackPositions(
+                        target.getX(),
+                        target.getY(),
+                        target.getZ(),
+                        minecraft.thePlayer.posX,
+                        minecraft.thePlayer.posZ);
+                }
+                int[] point = standBackPositions[approachAttempt - 2];
+                navigationRequest = NavigationRequest.nearAllowingPlacementAndBreaking(
+                    request.getRequestId() + "-view-" + approachAttempt,
+                    request.getActionEpoch(),
+                    target.getDimensionId(),
+                    point[0],
+                    point[1],
+                    point[2],
+                    0,
+                    request.getDecision()
+                        .getAction() == TreeActionKind.FELL_CAPTURED_BLOCKS ? LEAVES : Collections.emptyList(),
+                    now,
+                    APPROACH_TIMEOUT_NANOS);
+                trace("stand-back-goal", "x", point[0], "y", point[1], "z", point[2]);
+            }
             navigationHandle = navigation.submit(navigationRequest, lease);
             phase = Phase.APPROACHING;
             deadlineNanos = add(now, APPROACH_TIMEOUT_NANOS);
@@ -402,11 +436,11 @@ public final class LiveVanillaTreeBackend implements TreeBackend {
             NavigationProgress progress = navigationHandle.progress();
             if (progress.getState() == NavigationState.COMPLETED) {
                 navigationHandle = null;
-                if (approachAttempt < 2) submitApproach("Repositioning for exact tree reach");
+                if (approachAttempt < 5) submitApproach("Repositioning for exact tree reach");
                 else fail("Tree navigation completed outside exact interaction reach");
             } else if (progress.getState() == NavigationState.FAILED) {
                 navigationHandle = null;
-                if (approachAttempt < 2) submitApproach("Retrying tree approach after " + progress.getDetail());
+                if (approachAttempt < 5) submitApproach("Retrying tree approach after " + progress.getDetail());
                 else fail("Could not approach tree target: " + progress.getDetail());
             } else if (progress.getState() == NavigationState.CANCELLED) {
                 state = ActionState.CANCELLED;
@@ -589,6 +623,7 @@ public final class LiveVanillaTreeBackend implements TreeBackend {
                     .getAction() == TreeActionKind.PLANT_SAPLING && observer.nextMissingSapling(work) != null) {
                     // Do not move on until the sapling just placed is actually observed.
                     BasePosition missing = observer.nextMissingSapling(work);
+                    stableSinceTick = -1;
                     if (!missing.equals(target)) preparePlant();
                     return;
                 }
@@ -597,7 +632,25 @@ public final class LiveVanillaTreeBackend implements TreeBackend {
                     .getAction() == TreeActionKind.FELL_CAPTURED_BLOCKS ? TreeObservationState.FELLED_CLEAR
                         : TreeObservationState.SAPLING_PLANTED;
                 if (after.getState() != expected) {
+                    stableSinceTick = -1;
                     detail = "Waiting for " + expected;
+                    return;
+                }
+                // Client air is not proof that a server-side lumber-axe operation has finished.
+                // Keep observing with no dig session before handing the root to planting.
+                int tick = minecraft.thePlayer.ticksExisted;
+                if (stableSinceTick < 0) stableSinceTick = tick;
+                int requiredTicks = expected == TreeObservationState.FELLED_CLEAR ? 40 : 20;
+                if (tick - stableSinceTick < requiredTicks) {
+                    detail = "Waiting for stable tree postcondition: " + expected;
+                    trace(
+                        "postcondition-settling",
+                        "expected",
+                        expected,
+                        "elapsedTicks",
+                        tick - stableSinceTick,
+                        "requiredTicks",
+                        requiredTicks);
                     return;
                 }
                 confirmedAfter = after;
@@ -606,6 +659,7 @@ public final class LiveVanillaTreeBackend implements TreeBackend {
                     : "Exact replacement sapling is confirmed";
                 clearActive(this);
             } catch (RuntimeException waiting) {
+                stableSinceTick = -1;
                 detail = "Waiting for tree postcondition: " + waiting.getMessage();
             }
         }
