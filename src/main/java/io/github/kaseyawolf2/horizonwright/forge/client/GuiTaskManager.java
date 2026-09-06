@@ -21,6 +21,8 @@ public final class GuiTaskManager extends GuiReadableScreen {
     private static final int NEXT_BUTTON = 4;
     private static final int CLEAR_COMPLETED_BUTTON = 5;
     private static final int RERUN_BUTTON = 6;
+    private static final int RETRY_BUTTON = 7;
+    private GuiButton retryButton;
     private static final int TASKS_TAB = 20;
     private static final int SCHEDULES_TAB = 21;
     private static final int TASK_BUTTON_BASE = 100;
@@ -105,6 +107,8 @@ public final class GuiTaskManager extends GuiReadableScreen {
             20,
             "Rerun task");
         buttonList.add(rerunButton);
+        retryButton = new GuiHorizonwrightButton(RETRY_BUTTON, left + 180, top + 166, 100, 20, "Retry now");
+        buttonList.add(retryButton);
         clearCompletedButton = new GuiHorizonwrightButton(
             CLEAR_COMPLETED_BUTTON,
             left + 16,
@@ -154,6 +158,18 @@ public final class GuiTaskManager extends GuiReadableScreen {
                 clearConfirmation();
             } catch (RuntimeException failure) {
                 message = "Task was not rerun: " + safeMessage(failure);
+            }
+            return;
+        }
+        if (button.id == RETRY_BUTTON && selectedTaskId != null) {
+            try {
+                CurrentRuntimeUiResolver.Resolution resolution = CurrentRuntimeUiResolver.resolve(runtimeProvider);
+                if (!resolution.isAvailable()) throw new IllegalStateException(resolution.getDiagnostic());
+                resolution.getRuntime()
+                    .retryTaskNow(selectedTaskId);
+                message = "Retry queued now; normal task priority still applies.";
+            } catch (RuntimeException failure) {
+                message = "Task was not retried: " + safeMessage(failure);
             }
             return;
         }
@@ -208,6 +224,16 @@ public final class GuiTaskManager extends GuiReadableScreen {
 
         drawString(fontRendererObj, "Task details", left + 16, top + 194, 0xFFAAAAAA);
         String details = selected == null ? message : taskDetails(selected);
+        if (selected != null && selected.getState() == TaskState.QUEUED && selected.getRetryCount() > 0) {
+            long remaining = Math.max(
+                0L,
+                selected.getNextEligibleAtMillis() - resolution.getRuntime()
+                    .controllerSnapshot()
+                    .getObservedAtMillis());
+            details = "Retry in " + ((remaining + 999L) / 1000L) + "s (then normal queue priority)\n" + details;
+        }
+        retryButton.enabled = selected != null && (selected.getState() == TaskState.BLOCKED
+            || (selected.getState() == TaskState.QUEUED && selected.getRetryCount() > 0));
         drawParagraph(details, left + 16, top + 208, panelWidth - 32, panelHeight - 256, 0xFFE0E0E0);
         drawString(
             fontRendererObj,

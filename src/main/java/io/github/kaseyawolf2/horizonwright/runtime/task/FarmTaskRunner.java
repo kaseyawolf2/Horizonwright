@@ -252,6 +252,11 @@ final class FarmTaskRunner implements TaskRunner {
                 releaseActive();
                 return persistAdvance(context, progress.getDetail());
             }
+            if (progress.getState() == ActionState.SKIPPED) {
+                pass = pass.skipInaccessible(activeBefore);
+                releaseActive();
+                return persistAdvance(context, progress.getDetail());
+            }
             return failure(context, progress.getDetail(), progress.getState() == ActionState.FAILED);
         } catch (RuntimeException failure) {
             return failure(context, "Farm action confirmation failed: " + describe(failure), false);

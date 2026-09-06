@@ -37,6 +37,14 @@ public class FarmPlannerTest {
     }
 
     @Test
+    public void inaccessibleFruitAdvancesWithoutClaimingMutation() {
+        CropObservation fruit = crop(CropFamily.PAM_FRUITING_LOG, "paper:3", "paper", true, true, false);
+        FarmPassCheckpoint pass = checkpoint(fruit).skipInaccessible(fruit);
+        assertTrue(pass.isComplete());
+        assertEquals(0, pass.getVerifiedMutations());
+    }
+
+    @Test
     public void genericAndNonDestructiveCropsRetainConservativePolicy() {
         FarmDecision unknown = plan(
             crop(CropFamily.GENERIC_IGROWABLE, "growable:unknown", WHEAT_SEEDS, false, false, false),

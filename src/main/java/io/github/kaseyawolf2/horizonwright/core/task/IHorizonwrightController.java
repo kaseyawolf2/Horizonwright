@@ -15,6 +15,10 @@ public interface IHorizonwrightController {
 
     TaskSnapshot resume(String taskId);
 
+    default TaskSnapshot retryNow(String taskId) {
+        throw new UnsupportedOperationException("Immediate retry is unavailable.");
+    }
+
     TaskSnapshot cancel(String taskId);
 
     /** Permanently removes a task that is not currently executing or draining an action. */

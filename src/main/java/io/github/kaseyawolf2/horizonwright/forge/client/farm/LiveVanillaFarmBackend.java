@@ -495,6 +495,10 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
             }
             long now = System.nanoTime();
             if (phase == Phase.APPROACHING ? deadline.approachExpired(now) : deadline.actionExpired(now)) {
+                if (phase == Phase.APPROACHING && isPamFruit()) {
+                    skipInaccessibleFruit();
+                    return snapshot();
+                }
                 stopProducers();
                 fail(phase == Phase.APPROACHING ? "Farm approach deadline exceeded" : "Farm action deadline exceeded");
                 return snapshot();
@@ -535,6 +539,10 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
                 detail = "Approach complete; waiting for packet drain";
             } else if (progress.getState() == NavigationState.FAILED) {
                 if (tryFruitLogReposition()) return;
+                if (isPamFruit()) {
+                    skipInaccessibleFruit();
+                    return;
+                }
                 fail("Could not approach farm target: " + progress.getDetail());
             } else if (progress.getState() == NavigationState.CANCELLED) {
                 state = ActionState.CANCELLED;
@@ -574,6 +582,10 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
                 request.getDecision()
                     .getObservationFingerprint());
             if (sameCrop && mature && !reachable && tryFruitLogReposition()) return;
+            if (sameCrop && mature && !reachable && isPamFruit()) {
+                skipInaccessibleFruit();
+                return;
+            }
             if (!sameCrop || !mature || !reachable) {
                 fail("Farm target changed or lost reach after approach");
                 return;
@@ -1120,8 +1132,8 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
         }
 
         private boolean tryFruitLogReposition() {
-            if (plannedBefore.getFamily() != CropFamily.PAM_FRUITING_LOG || minecraft.thePlayer == null
-                || deadline.approachExpired(System.nanoTime())) return false;
+            if (!isPamFruit() || minecraft.thePlayer == null || deadline.approachExpired(System.nanoTime()))
+                return false;
             BasePosition target = request.getDecision()
                 .getTarget();
             if (fruitLogApproaches == null) {
@@ -1148,7 +1160,7 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
                 lease);
             phase = Phase.APPROACHING;
             state = ActionState.EXECUTING;
-            detail = "Repositioning for an exposed fruiting-log face (" + fruitLogApproachIndex + "/4)";
+            detail = "Repositioning for an exposed fruit face (" + fruitLogApproachIndex + "/4)";
             trace(
                 "fruit-log-reposition",
                 "attempt",
@@ -1256,6 +1268,23 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
             clearActive(this);
         }
 
+        private boolean isPamFruit() {
+            return plannedBefore.getFamily() == CropFamily.PAM_FRUITING_LOG
+                || plannedBefore.getFamily() == CropFamily.PAM_HANGING_FRUIT;
+        }
+
+        private void skipInaccessibleFruit() {
+            stopProducers();
+            state = ActionState.SKIPPED;
+            detail = "Skipped inaccessible fruit for this pass at " + request.getDecision()
+                .getTarget() + "; no blocks broken and no harvest counted";
+            trace("skipped-inaccessible", "reason", "no reachable visible face after bounded approach");
+            MinecraftRuntimeAccess.addChatMessage(
+                minecraft.thePlayer,
+                new net.minecraft.util.ChatComponentText("Horizonwright: " + detail));
+            clearActive(this);
+        }
+
         private void fail(String failure) {
             stopProducers();
             state = ActionState.FAILED;
@@ -1289,7 +1318,9 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
         }
 
         private boolean isTerminal() {
-            return state == ActionState.CONFIRMED || state == ActionState.CANCELLED || state == ActionState.FAILED;
+            return state == ActionState.SKIPPED || state == ActionState.CONFIRMED
+                || state == ActionState.CANCELLED
+                || state == ActionState.FAILED;
         }
     }
 

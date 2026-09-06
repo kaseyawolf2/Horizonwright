@@ -271,6 +271,7 @@ public interface FarmBackend {
     }
 
     enum ActionState {
+        SKIPPED,
         SUBMITTED,
         EXECUTING,
         CONFIRMED,

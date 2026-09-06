@@ -70,6 +70,24 @@ public final class FarmPassCheckpoint {
             verifiedMutations);
     }
 
+    /** Leave an inaccessible crop unchanged for this finite pass, without claiming a harvest. */
+    public FarmPassCheckpoint skipInaccessible(CropObservation observation) {
+        if (isComplete() || observation == null
+            || !expectedTarget().equals(observation.getPosition())
+            || !observationFingerprints.get(nextObservationIndex)
+                .equals(observation.getObservationFingerprint())) {
+            throw new IllegalStateException("Skipped crop must match the current pass frontier");
+        }
+        return new FarmPassCheckpoint(
+            plot,
+            passRevision,
+            observationTargets,
+            observationFingerprints,
+            requiredSeedFingerprints,
+            nextObservationIndex + 1,
+            verifiedMutations);
+    }
+
     public FarmPassCheckpoint advance(FarmDecision decision, CropObservation beforeObservation,
         CropObservation afterObservation, SeedReserveEvidence currentReserveEvidence) {
         if (decision == null || beforeObservation == null

@@ -420,8 +420,15 @@ public final class ClientBootstrap {
                                 + taskId
                                 + " (attempt "
                                 + (task.getRetryCount() + 1)
-                                + "): "
-                                + task.getDetail()));
+                                + ") in "
+                                + ((Math.max(
+                                    0L,
+                                    task.getNextEligibleAtMillis() - attachedRuntime.controllerSnapshot()
+                                        .getObservedAtMillis())
+                                    + 999L) / 1000L)
+                                + "s: "
+                                + task.getDetail()
+                                + " Open H > Tasks for the live countdown and Retry now."));
                 }
             }
             if (task.getState() == TaskState.FAILED && announcedFailedTasks.add(taskId)) {

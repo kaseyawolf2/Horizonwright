@@ -345,6 +345,9 @@ public class TaskOrchestratorTest {
         orchestrator.submit(spec("retry", TaskLane.MANUAL));
 
         TaskSnapshot first = task(orchestrator.tick(), "retry");
+        assertTrue(
+            first.getDetail()
+                .contains("temporary backend failure"));
         assertRetry(first, 1, 1_000L);
         orchestrator.tick();
         assertEquals(1, steps.get());
@@ -368,6 +371,18 @@ public class TaskOrchestratorTest {
         assertEquals(3, reason.getRetryCount());
         assertEquals(4, steps.get());
         assertEquals(4, creations.get());
+        assertEquals(
+            TaskState.QUEUED,
+            orchestrator.retryNow("retry")
+                .getState());
+        orchestrator.tick();
+        assertEquals(5, steps.get());
+        assertEquals(
+            clock.nowMillis(),
+            orchestrator.retryNow("retry")
+                .getNextEligibleAtMillis());
+        orchestrator.tick();
+        assertEquals(6, steps.get());
     }
 
     @Test

@@ -602,6 +602,13 @@ public final class HorizonwrightRuntime implements AutoCloseable {
         return controller.submit(replacement);
     }
 
+    public TaskSnapshot retryTaskNow(String taskId) {
+        ensureOpen();
+        if (actionBroker.isAutomationLocked())
+            throw new IllegalStateException("Automation is stopped; reset it first.");
+        return controller.retryNow(taskId);
+    }
+
     public boolean isDryRun() {
         return dryRun;
     }

@@ -229,6 +229,21 @@ public final class TaskOrchestrator implements IHorizonwrightController, ActionR
     }
 
     @Override
+    public TaskSnapshot retryNow(String taskId) {
+        synchronized (this) {
+            TaskRecord record = requireTask(taskId);
+            if (record.state == TaskState.QUEUED && record.retryCount > 0) {
+                record.nextEligibleAtMillis = readNow();
+                traceRecord("retry-now-requested", record);
+                return taskSnapshotAt(record.spec.getId(), readNow());
+            }
+            if (record.state != TaskState.BLOCKED)
+                throw new IllegalStateException("Task is not blocked or waiting for retry.");
+        }
+        return resume(taskId);
+    }
+
+    @Override
     public TaskSnapshot cancel(String taskId) {
         synchronized (this) {
             long now = readNow();
@@ -799,7 +814,7 @@ public final class TaskOrchestrator implements IHorizonwrightController, ActionR
         record.nextEligibleAtMillis = safeAdd(now, delay);
         record.state = TaskState.QUEUED;
         record.blockedReason = null;
-        enqueueRunnerBuild(record, "queued for retry " + record.retryCount);
+        enqueueRunnerBuild(record, "Retry " + record.retryCount + ": " + record.detail);
     }
 
     private void finishTerminal(TaskRecord record, TaskState state, long now) {
