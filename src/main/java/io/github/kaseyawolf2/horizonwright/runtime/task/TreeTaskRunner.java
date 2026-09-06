@@ -303,7 +303,7 @@ final class TreeTaskRunner implements TaskRunner {
                 TreeTask.plantSpacing(spec.getParameters()));
             TreeBackend.PassSnapshot grid = backend.plantingGrid(gridRequest);
             validateScan(gridRequest, grid);
-            if (!pass.area.equals(grid.getArea()))
+            if (!sameTreeBounds(pass.area, grid.getArea()))
                 throw new IllegalStateException("Tree area changed before grid planting");
             pass = pass.beginGridPlanting(grid.getObservations());
             return persist(context, "Tree drops collected; beginning deferred sapling planting");
@@ -426,5 +426,15 @@ final class TreeTaskRunner implements TaskRunner {
     private static String describe(RuntimeException failure) {
         return failure.getMessage() == null ? failure.getClass()
             .getSimpleName() : failure.getMessage();
+    }
+
+    static boolean sameTreeBounds(io.github.kaseyawolf2.horizonwright.core.base.NamedArea saved,
+        io.github.kaseyawolf2.horizonwright.core.base.NamedArea live) {
+        return saved.getId()
+            .equals(live.getId())
+            && saved.getMinimum()
+                .equals(live.getMinimum())
+            && saved.getMaximum()
+                .equals(live.getMaximum());
     }
 }

@@ -96,6 +96,11 @@ final class TreeTaskCheckpointCodec {
         BasePosition max = area.getMaximum();
         values.put("area.id", area.getId());
         values.put("area.name", area.getDisplayName());
+        values.put(
+            "area.kind",
+            area.getKind()
+                .name());
+        if (area.getStorageId() != null) values.put("area.storage", area.getStorageId());
         values.put("area.dimension", Integer.toString(min.getDimensionId()));
         values.put("area.minX", Integer.toString(min.getX()));
         values.put("area.minY", Integer.toString(min.getY()));
@@ -119,7 +124,11 @@ final class TreeTaskCheckpointCodec {
                 dimension,
                 integer(values, "area.maxX"),
                 integer(values, "area.maxY"),
-                integer(values, "area.maxZ")));
+                integer(values, "area.maxZ")),
+            values.containsKey("area.kind")
+                ? enumValue(io.github.kaseyawolf2.horizonwright.core.base.AreaKind.class, values, "area.kind")
+                : io.github.kaseyawolf2.horizonwright.core.base.AreaKind.UNASSIGNED,
+            values.get("area.storage"));
     }
 
     private static void writeTree(Map<String, String> values, String prefix, TreeObservation tree) {

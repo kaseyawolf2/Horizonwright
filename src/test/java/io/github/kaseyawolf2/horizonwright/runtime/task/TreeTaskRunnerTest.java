@@ -43,6 +43,34 @@ public class TreeTaskRunnerTest {
     private Harness harness;
 
     @Test
+    public void treeAreaMetadataSurvivesCheckpointAndLegacyMetadataDoesNotChangeBounds() {
+        NamedArea legacy = new NamedArea(
+            "woodlot",
+            "Woodlot",
+            new BasePosition(0, 0, 60, 0),
+            new BasePosition(0, 8, 72, 8));
+        NamedArea configured = legacy
+            .withSettings(io.github.kaseyawolf2.horizonwright.core.base.AreaKind.TREE_FARM, "wood-chest");
+        TaskSpec spec = TreeTask.scheduledPass("woodlot", 2, 0, 5)
+            .instantiate("area-test");
+        TreeTaskCheckpointCodec.State state = new TreeTaskCheckpointCodec.State(
+            configured,
+            1L,
+            Collections.singletonList(standing()),
+            0,
+            0,
+            null);
+        TreeTaskCheckpointCodec.State restored = TreeTaskCheckpointCodec
+            .decode(spec, TreeTaskCheckpointCodec.encode(spec, state, 1L));
+        assertEquals(configured, restored.area);
+        assertTrue(TreeTaskRunner.sameTreeBounds(legacy, configured));
+        assertFalse(
+            TreeTaskRunner.sameTreeBounds(
+                legacy,
+                new NamedArea("woodlot", "Woodlot", new BasePosition(0, 0, 59, 0), new BasePosition(0, 8, 72, 8))));
+    }
+
+    @Test
     public void plantingUsesNewGridSiteInsteadOfFelledRoot() {
         harness = new Harness(standing(), 8);
         TaskSpec spec = TreeTask.scheduledPass("woodlot", 2, 0, 5)

@@ -242,6 +242,8 @@ public final class LiveVanillaTreeBackend implements TreeBackend {
         private boolean ownsSession;
         private boolean toolSlotChanged;
         private boolean placementDispatched;
+        private int placementTick;
+        private int placementRetries;
         private boolean inventoryStaged;
         private int verifiedSide = 1;
         private int saplingSourceSlot = -1;
@@ -294,6 +296,11 @@ public final class LiveVanillaTreeBackend implements TreeBackend {
             else if (phase == Phase.DIGGING) digOneTick();
             else if (phase == Phase.WAITING_FOR_DRAIN) continueAfterDrain();
             else if (phase == Phase.CONFIRMING) confirmMutation();
+            else if (phase == Phase.FINAL_DRAIN && guard.isReadyForSession()) {
+                state = ActionState.CONFIRMED;
+                detail = "Exact replacement sapling is confirmed";
+                clearActive(this);
+            }
             return snapshot();
         }
 
@@ -604,12 +611,11 @@ public final class LiveVanillaTreeBackend implements TreeBackend {
             }
             phase = Phase.WAITING_FOR_DRAIN;
             placementDispatched = false;
+            placementTick = minecraft.thePlayer.ticksExisted;
             deadlineNanos = add(System.nanoTime(), ACTION_TIMEOUT_NANOS);
             detail = "Dispatching exact sapling placement";
             ActionPacketDispatch.afterPendingWrites(minecraft, () -> {
                 synchronized (LiveHandle.this) {
-                    returnStagedSapling();
-                    stopSession();
                     placementDispatched = true;
                 }
             });
@@ -619,6 +625,12 @@ public final class LiveVanillaTreeBackend implements TreeBackend {
             if (request.getDecision()
                 .getAction() == TreeActionKind.PLANT_SAPLING && !placementDispatched) {
                 detail = "Waiting for the sapling packet boundary";
+                return;
+            }
+            if (request.getDecision()
+                .getAction() == TreeActionKind.PLANT_SAPLING) {
+                phase = Phase.CONFIRMING;
+                detail = "Checking placed sapling while keeping its hotbar slot staged";
                 return;
             }
             if (!guard.isReadyForSession()) {
@@ -639,7 +651,41 @@ public final class LiveVanillaTreeBackend implements TreeBackend {
                     .getAction() == TreeActionKind.PLANT_SAPLING && observer.nextMissingSapling(work) != null) {
                     // Do not move on until the sapling just placed is actually observed.
                     BasePosition missing = observer.nextMissingSapling(work);
-                    if (!missing.equals(target)) preparePlant();
+                    if (!missing.equals(target)) {
+                        stopSession();
+                        placementRetries = 0;
+                        preparePlant();
+                    } else {
+                        int elapsed = minecraft.thePlayer.ticksExisted - placementTick;
+                        detail = "Sapling not observed at " + target
+                            + "; placement retry "
+                            + placementRetries
+                            + "/3 in "
+                            + Math.max(0, 40 - elapsed)
+                            + " ticks";
+                        trace(
+                            "plant-confirmation-missing",
+                            "elapsedTicks",
+                            elapsed,
+                            "retry",
+                            placementRetries,
+                            "block",
+                            Block.blockRegistry.getNameForObject(
+                                MinecraftRuntimeAccess
+                                    .block(minecraft.theWorld, target.getX(), target.getY(), target.getZ())),
+                            "heldSlot",
+                            minecraft.thePlayer.inventory.currentItem,
+                            "heldItem",
+                            minecraft.thePlayer.getHeldItem());
+                        if (TreePlantingRetry.ready(elapsed)) {
+                            stopSession();
+                            if (TreePlantingRetry.exhausted(placementRetries++)) {
+                                fail(
+                                    "Sapling placement was not confirmed after three retries at " + target
+                                        + "; check soil, light, clearance and server placement restrictions");
+                            } else preparePlant();
+                        }
+                    }
                     return;
                 }
                 TreeObservation after = observer.observeAfterMutation(work);
@@ -652,6 +698,12 @@ public final class LiveVanillaTreeBackend implements TreeBackend {
                 }
                 trace("postcondition-confirmed", "expected", expected);
                 confirmedAfter = after;
+                if (expected == TreeObservationState.SAPLING_PLANTED) {
+                    stopSession();
+                    phase = Phase.FINAL_DRAIN;
+                    detail = "Sapling confirmed; finishing inventory and action cleanup";
+                    return;
+                }
                 state = ActionState.CONFIRMED;
                 detail = expected == TreeObservationState.FELLED_CLEAR ? "Captured tree logs are confirmed clear"
                     : "Exact replacement sapling is confirmed";
@@ -930,6 +982,7 @@ public final class LiveVanillaTreeBackend implements TreeBackend {
         WAITING_FOR_SESSION,
         DIGGING,
         WAITING_FOR_DRAIN,
+        FINAL_DRAIN,
         CONFIRMING
     }
 }

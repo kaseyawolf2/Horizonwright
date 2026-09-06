@@ -37,6 +37,7 @@ final class TreeDropCollector implements TreeBackend.CollectionHandle {
     private int sequence;
     private BasePosition trackedPosition;
     private int approachAttempt;
+    private final java.util.Map<Integer, Integer> failedRounds = new java.util.HashMap<>();
     private boolean cancelled;
     private String detail = "Scanning tree-farm drops";
 
@@ -105,12 +106,17 @@ final class TreeDropCollector implements TreeBackend.CollectionHandle {
         emptySince = -1;
         if (target == null) {
             target = drops.stream()
-                .min(java.util.Comparator.comparingDouble(drop -> minecraft.thePlayer.getDistanceSqToEntity(drop)))
-                .get();
+                .filter(drop -> failedRounds.getOrDefault(drop.getEntityId(), 0) < 2)
+                .min(
+                    java.util.Comparator
+                        .<EntityItem>comparingInt(drop -> failedRounds.getOrDefault(drop.getEntityId(), 0))
+                        .thenComparingDouble(drop -> minecraft.thePlayer.getDistanceSqToEntity(drop)))
+                .orElseThrow(
+                    () -> new IllegalStateException(
+                        "Remaining tree drops could not be collected after two rounds; check inventory space or access, then retry. Planting has not started."));
             deadline = System.nanoTime() + TimeUnit.MINUTES.toNanos(5);
         }
-        if (System.nanoTime() - deadline >= 0)
-            throw new IllegalStateException("Timed out collecting tree drop " + target.getEntityId());
+        if (System.nanoTime() - deadline >= 0) return deferTarget("Pickup deadline exceeded");
         BasePosition currentPosition = new BasePosition(
             min.getDimensionId(),
             (int) Math.floor(target.posX),
@@ -134,9 +140,10 @@ final class TreeDropCollector implements TreeBackend.CollectionHandle {
             NavigationProgress progress = moving.progress();
             if (progress.getState() == NavigationState.FAILED || progress.getState() == NavigationState.CANCELLED) {
                 moving = null;
-                if (approachAttempt >= 5 || progress.getDetail()
+                if (progress.getDetail()
                     .contains("firewall"))
                     throw new IllegalStateException("Cannot reach tree drops: " + progress.getDetail());
+                if (approachAttempt >= 5) return deferTarget(progress.getDetail());
                 detail = "Trying another pickup position: " + progress.getDetail();
                 return false;
             }
@@ -146,8 +153,7 @@ final class TreeDropCollector implements TreeBackend.CollectionHandle {
             }
         } else if (arrivalTick >= 0) {
             if (tick - arrivalTick >= 20) {
-                if (approachAttempt >= 5) throw new IllegalStateException(
-                    "Tree drop remains after alternate pickup approaches; check inventory space or inaccessible drops. Resume to retry before planting.");
+                if (approachAttempt >= 5) return deferTarget("Drop remained after alternate pickup positions");
                 arrivalTick = -1;
             }
         } else if (guard.isReadyForSession()) {
@@ -190,6 +196,21 @@ final class TreeDropCollector implements TreeBackend.CollectionHandle {
     @Override
     public String detail() {
         return detail;
+    }
+
+    private boolean deferTarget(String reason) {
+        int id = target.getEntityId();
+        int rounds = failedRounds.getOrDefault(id, 0) + 1;
+        failedRounds.put(id, rounds);
+        if (moving != null) moving.cancel();
+        moving = null;
+        target = null;
+        trackedPosition = null;
+        arrivalTick = -1;
+        approachAttempt = 0;
+        detail = "Deferring unreachable drop " + id + " (round " + rounds + "/2): " + reason + "; checking other drops";
+        DevelopmentTrace.event("tree-collection", "deferred-target", "target", id, "round", rounds, "reason", reason);
+        return false;
     }
 
     @Override
