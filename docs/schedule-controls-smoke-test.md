@@ -1,5 +1,7 @@
 # Schedule controls and task reruns
 
+Physical feedback: Run now passed the operator test on 2026-09-06.
+
 ## Schedule-specific editors
 
 - Select sleep, farm, tree-farm, and livestock schedules. Only relevant inputs should appear.

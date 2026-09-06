@@ -952,7 +952,7 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
             // Keep the current foot layer (important for hanging fruit and stacked fruit logs)
             // and permit an adjacent pickup position instead of issuing GoalBlock for an
             // occupied crop coordinate.
-            int playerY = FarmReachability.collectionFeetY(minecraft.thePlayer.posY);
+            int playerY = FarmReachability.collectionFeetY(minecraft.thePlayer.boundingBox.minY);
             long now = System.nanoTime();
             long remaining = deadline.remainingAction(now);
             if (remaining <= 0L) {
@@ -1032,8 +1032,17 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
                 return false;
             }
             EntityPlayer player = minecraft.thePlayer;
-            Vec3 eyes = Vec3
-                .createVectorHelper(player.posX, player.posY + MinecraftRuntimeAccess.eyeHeight(player), player.posZ);
+            Vec3 eyes = MinecraftRuntimeAccess.playerInteractionOrigin(player);
+            trace(
+                "interaction-origin",
+                "eyes",
+                eyes,
+                "playerY",
+                player.posY,
+                "feetY",
+                player.boundingBox.minY,
+                "eyeHeight",
+                MinecraftRuntimeAccess.eyeHeight(player));
             double reach = minecraft.playerController.getBlockReachDistance() + 0.5D;
             double reachSquared = reach * reach;
             interactionPoint = null;
@@ -1119,9 +1128,10 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
 
         private void aimAt(Vec3 point) {
             EntityPlayer player = minecraft.thePlayer;
-            double dx = point.xCoord - player.posX;
-            double dy = point.yCoord - (player.posY + MinecraftRuntimeAccess.eyeHeight(player));
-            double dz = point.zCoord - player.posZ;
+            Vec3 eyes = MinecraftRuntimeAccess.playerInteractionOrigin(player);
+            double dx = point.xCoord - eyes.xCoord;
+            double dy = point.yCoord - eyes.yCoord;
+            double dz = point.zCoord - eyes.zCoord;
             player.rotationYaw = (float) (Math.atan2(dz, dx) * 180.0D / Math.PI) - 90.0F;
             player.rotationPitch = (float) -(Math.atan2(dy, Math.sqrt(dx * dx + dz * dz)) * 180.0D / Math.PI);
         }

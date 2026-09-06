@@ -87,6 +87,11 @@ public final class MinecraftRuntimeAccess {
         return entity.getEyeHeight();
     }
 
+    /** Vanilla 1.7.10 client ray origin; player posY already contains the default eye offset. */
+    public static Vec3 playerInteractionOrigin(EntityPlayer player) {
+        return player.getPosition(1.0F);
+    }
+
     public static ItemStack heldItem(EntityPlayer player) {
         return player.getHeldItem();
     }
