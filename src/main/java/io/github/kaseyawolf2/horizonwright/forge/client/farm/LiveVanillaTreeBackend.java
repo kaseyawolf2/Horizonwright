@@ -248,7 +248,6 @@ public final class LiveVanillaTreeBackend implements TreeBackend {
         private int saplingHotbarSlot = -1;
         private String pendingApproachReason;
         private int[][] standBackPositions;
-        private int stableSinceTick = -1;
         private TreeObservation confirmedAfter;
         private volatile boolean cancellationRequested;
 
@@ -344,7 +343,6 @@ public final class LiveVanillaTreeBackend implements TreeBackend {
             }
             approachAttempt = 0;
             standBackPositions = null;
-            stableSinceTick = -1;
             approachOrAct("Approaching the exact replant position");
         }
 
@@ -641,7 +639,6 @@ public final class LiveVanillaTreeBackend implements TreeBackend {
                     .getAction() == TreeActionKind.PLANT_SAPLING && observer.nextMissingSapling(work) != null) {
                     // Do not move on until the sapling just placed is actually observed.
                     BasePosition missing = observer.nextMissingSapling(work);
-                    stableSinceTick = -1;
                     if (!missing.equals(target)) preparePlant();
                     return;
                 }
@@ -650,33 +647,16 @@ public final class LiveVanillaTreeBackend implements TreeBackend {
                     .getAction() == TreeActionKind.FELL_CAPTURED_BLOCKS ? TreeObservationState.FELLED_CLEAR
                         : TreeObservationState.SAPLING_PLANTED;
                 if (after.getState() != expected) {
-                    stableSinceTick = -1;
                     detail = "Waiting for " + expected;
                     return;
                 }
-                // Felling has no artificial pause; collection now separates it from planting.
-                int tick = minecraft.thePlayer.ticksExisted;
-                if (stableSinceTick < 0) stableSinceTick = tick;
-                int requiredTicks = expected == TreeObservationState.FELLED_CLEAR ? 0 : 20;
-                if (tick - stableSinceTick < requiredTicks) {
-                    detail = "Waiting for stable tree postcondition: " + expected;
-                    trace(
-                        "postcondition-settling",
-                        "expected",
-                        expected,
-                        "elapsedTicks",
-                        tick - stableSinceTick,
-                        "requiredTicks",
-                        requiredTicks);
-                    return;
-                }
+                trace("postcondition-confirmed", "expected", expected);
                 confirmedAfter = after;
                 state = ActionState.CONFIRMED;
                 detail = expected == TreeObservationState.FELLED_CLEAR ? "Captured tree logs are confirmed clear"
                     : "Exact replacement sapling is confirmed";
                 clearActive(this);
             } catch (RuntimeException waiting) {
-                stableSinceTick = -1;
                 detail = "Waiting for tree postcondition: " + waiting.getMessage();
             }
         }
