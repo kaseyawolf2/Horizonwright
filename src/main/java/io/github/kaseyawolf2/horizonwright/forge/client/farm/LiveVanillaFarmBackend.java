@@ -376,8 +376,10 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
         private final ActionLease lease;
         private final NavigationBackend navigation;
         private final int seedSlot;
-        private final int harvestHandSlot;
-        private final int emptyInventorySlot;
+        private int harvestHandSlot;
+        private int emptyInventorySlot;
+        private int emptyHandRecoveryAttempts;
+        private int emptyHandSettleTicks;
         private final int stagedSpadeInventorySlot;
         private final boolean requiresEmptyHand;
         private final CropObservation plannedBefore;
@@ -609,18 +611,7 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
                 fail("Seed inventory changed after approach");
                 return;
             }
-            if (action == FarmActionKind.RIGHT_CLICK_HARVEST && requiresEmptyHand
-                && emptyInventorySlot < 0
-                && minecraft.thePlayer.inventory.mainInventory[harvestHandSlot] != null) {
-                fail("The reserved empty hotbar slot was filled before crop harvesting");
-                return;
-            }
-            if (action == FarmActionKind.RIGHT_CLICK_HARVEST && requiresEmptyHand
-                && emptyInventorySlot >= 0
-                && minecraft.thePlayer.inventory.mainInventory[emptyInventorySlot] != null) {
-                fail("The reserved main-inventory slot was filled before crop harvesting");
-                return;
-            }
+            if (action == FarmActionKind.RIGHT_CLICK_HARVEST && requiresEmptyHand && !refreshEmptyHandPlan()) return;
             if (stagedSpadeInventorySlot >= 0 && !isCropsNhSpadeAt(stagedSpadeInventorySlot)) {
                 fail("The reserved CropsNH spade moved before crop harvesting");
                 return;
@@ -658,6 +649,35 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
             trace("break-start", "target", target);
         }
 
+        private boolean refreshEmptyHandPlan() {
+            int emptyHotbar = findEmptyHotbarSlot();
+            if (emptyHotbar >= 0) {
+                harvestHandSlot = emptyHotbar;
+                emptyInventorySlot = -1;
+            } else {
+                emptyInventorySlot = findEmptyMainInventorySlot();
+                if (emptyInventorySlot < 0) {
+                    fail("Cannot free a harvest hand: inventory is full. Make one inventory slot available.");
+                    return false;
+                }
+                harvestHandSlot = chooseEvacuationHotbarSlot();
+            }
+            trace("empty-hand-replanned", "hotbarSlot", harvestHandSlot, "inventorySlot", emptyInventorySlot);
+            return true;
+        }
+
+        private void recoverEmptyHand() {
+            if (++emptyHandRecoveryAttempts > 3) {
+                fail(
+                    "Could not keep the harvest hand empty after three recovery attempts; inventory is changing repeatedly");
+                return;
+            }
+            trace("empty-hand-recovery", "attempt", emptyHandRecoveryAttempts);
+            if (!refreshEmptyHandPlan()) return;
+            if (emptyInventorySlot < 0) rightClickHarvest();
+            else prepareEmptyHand();
+        }
+
         private void prepareEmptyHand() {
             if (!guard.isActiveLease(lease)) {
                 fail("Farm inventory session lost packet authority");
@@ -677,14 +697,12 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
                 return;
             }
             int windowId = minecraft.thePlayer.openContainer.windowId;
-            int hotbarContainerSlot = 36 + harvestHandSlot;
-            minecraft.playerController.windowClick(windowId, hotbarContainerSlot, 0, 0, minecraft.thePlayer);
-            minecraft.playerController.windowClick(windowId, emptyInventorySlot, 0, 0, minecraft.thePlayer);
-            if (minecraft.thePlayer.inventory.getItemStack() != null) {
-                minecraft.playerController.windowClick(windowId, hotbarContainerSlot, 0, 0, minecraft.thePlayer);
-                fail("Could not safely move a hotbar stack into main inventory");
-                return;
-            }
+            emptyHandPrepared = false;
+            emptyHandSettleTicks = 0;
+            // Number-key swap with a freshly checked empty main-inventory slot: one
+            // server transaction, no transient cursor stack and no items discarded.
+            minecraft.playerController
+                .windowClick(windowId, emptyInventorySlot, harvestHandSlot, 2, minecraft.thePlayer);
             phase = Phase.WAITING_FOR_EMPTY_HAND;
             detail = "Moving one hotbar stack into main inventory to empty the hand";
             trace(
@@ -750,13 +768,17 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
                 detail = "Waiting for the empty-hand inventory move to drain";
                 return;
             }
+            if (!spadeStaged && ++emptyHandSettleTicks < 5) {
+                detail = "Waiting for the free-hand inventory swap to settle";
+                return;
+            }
             if (spadeStaged && !isCropsNhSpadeAt(harvestHandSlot)) {
                 fail("CropsNH spade was not present after its inventory move");
                 return;
             }
             if (!spadeStaged && requiresEmptyHand
                 && minecraft.thePlayer.inventory.mainInventory[harvestHandSlot] != null) {
-                fail("Hotbar slot remained occupied after the empty-hand inventory move");
+                recoverEmptyHand();
                 return;
             }
             rightClickHarvest();
@@ -770,7 +792,7 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
             minecraft.playerController.updateController();
             ItemStack held = MinecraftRuntimeAccess.heldItem(minecraft.thePlayer);
             if (requiresEmptyHand && held != null) {
-                fail("Could not establish an empty hand for crop harvesting");
+                recoverEmptyHand();
                 return;
             }
             if (!requiresEmptyHand && !isCropsNhSpade(held)) {
