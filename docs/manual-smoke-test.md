@@ -278,6 +278,12 @@ yet been physically recorded.
 
 ### Integrated GUI and inventory-feed follow-up
 
+User-confirmed: persistent-hotbar feeding, desired-herd culling, pause/resume,
+shortage handling, and a scheduled cow cycle are working. The subsequent GUI
+fix restores the missing Schedules button in the Tasks header (the handler and
+schedule editor were already present). Verify Dashboard → Tasks → Schedules,
+then Tasks again, and select a schedule to inspect/edit its settings.
+
 Latest follow-up: wheat stays in the hotbar across all feeding interactions and
 is deliberately left there afterward; the displaced item remains in its former
 main-inventory slot. There is no per-animal reverse swap or forced selection

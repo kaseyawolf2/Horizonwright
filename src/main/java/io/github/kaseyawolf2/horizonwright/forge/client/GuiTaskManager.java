@@ -20,6 +20,8 @@ public final class GuiTaskManager extends GuiReadableScreen {
     private static final int PREVIOUS_BUTTON = 3;
     private static final int NEXT_BUTTON = 4;
     private static final int CLEAR_COMPLETED_BUTTON = 5;
+    private static final int TASKS_TAB = 20;
+    private static final int SCHEDULES_TAB = 21;
     private static final int TASK_BUTTON_BASE = 100;
     private static final int TASKS_PER_PAGE = 5;
 
@@ -65,6 +67,11 @@ public final class GuiTaskManager extends GuiReadableScreen {
         left = (width - panelWidth) / 2;
         top = (height - panelHeight) / 2;
 
+        GuiButton activeTab = new GuiHorizonwrightButton(TASKS_TAB, left + 16, top + 12, 120, 20, "Tasks");
+        activeTab.enabled = false;
+        buttonList.add(activeTab);
+        buttonList.add(new GuiHorizonwrightButton(SCHEDULES_TAB, left + 144, top + 12, 120, 20, "Schedules"));
+
         taskButtons.clear();
         for (int index = 0; index < TASKS_PER_PAGE; index++) {
             GuiButton button = new GuiHorizonwrightButton(
@@ -103,7 +110,7 @@ public final class GuiTaskManager extends GuiReadableScreen {
 
     @Override
     protected void actionPerformed(GuiButton button) {
-        if (button.id == 21) {
+        if (button.id == SCHEDULES_TAB) {
             mc.displayGuiScreen(new GuiScheduleManager(parent, runtimeProvider, editorProvider));
             return;
         }
