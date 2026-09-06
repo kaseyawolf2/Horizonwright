@@ -4,6 +4,10 @@ final class TreePlantingRetry {
 
     private TreePlantingRetry() {}
 
+    static int settleTicksRemaining(int elapsedTicks) {
+        return Math.max(0, 10 - Math.max(0, elapsedTicks));
+    }
+
     static boolean ready(int elapsedTicks) {
         return elapsedTicks >= 40;
     }

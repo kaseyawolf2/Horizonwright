@@ -629,6 +629,20 @@ public final class LiveVanillaTreeBackend implements TreeBackend {
             }
             if (request.getDecision()
                 .getAction() == TreeActionKind.PLANT_SAPLING) {
+                // Local placement is optimistic: keep the staged slot/session intact briefly
+                // before observing the result or advancing to another cell of a 2x2 pattern.
+                int remaining = TreePlantingRetry
+                    .settleTicksRemaining(minecraft.thePlayer.ticksExisted - placementTick);
+                if (remaining > 0) {
+                    detail = "Allowing sapling placement to settle: " + remaining + " ticks";
+                    trace(
+                        "plant-placement-settling",
+                        "remainingTicks",
+                        remaining,
+                        "heldSlot",
+                        minecraft.thePlayer.inventory.currentItem);
+                    return;
+                }
                 phase = Phase.CONFIRMING;
                 detail = "Checking placed sapling while keeping its hotbar slot staged";
                 return;
