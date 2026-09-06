@@ -369,7 +369,9 @@ public final class ClientBootstrap {
             liveUnloadBackend = new LiveVanillaChestUnloadBackend(
                 minecraft,
                 new ProfileVanillaChestUnloadConfiguration(minecraft, persistenceStore, identity),
-                containerTransactionExecutor);
+                containerTransactionExecutor,
+                attachedRuntime.getActionSessionGuard(),
+                attachedRuntime::getNavigationBackend);
             attachedRuntime.getTaskServices()
                 .bindUnloadBackend(liveUnloadBackend);
             liveRepairBackend = new LiveTinkersRepairBackend(

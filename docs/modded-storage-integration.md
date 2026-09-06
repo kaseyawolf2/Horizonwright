@@ -12,7 +12,7 @@ The adapter recognizes exact vanilla ContainerChest, cpw.mods.ironchest.Containe
 
 - Profile/default/area storage capture now recognizes the installed Iron Chests tile classes and Et Futurum's TileEntityBarrel (which uses ContainerChestGeneric). Exact vanilla TileEntityChest capture remains supported. Entity storage such as chest boats is not treated as block storage. These capture paths still need physical tests.
 - Travel/open/identity verification/close and return-to-excavation lifecycle.
-  The unload runner now has a separate cancellable accessStorage phase with MOVEMENT/LOOK/USE authority, before any container transaction. Runtime tests cover open-before-plan and pause cleanup. The live chest backend still needs to implement this handle; its default remains manual access, so automatic chest travel is not yet functional.
+  The unload runner has a separate cancellable accessStorage phase with MOVEMENT/LOOK/USE authority, before any container transaction. Runtime tests cover open-before-plan and pause cleanup. The live backend is now wired to Baritone adjacent-goal navigation, live reach/ray validation, one right-click held through packet dispatch, and matching registered-inventory verification. Access times out after two minutes and refuses another open container or sneaking interaction. This live path still needs physical testing. Automatic close and return-to-work integration remain outstanding.
 - Dedicated live tests for each chest tier, rejected items, full storage, double chests, interrupted transactions, and unloading supplies preservation.
 - JABBA, Storage Drawers and Binnie require separate protocol/interaction inspection and are not supported by this adapter.
 

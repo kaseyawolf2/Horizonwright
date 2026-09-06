@@ -26,6 +26,14 @@ public final class LiveVanillaChestUnloadBackend implements UnloadBackend {
     public interface ConfigurationSource {
 
         Configuration resolve(String loadoutId, String storageId, Container chest);
+
+        default io.github.kaseyawolf2.horizonwright.core.persistence.NamedLocation location(String storageId) {
+            return null;
+        }
+
+        default boolean matches(String storageId, Container container) {
+            return false;
+        }
     }
 
     public static final class Configuration {
@@ -46,6 +54,31 @@ public final class LiveVanillaChestUnloadBackend implements UnloadBackend {
     private final ConfigurationSource configuration;
     private final ConfirmedContainerTransactionExecutor executor;
     private final VanillaChestQuickMovePredictor predictor;
+    private io.github.kaseyawolf2.horizonwright.core.action.ActionSessionGuard accessGuard;
+    private java.util.function.Supplier<io.github.kaseyawolf2.horizonwright.core.navigation.NavigationBackend> navigation;
+
+    public LiveVanillaChestUnloadBackend(Minecraft minecraft, ConfigurationSource configuration,
+        ConfirmedContainerTransactionExecutor executor,
+        io.github.kaseyawolf2.horizonwright.core.action.ActionSessionGuard guard,
+        java.util.function.Supplier<io.github.kaseyawolf2.horizonwright.core.navigation.NavigationBackend> navigation) {
+        this(minecraft, configuration, executor);
+        this.accessGuard = guard;
+        this.navigation = navigation;
+    }
+
+    @Override
+    public UnloadActionHandle accessStorage(String id, String storageId, long epoch, ActionLease lease) {
+        if (accessGuard == null || navigation == null) return null;
+        return new LiveStorageAccess(
+            minecraft,
+            accessGuard,
+            navigation.get(),
+            configuration,
+            id,
+            storageId,
+            epoch,
+            lease);
+    }
 
     public LiveVanillaChestUnloadBackend(Minecraft minecraft, ConfigurationSource configuration,
         ConfirmedContainerTransactionExecutor executor) {

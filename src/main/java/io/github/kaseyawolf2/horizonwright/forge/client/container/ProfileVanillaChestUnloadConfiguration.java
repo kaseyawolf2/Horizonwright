@@ -82,6 +82,24 @@ public final class ProfileVanillaChestUnloadConfiguration implements LiveVanilla
         throw new IllegalStateException("profile has no named storage endpoint '" + storageId + "'");
     }
 
+    @Override
+    public NamedLocation location(String storageId) {
+        ProfileEnvelope profile = requireProfile();
+        return requireLocation(profile, requireEndpoint(profile, storageId).getLocationId());
+    }
+
+    @Override
+    public boolean matches(String storageId, Container container) {
+        NamedLocation target = location(storageId);
+        if (minecraft.theWorld == null || minecraft.theWorld.provider.dimensionId != target.getDimensionId()
+            || !SupportedChestLayout.supports(container)) return false;
+        Object tile = MinecraftRuntimeAccess
+            .tileEntity(minecraft.theWorld, target.getX(), target.getY(), target.getZ());
+        IInventory open = SupportedChestLayout.inventory(container);
+        return tile == open || tile instanceof IInventory && open instanceof InventoryLargeChest
+            && ((InventoryLargeChest) open).isPartOfLargeChest((IInventory) tile);
+    }
+
     private static NamedLocation requireLocation(ProfileEnvelope profile, String locationId) {
         for (NamedLocation location : profile.getNamedLocations()) {
             if (location.getId()
