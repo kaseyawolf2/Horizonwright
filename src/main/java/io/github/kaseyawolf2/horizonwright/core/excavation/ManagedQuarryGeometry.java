@@ -11,6 +11,18 @@ public final class ManagedQuarryGeometry {
      */
     public static BlockPosition rampStep(CylinderExcavationSpec spec, int layerY) {
         requireManagedLayer(spec, layerY);
+        if (spec.isRectangle()) {
+            int w = spec.getMaximumX() - spec.getMinimumX(), d = spec.getMaximumZ() - spec.getMinimumZ();
+            if (w < 2 || d < 2)
+                throw new IllegalArgumentException("Managed rectangles need at least 3x3 blocks for a ramp");
+            int i = Math.floorMod(spec.getTopY() - layerY, 2 * (w + d));
+            if (i < d) return new BlockPosition(spec.getMaximumX(), layerY, spec.getMinimumZ() + i);
+            i -= d;
+            if (i < w) return new BlockPosition(spec.getMaximumX() - i, layerY, spec.getMaximumZ());
+            i -= w;
+            if (i < d) return new BlockPosition(spec.getMinimumX(), layerY, spec.getMaximumZ() - i);
+            return new BlockPosition(spec.getMinimumX() + i - d, layerY, spec.getMinimumZ());
+        }
         if (spec.getRadius() < 2) throw new IllegalArgumentException("managed quarry ramps require radius 2 or larger");
         int distance = (int) Math.floor(spec.getRadius() / Math.sqrt(2.0D));
         int sideLength = Math.multiplyExact(distance, 2);

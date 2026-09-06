@@ -84,6 +84,7 @@ public final class MinecraftVanillaTreeObserver {
             for (int z = min.getZ(); z <= max.getZ(); z++) {
                 for (int x = min.getX(); x <= max.getX(); x++) {
                     BasePosition position = new BasePosition(min.getDimensionId(), x, y, z);
+                    if (!area.contains(position)) continue;
                     int species = logSpecies(position);
                     Block scanned = MinecraftRuntimeAccess.block(minecraft.theWorld, x, y, z);
                     if (species >= 0 || scanned.isWood(minecraft.theWorld, x, y, z)) occupiedByTree = true;
@@ -345,6 +346,8 @@ public final class MinecraftVanillaTreeObserver {
         String treeId = "vanilla-tree@" + root
             .getDimensionId() + ":" + root.getX() + "," + root.getY() + "," + root.getZ() + ":" + component.species;
         if (square) treeId += "|2x2";
+        if (!io.github.kaseyawolf2.horizonwright.core.base.TreeHarvestBoundary.rootSelected(area, root, treeId))
+            protectedTree = true;
         return new TreeObservation(
             treeId,
             revision,
@@ -365,15 +368,24 @@ public final class MinecraftVanillaTreeObserver {
         while (!queue.isEmpty()) {
             BasePosition current = queue.removeFirst();
             result.blocks.add(current);
+            if (result.blocks.size() > TreeObservation.MAX_CAPTURED_BLOCKS) {
+                result.crossesBoundary = true;
+                break;
+            }
             for (int[] offset : NEIGHBORS) {
                 BasePosition next = new BasePosition(
                     current.getDimensionId(),
                     current.getX() + offset[0],
                     current.getY() + offset[1],
                     current.getZ() + offset[2]);
-                if (!area.contains(next)) {
+                if (!io.github.kaseyawolf2.horizonwright.core.base.TreeHarvestBoundary.logWithinReach(seed, next)) {
+                    if (next.getY() < 0 || next.getY() > 255) continue;
                     if (!MinecraftRuntimeAccess.blockExists(minecraft.theWorld, next.getX(), next.getY(), next.getZ())
                         || logSpecies(next) == species) result.crossesBoundary = true;
+                    continue;
+                }
+                if (!MinecraftRuntimeAccess.blockExists(minecraft.theWorld, next.getX(), next.getY(), next.getZ())) {
+                    result.crossesBoundary = true;
                     continue;
                 }
                 if (!visited.contains(next) && logSpecies(next) == species) {

@@ -375,13 +375,14 @@ final class TreeTaskRunner implements TaskRunner {
         }
         Set<String> ids = new HashSet<>();
         for (TreeObservation tree : snapshot.getObservations()) {
-            if (!ids.add(tree.getTreeId()) || !snapshot.getArea()
-                .contains(tree.getReplantPosition())) {
+            if (!ids.add(tree.getTreeId()) || !io.github.kaseyawolf2.horizonwright.core.base.TreeHarvestBoundary
+                .rootSelected(snapshot.getArea(), tree.getReplantPosition(), tree.getTreeId())) {
                 throw new IllegalStateException("tree scan contains a duplicate or outside root");
             }
             for (BasePosition block : tree.getTreeBlocks()) {
-                if (!snapshot.getArea()
-                    .contains(block)) throw new IllegalStateException("tree scan crossed the named boundary");
+                if (!io.github.kaseyawolf2.horizonwright.core.base.TreeHarvestBoundary
+                    .logWithinReach(tree.getReplantPosition(), block))
+                    throw new IllegalStateException("tree scan exceeded connected-tree discovery reach");
             }
         }
     }
@@ -430,6 +431,7 @@ final class TreeTaskRunner implements TaskRunner {
 
     static boolean sameTreeBounds(io.github.kaseyawolf2.horizonwright.core.base.NamedArea saved,
         io.github.kaseyawolf2.horizonwright.core.base.NamedArea live) {
+        if (saved.isCircular() != live.isCircular()) return false;
         return saved.getId()
             .equals(live.getId())
             && saved.getMinimum()

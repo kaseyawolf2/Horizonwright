@@ -125,7 +125,7 @@ public final class GuiAreaSettings extends GuiReadableScreen {
             }
             if (button.id == 4) {
                 save();
-                mc.displayGuiScreen(new GuiSavedAreaEditor(this, editors, runtime, area));
+                mc.displayGuiScreen(new GuiAreaGeometry(this, editors, runtime, area));
             }
             if (button.id == 5) save();
             if (button.id == 6) {
@@ -142,10 +142,8 @@ public final class GuiAreaSettings extends GuiReadableScreen {
                         mc.displayGuiScreen(new GuiTreeFarmSetup(this, runtime, area));
                         break;
                     case EXCAVATION:
-                        mc.displayGuiScreen(new GuiExcavationSetup(this, runtime, editors, area));
-                        break;
                     case QUARRY:
-                        mc.displayGuiScreen(new GuiManagedQuarrySetup(this, runtime, editors, area));
+                        mc.displayGuiScreen(new GuiMiningMode(this, runtime, editors, area));
                         break;
                     default:
                         break;

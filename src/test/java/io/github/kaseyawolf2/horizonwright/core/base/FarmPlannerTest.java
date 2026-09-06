@@ -205,7 +205,7 @@ public class FarmPlannerTest {
             1L,
             "outside",
             OAK_SAPLING,
-            Arrays.asList(insideTreeBase(), new BasePosition(0, 20, 65, 0)));
+            Arrays.asList(insideTreeBase(), new BasePosition(0, 200, 65, 0)));
         TreeWorkCheckpoint outsideCheckpoint = TreeWorkCheckpoint.start(plot, 1L, outside);
         assertEquals(
             TreeActionKind.SKIP_OUTSIDE_FARM,

@@ -128,6 +128,11 @@ public final class GuiSavedAreaEditor extends GuiReadableScreen {
         boolean farm = original.getKind() == io.github.kaseyawolf2.horizonwright.core.base.AreaKind.FARM;
         seedReserve.setVisible(farm);
         intervalMinutes.setVisible(farm);
+        if (original.isCircular()) {
+            for (GuiTextField coordinate : new GuiTextField[] { dimension, firstX, firstY, firstZ, secondX, secondY,
+                secondZ }) coordinate.setEnabled(false);
+            status = "Circular footprint; bounds shown below are its enclosing box. Use Edit geometry to change shape or limits.";
+        }
 
         buttonList
             .add(new GuiHorizonwrightButton(FIRST_HERE_BUTTON, left + 350, top + 103, 128, 20, "Use my feet here"));
@@ -154,6 +159,8 @@ public final class GuiSavedAreaEditor extends GuiReadableScreen {
             GuiButton control = (GuiButton) value;
             if (control.id == HUSBANDRY_BUTTON || control.id == TREE_FARM_BUTTON) control.visible = false;
             if (control.id == QUEUE_FARM_BUTTON || control.id == SCHEDULE_FARM_BUTTON) control.visible = farm;
+            if (original.isCircular() && control.id == FIRST_HERE_BUTTON) control.displayString = "Edit geometry";
+            if (original.isCircular() && control.id == SECOND_HERE_BUTTON) control.visible = false;
         }
     }
 
@@ -181,6 +188,10 @@ public final class GuiSavedAreaEditor extends GuiReadableScreen {
             return;
         }
         try {
+            if (original.isCircular() && button.id == FIRST_HERE_BUTTON) {
+                mc.displayGuiScreen(new GuiAreaGeometry(parent, editorProvider, runtimeProvider, original));
+                return;
+            }
             if (button.id == FIRST_HERE_BUTTON) capture(firstX, firstY, firstZ);
             else if (button.id == SECOND_HERE_BUTTON) capture(secondX, secondY, secondZ);
             else if (button.id == SAVE_BUTTON) save();
@@ -197,7 +208,7 @@ public final class GuiSavedAreaEditor extends GuiReadableScreen {
         }
         dimension.setText(Integer.toString(mc.theWorld.provider.dimensionId));
         x.setText(Integer.toString(MathHelper.floor_double(mc.thePlayer.posX)));
-        y.setText(Integer.toString(MathHelper.floor_double(mc.thePlayer.posY) - 1));
+        y.setText(Integer.toString(MathHelper.floor_double(mc.thePlayer.boundingBox.minY)));
         z.setText(Integer.toString(MathHelper.floor_double(mc.thePlayer.posZ)));
         status = "Captured feet position. Review both corners, then save.";
     }
@@ -220,9 +231,19 @@ public final class GuiSavedAreaEditor extends GuiReadableScreen {
             : displayName.getText()
                 .trim();
         if (name.isEmpty()) throw new IllegalArgumentException("display name must not be blank");
-        editor.apply(
-            ProfileAssetUpdate.ofArea(
-                new NamedArea(original.getId(), name, first, second, original.getKind(), original.getStorageId())));
+        NamedArea updated = original.isCircular()
+            ? NamedArea.circle(
+                original.getId(),
+                name,
+                original.getCenter(),
+                original.getRadius(),
+                original.getMinimum()
+                    .getY(),
+                original.getMaximum()
+                    .getY())
+                .withSettings(original.getKind(), original.getStorageId())
+            : new NamedArea(original.getId(), name, first, second, original.getKind(), original.getStorageId());
+        editor.apply(ProfileAssetUpdate.ofArea(updated));
         status = "Saved area '" + original.getId() + "'. Schedules using it remain connected.";
     }
 

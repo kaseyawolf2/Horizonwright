@@ -68,6 +68,7 @@ public final class MinecraftVanillaFarmObserver {
         for (int y = minimum.getY(); y <= maximum.getY() + 1; y++) {
             for (int z = minimum.getZ(); z <= maximum.getZ(); z++) {
                 for (int x = minimum.getX(); x <= maximum.getX(); x++) {
+                    if (!plot.contains(new BasePosition(minimum.getDimensionId(), x, minimum.getY(), z))) continue;
                     CropObservation observation = observeIfCrop(new BasePosition(minimum.getDimensionId(), x, y, z));
                     if (observation != null) result.add(observation);
                 }

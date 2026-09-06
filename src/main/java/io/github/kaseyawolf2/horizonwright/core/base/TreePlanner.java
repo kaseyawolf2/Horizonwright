@@ -39,7 +39,7 @@ public final class TreePlanner {
                 reserveEvidence);
         }
         for (BasePosition block : checkpoint.getCapturedBlocks()) {
-            if (!treeFarm.contains(block)) {
+            if (!TreeHarvestBoundary.logWithinReach(checkpoint.getReplantPosition(), block)) {
                 return decision(
                     treeFarm,
                     checkpoint,
@@ -49,7 +49,7 @@ public final class TreePlanner {
                     reserveEvidence);
             }
         }
-        if (!treeFarm.contains(checkpoint.getReplantPosition())) {
+        if (!TreeHarvestBoundary.rootSelected(treeFarm, checkpoint.getReplantPosition(), checkpoint.getTreeId())) {
             return decision(
                 treeFarm,
                 checkpoint,

@@ -61,6 +61,7 @@ final class FarmTaskCheckpointCodec {
         values.put(PLOT_MAX_X, Integer.toString(maximum.getX()));
         values.put(PLOT_MAX_Y, Integer.toString(maximum.getY()));
         values.put(PLOT_MAX_Z, Integer.toString(maximum.getZ()));
+        io.github.kaseyawolf2.horizonwright.core.base.AreaShapeCheckpoint.write(values, "plot.shape.", plot);
         values.put(PASS_REVISION, Long.toString(checkpoint.getPassRevision()));
         values.put(CHECKPOINT_REVISION, Long.toString(checkpointRevision));
         values.put(NEXT_INDEX, Integer.toString(checkpoint.getNextObservationIndex()));
@@ -90,6 +91,7 @@ final class FarmTaskCheckpointCodec {
                 integer(values, PLOT_MAX_X),
                 integer(values, PLOT_MAX_Y),
                 integer(values, PLOT_MAX_Z)));
+        plot = io.github.kaseyawolf2.horizonwright.core.base.AreaShapeCheckpoint.read(values, "plot.shape.", plot);
         requireSpec(spec, plot);
         long passRevision = longValue(values, PASS_REVISION);
         if (passRevision < 1L || longValue(values, CHECKPOINT_REVISION) != taskCheckpoint.getRevision()

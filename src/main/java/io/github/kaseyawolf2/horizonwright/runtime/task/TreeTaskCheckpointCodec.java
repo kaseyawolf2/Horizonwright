@@ -108,11 +108,12 @@ final class TreeTaskCheckpointCodec {
         values.put("area.maxX", Integer.toString(max.getX()));
         values.put("area.maxY", Integer.toString(max.getY()));
         values.put("area.maxZ", Integer.toString(max.getZ()));
+        io.github.kaseyawolf2.horizonwright.core.base.AreaShapeCheckpoint.write(values, "area.shape.", area);
     }
 
     private static NamedArea readArea(Map<String, String> values) {
         int dimension = integer(values, "area.dimension");
-        return new NamedArea(
+        NamedArea area = new NamedArea(
             text(values, "area.id"),
             text(values, "area.name"),
             new BasePosition(
@@ -129,6 +130,7 @@ final class TreeTaskCheckpointCodec {
                 ? enumValue(io.github.kaseyawolf2.horizonwright.core.base.AreaKind.class, values, "area.kind")
                 : io.github.kaseyawolf2.horizonwright.core.base.AreaKind.UNASSIGNED,
             values.get("area.storage"));
+        return io.github.kaseyawolf2.horizonwright.core.base.AreaShapeCheckpoint.read(values, "area.shape.", area);
     }
 
     private static void writeTree(Map<String, String> values, String prefix, TreeObservation tree) {

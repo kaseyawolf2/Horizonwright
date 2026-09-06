@@ -6,8 +6,8 @@ public enum AreaKind {
     FARM("Crop farm"),
     LIVESTOCK("Livestock pen"),
     TREE_FARM("Tree farm"),
-    EXCAVATION("Excavation"),
-    QUARRY("Managed quarry");
+    EXCAVATION("Mining (excavation / quarry)"),
+    QUARRY("Mining (excavation / quarry)");
 
     private final String label;
 
@@ -20,6 +20,6 @@ public enum AreaKind {
     }
 
     public AreaKind next() {
-        return values()[(ordinal() + 1) % values().length];
+        return this == EXCAVATION || this == QUARRY ? UNASSIGNED : values()[ordinal() + 1];
     }
 }

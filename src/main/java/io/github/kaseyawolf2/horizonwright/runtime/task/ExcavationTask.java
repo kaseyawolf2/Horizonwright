@@ -119,8 +119,17 @@ public final class ExcavationTask {
             throw new IllegalArgumentException("unsupported task type: " + spec.getType());
         }
         Map<String, String> parameters = spec.getParameters();
-        requireValue(parameters, SHAPE, CYLINDER);
         ExcavationMode mode = parseMode(parameters);
+        if ("rectangle".equals(parameters.get(SHAPE))) return CylinderExcavationSpec.rectangle(
+            parseInteger(parameters, DIMENSION),
+            parseInteger(parameters, "minX"),
+            parseInteger(parameters, "maxX"),
+            parseInteger(parameters, "minZ"),
+            parseInteger(parameters, "maxZ"),
+            parseInteger(parameters, BOTTOM_Y),
+            parseInteger(parameters, TOP_Y),
+            mode);
+        requireValue(parameters, SHAPE, CYLINDER);
         return new CylinderExcavationSpec(
             parseInteger(parameters, DIMENSION),
             parseInteger(parameters, CENTER_X),
@@ -145,6 +154,43 @@ public final class ExcavationTask {
         parameters.put(BOTTOM_Y, Integer.toString(cylinder.getBottomY()));
         parameters.put(TOP_Y, Integer.toString(cylinder.getTopY()));
         return parameters;
+    }
+
+    public static TaskSpec forArea(TaskSpec template, io.github.kaseyawolf2.horizonwright.core.base.NamedArea area) {
+        if (area.isCircular()) return template;
+        Map<String, String> parameters = new LinkedHashMap<>(template.getParameters());
+        parameters.put(SHAPE, "rectangle");
+        parameters.put(
+            "minX",
+            Integer.toString(
+                area.getMinimum()
+                    .getX()));
+        parameters.put(
+            "maxX",
+            Integer.toString(
+                area.getMaximum()
+                    .getX()));
+        parameters.put(
+            "minZ",
+            Integer.toString(
+                area.getMinimum()
+                    .getZ()));
+        parameters.put(
+            "maxZ",
+            Integer.toString(
+                area.getMaximum()
+                    .getZ()));
+        TaskSpec result = new TaskSpec(
+            template.getId(),
+            TYPE,
+            "Mine rectangle: " + area.getDisplayName(),
+            template.getLane(),
+            parameters);
+        CylinderExcavationSpec geometry = parse(result);
+        if (geometry.getMode() == ExcavationMode.MANAGED_QUARRY)
+            io.github.kaseyawolf2.horizonwright.core.excavation.ManagedQuarryGeometry
+                .rampStep(geometry, geometry.getTopY());
+        return result;
     }
 
     private static ExcavationMode parseMode(Map<String, String> parameters) {

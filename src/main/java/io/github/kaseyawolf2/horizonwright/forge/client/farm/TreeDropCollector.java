@@ -58,6 +58,7 @@ final class TreeDropCollector implements TreeBackend.CollectionHandle {
         if (cancelled || !lease.isValid() || minecraft.thePlayer == null || minecraft.theWorld == null)
             throw new IllegalStateException("Tree collection interrupted");
         BasePosition min = area.getMinimum(), max = area.getMaximum();
+        int pickupMargin = io.github.kaseyawolf2.horizonwright.core.base.TreeHarvestBoundary.OUTSIDE_REACH;
         if (minecraft.theWorld.provider.dimensionId != min.getDimensionId())
             throw new IllegalStateException("Tree collection dimension changed");
         for (int cx = min.getX() >> 4; cx <= (max.getX() >> 4); cx++)
@@ -67,15 +68,14 @@ final class TreeDropCollector implements TreeBackend.CollectionHandle {
         List<EntityItem> drops = MinecraftRuntimeAccess.getEntitiesWithinAabb(
             minecraft.theWorld,
             EntityItem.class,
-            AxisAlignedBB
-                .getBoundingBox(min.getX(), min.getY(), min.getZ(), max.getX() + 1D, max.getY() + 1D, max.getZ() + 1D));
-        drops.removeIf(
-            drop -> drop.isDead || !area.contains(
-                new BasePosition(
-                    min.getDimensionId(),
-                    (int) Math.floor(drop.posX),
-                    (int) Math.floor(drop.posY),
-                    (int) Math.floor(drop.posZ))));
+            AxisAlignedBB.getBoundingBox(
+                min.getX() - pickupMargin,
+                0,
+                min.getZ() - pickupMargin,
+                max.getX() + pickupMargin + 1D,
+                256,
+                max.getZ() + pickupMargin + 1D));
+        drops.removeIf(drop -> drop.isDead);
         int tick = minecraft.thePlayer.ticksExisted;
         DevelopmentTrace.event(
             "tree-collection",

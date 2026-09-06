@@ -156,19 +156,19 @@ public final class CylinderExcavationGeometry {
     }
 
     private static int minimumChunkX(CylinderExcavationSpec spec) {
-        return Math.floorDiv(spec.getCenterX() - spec.getRadius(), 16);
+        return Math.floorDiv(spec.getMinimumX(), 16);
     }
 
     private static int maximumChunkX(CylinderExcavationSpec spec) {
-        return Math.floorDiv(spec.getCenterX() + spec.getRadius(), 16);
+        return Math.floorDiv(spec.getMaximumX(), 16);
     }
 
     private static int minimumChunkZ(CylinderExcavationSpec spec) {
-        return Math.floorDiv(spec.getCenterZ() - spec.getRadius(), 16);
+        return Math.floorDiv(spec.getMinimumZ(), 16);
     }
 
     private static int maximumChunkZ(CylinderExcavationSpec spec) {
-        return Math.floorDiv(spec.getCenterZ() + spec.getRadius(), 16);
+        return Math.floorDiv(spec.getMaximumZ(), 16);
     }
 
     private static void requireMaximumTargets(int maximumTargets) {

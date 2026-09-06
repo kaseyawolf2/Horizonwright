@@ -994,6 +994,15 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
             // and permit an adjacent pickup position instead of issuing GoalBlock for an
             // occupied crop coordinate.
             int playerY = FarmReachability.collectionFeetY(minecraft.thePlayer.boundingBox.minY);
+            net.minecraft.entity.item.EntityItem drop = nearbyHarvestDrop(target);
+            if (drop != null) {
+                target = new BasePosition(
+                    target.getDimensionId(),
+                    (int) Math.floor(drop.posX),
+                    (int) Math.floor(drop.posY),
+                    (int) Math.floor(drop.posZ));
+                playerY = target.getY();
+            }
             long now = System.nanoTime();
             long remaining = deadline.remainingAction(now);
             if (remaining <= 0L) {
@@ -1049,9 +1058,41 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
                 detail = "Waiting for harvest item pickup synchronization";
                 return;
             }
+            if (nearbyHarvestDrop(
+                request.getDecision()
+                    .getTarget())
+                != null) {
+                phase = Phase.WAITING_FOR_COLLECTION_SESSION;
+                detail = "Harvest drops remain nearby; rescanning their live position, including outside the plot";
+                return;
+            }
             state = ActionState.CONFIRMED;
             detail = "Exact immature crop state is confirmed and its harvest location was collected";
             clearActive(this);
+        }
+
+        private net.minecraft.entity.item.EntityItem nearbyHarvestDrop(BasePosition crop) {
+            java.util.List<net.minecraft.entity.item.EntityItem> drops = MinecraftRuntimeAccess.getEntitiesWithinAabb(
+                minecraft.theWorld,
+                net.minecraft.entity.item.EntityItem.class,
+                net.minecraft.util.AxisAlignedBB.getBoundingBox(
+                    crop.getX() - 6,
+                    Math.max(0, crop.getY() - 16),
+                    crop.getZ() - 6,
+                    crop.getX() + 7,
+                    Math.min(256, crop.getY() + 5),
+                    crop.getZ() + 7));
+            net.minecraft.entity.item.EntityItem nearest = null;
+            double distance = Double.MAX_VALUE;
+            for (net.minecraft.entity.item.EntityItem drop : drops) {
+                if (drop.isDead) continue;
+                double candidate = drop.getDistanceSqToEntity(minecraft.thePlayer);
+                if (candidate < distance) {
+                    distance = candidate;
+                    nearest = drop;
+                }
+            }
+            return nearest;
         }
 
         private boolean samePlannedCrop(CropObservation current) {

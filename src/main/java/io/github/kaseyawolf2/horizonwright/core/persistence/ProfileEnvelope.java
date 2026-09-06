@@ -274,6 +274,7 @@ public final class ProfileEnvelope {
         PersistenceValidation.requireList(namedAreas, "profile namedAreas");
         Set<String> areaIds = new HashSet<>();
         for (NamedArea area : namedAreas) {
+            area.validateShape();
             if (!areaIds.add(area.getId())) {
                 throw new IllegalArgumentException("profile namedAreas contains duplicate id '" + area.getId() + "'");
             }

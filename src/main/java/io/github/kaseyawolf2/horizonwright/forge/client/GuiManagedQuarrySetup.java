@@ -116,7 +116,7 @@ public final class GuiManagedQuarrySetup extends GuiReadableScreen {
                     .getZ()
                     - boundArea.getMinimum()
                         .getZ());
-            radius.setText(Integer.toString(span / 2));
+            radius.setText(Integer.toString(boundArea.isCircular() ? span / 2 : Math.max(2, span / 2)));
             bottomY.setText(
                 Integer.toString(
                     boundArea.getMinimum()
@@ -129,7 +129,8 @@ public final class GuiManagedQuarrySetup extends GuiReadableScreen {
             bottomY.setEnabled(false);
             topY.setEnabled(false);
             storageId.setEnabled(false);
-            status = "Cylinder is fitted inside this saved area's bounds; edit bounds from the area page.";
+            status = "Uses the saved " + (boundArea.isCircular() ? "circle" : "rectangle")
+                + " exactly; edit bounds from Areas.";
         }
     }
 
@@ -217,6 +218,8 @@ public final class GuiManagedQuarrySetup extends GuiReadableScreen {
                     ProfileAssetInput.inventorySlot(toolSlot.getText(), "tool slot"),
                     ProfileAssetInput.nonNegativeInteger(workDamage.getText(), "predicted work damage"));
             }
+            if (boundArea != null)
+                spec = io.github.kaseyawolf2.horizonwright.runtime.task.ExcavationTask.forArea(spec, boundArea);
             TaskSnapshot submitted = runtime.submitExcavation(spec);
             status = "Queued '" + submitted.getSpec()
                 .getId() + "' at X/Z " + centerX + "/" + centerZ + ".";
@@ -257,7 +260,10 @@ public final class GuiManagedQuarrySetup extends GuiReadableScreen {
             top + 25,
             0xFF8FAAD0);
         label("Task name", left + 18, top + 50);
-        label("Radius (2-250)", left + 270, top + 50);
+        label(
+            boundArea != null && !boundArea.isCircular() ? "Saved rectangle" : "Radius (2-250)",
+            left + 270,
+            top + 50);
         label("Bottom Y", left + 18, top + 76);
         label("Top Y", left + 270, top + 76);
         drawString(fontRendererObj, "Approved infrastructure", left + 18, top + 94, 0xFFF0C674);
@@ -280,6 +286,17 @@ public final class GuiManagedQuarrySetup extends GuiReadableScreen {
             status.startsWith("Nothing") ? 0xFFFF7777 : 0xFFB8C8DE);
         for (GuiTextField field : fields()) field.drawTextBox();
         super.drawContents(mouseX, mouseY, partialTicks);
+        if (mouseX >= left + 18 && mouseX < left + 190 && mouseY >= top + 254 && mouseY < top + 274) drawHoveringText(
+            java.util.Arrays.asList(
+                "Work damage (legacy estimate)",
+                "Estimated tool durability points used by upcoming work.",
+                "Not block damage, mining speed, or a percentage.",
+                "Currently recorded for diagnostics only; it does not trigger repairs.",
+                "The default Tinkers policy repairs tools when broken.",
+                "Leave at 1 unless testing diagnostics."),
+            mouseX,
+            mouseY,
+            fontRendererObj);
     }
 
     @Override

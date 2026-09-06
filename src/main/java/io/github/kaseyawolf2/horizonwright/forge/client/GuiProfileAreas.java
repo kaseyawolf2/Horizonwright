@@ -79,6 +79,8 @@ public final class GuiProfileAreas extends GuiReadableScreen {
                 "Saved areas"));
         buttonList.add(new GuiHorizonwrightButton(BACK_BUTTON, left + panelWidth - 82, top + 218, 70, 20, "Back"));
         refreshCount();
+        buttonList
+            .add(new GuiHorizonwrightButton(9, left + 18, top + 80, panelWidth - 36, 20, "Circle / coordinate editor"));
         if (capture.hasFirst() || capture.hasSecond()) {
             status = "Corner draft retained while the page was closed. Capture the remaining corner.";
         }
@@ -91,6 +93,10 @@ public final class GuiProfileAreas extends GuiReadableScreen {
 
     @Override
     protected void actionPerformed(GuiButton button) {
+        if (button.id == 9) {
+            mc.displayGuiScreen(new GuiAreaGeometry(this, editorProvider, runtimeProvider, null));
+            return;
+        }
         if (button.id == BACK_BUTTON) {
             mc.displayGuiScreen(parent);
             return;

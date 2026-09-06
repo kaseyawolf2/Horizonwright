@@ -17,9 +17,11 @@ public final class CylinderExcavationSpec {
     private final int bottomY;
     private final int topY;
     private final ExcavationMode mode;
-    private final long columnCount;
-    private final long volume;
-    private final String geometryKey;
+    private long columnCount;
+    private long volume;
+    private String geometryKey;
+    private boolean rectangle;
+    private int minX, maxX, minZ, maxZ;
 
     public CylinderExcavationSpec(int dimensionId, int centerX, int centerZ, int radius, int bottomY, int topY,
         ExcavationMode mode) {
@@ -63,6 +65,64 @@ public final class CylinderExcavationSpec {
         return dimensionId;
     }
 
+    public static CylinderExcavationSpec rectangle(int dimension, int minX, int maxX, int minZ, int maxZ, int bottom,
+        int top, ExcavationMode mode) {
+        if (maxX < minX || maxZ < minZ || (long) maxX - minX > 500 || (long) maxZ - minZ > 500)
+            throw new IllegalArgumentException("Rectangle spans must be 1-501 blocks");
+        int radius = (Math.max(maxX - minX, maxZ - minZ) + 1) / 2;
+        CylinderExcavationSpec spec = new CylinderExcavationSpec(
+            dimension,
+            minX + (maxX - minX) / 2,
+            minZ + (maxZ - minZ) / 2,
+            radius,
+            bottom,
+            top,
+            mode);
+        spec.rectangle = true;
+        spec.minX = minX;
+        spec.maxX = maxX;
+        spec.minZ = minZ;
+        spec.maxZ = maxZ;
+        spec.columnCount = ((long) maxX - minX + 1) * ((long) maxZ - minZ + 1);
+        spec.volume = spec.columnCount * (top - bottom + 1L);
+        spec.geometryKey = "rectangle:" + dimension
+            + ":"
+            + minX
+            + ":"
+            + maxX
+            + ":"
+            + minZ
+            + ":"
+            + maxZ
+            + ":"
+            + bottom
+            + ":"
+            + top
+            + ":"
+            + mode;
+        return spec;
+    }
+
+    public boolean isRectangle() {
+        return rectangle;
+    }
+
+    public int getMinimumX() {
+        return rectangle ? minX : centerX - radius;
+    }
+
+    public int getMaximumX() {
+        return rectangle ? maxX : centerX + radius;
+    }
+
+    public int getMinimumZ() {
+        return rectangle ? minZ : centerZ - radius;
+    }
+
+    public int getMaximumZ() {
+        return rectangle ? maxZ : centerZ + radius;
+    }
+
     public int getCenterX() {
         return centerX;
     }
@@ -104,6 +164,9 @@ public final class CylinderExcavationSpec {
             return false;
         }
         long deltaX = (long) position.getX() - centerX;
+        if (rectangle) return position.getX() >= minX && position.getX() <= maxX
+            && position.getZ() >= minZ
+            && position.getZ() <= maxZ;
         long deltaZ = (long) position.getZ() - centerZ;
         return deltaX * deltaX + deltaZ * deltaZ <= (long) radius * radius;
     }
@@ -147,7 +210,8 @@ public final class CylinderExcavationSpec {
             return false;
         }
         CylinderExcavationSpec that = (CylinderExcavationSpec) other;
-        return dimensionId == that.dimensionId && centerX == that.centerX
+        return geometryKey.equals(that.geometryKey) && dimensionId == that.dimensionId
+            && centerX == that.centerX
             && centerZ == that.centerZ
             && radius == that.radius
             && bottomY == that.bottomY
@@ -157,6 +221,6 @@ public final class CylinderExcavationSpec {
 
     @Override
     public int hashCode() {
-        return Objects.hash(dimensionId, centerX, centerZ, radius, bottomY, topY, mode);
+        return Objects.hash(geometryKey);
     }
 }
