@@ -1190,8 +1190,14 @@ public final class LiveExcavationBackend implements ExcavationBackend {
 
         private void restoreHotbarSlot() {
             if (!toolSlotChanged || priorHotbarSlot < 0) return;
-            minecraft.thePlayer.inventory.currentItem = priorHotbarSlot;
-            minecraft.playerController.updateController();
+            // Selection is not an inventory transaction to roll back. Leave the useful
+            // tool selected; the next action selects another slot only when necessary.
+            trace(
+                "tool-selection-retained",
+                "selectedSlot",
+                minecraft.thePlayer.inventory.currentItem,
+                "previousSlot",
+                priorHotbarSlot);
             toolSlotChanged = false;
         }
 
