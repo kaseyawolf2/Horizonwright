@@ -228,6 +228,7 @@ public final class LiveVanillaTreeBackend implements TreeBackend {
         private int verifiedSide = 1;
         private int saplingSourceSlot = -1;
         private int saplingHotbarSlot = -1;
+        private String pendingApproachReason;
         private TreeObservation confirmedAfter;
         private volatile boolean cancellationRequested;
 
@@ -269,6 +270,7 @@ public final class LiveVanillaTreeBackend implements TreeBackend {
                 return snapshot();
             }
             if (phase == Phase.APPROACHING) pollApproach();
+            else if (phase == Phase.WAITING_FOR_NAVIGATION) startPendingApproach();
             else if (phase == Phase.WAITING_FOR_SESSION) beginActionWhenReady();
             else if (phase == Phase.DIGGING) digOneTick();
             else if (phase == Phase.WAITING_FOR_DRAIN) continueAfterDrain();
@@ -337,6 +339,24 @@ public final class LiveVanillaTreeBackend implements TreeBackend {
         }
 
         private void submitApproach(String reason) {
+            pendingApproachReason = reason;
+            phase = Phase.WAITING_FOR_NAVIGATION;
+            state = ActionState.EXECUTING;
+            deadlineNanos = add(System.nanoTime(), ACTION_TIMEOUT_NANOS);
+            startPendingApproach();
+        }
+
+        private void startPendingApproach() {
+            if (!guard.isReadyForSession()) {
+                detail = "Waiting for previous tree navigation/action cleanup before approach";
+                trace(
+                    "approach-drain-wait",
+                    "nextAttempt",
+                    approachAttempt + 1,
+                    "readiness",
+                    guard.readinessDiagnostic());
+                return;
+            }
             approachAttempt++;
             long now = System.nanoTime();
             NavigationRequest navigationRequest = request.getDecision()
@@ -364,7 +384,8 @@ public final class LiveVanillaTreeBackend implements TreeBackend {
             phase = Phase.APPROACHING;
             deadlineNanos = add(now, APPROACH_TIMEOUT_NANOS);
             state = ActionState.EXECUTING;
-            detail = reason;
+            detail = pendingApproachReason;
+            trace("approach-start", "attempt", approachAttempt, "reason", pendingApproachReason);
         }
 
         private void pollApproach() {
@@ -645,14 +666,13 @@ public final class LiveVanillaTreeBackend implements TreeBackend {
         private boolean canReachSupport(BasePosition root) {
             if (!minecraft.theWorld.isAirBlock(root.getX(), root.getY(), root.getZ())) return false;
             BasePosition support = new BasePosition(root.getDimensionId(), root.getX(), root.getY() - 1, root.getZ());
-            return exactRay(support, root.getY());
+            return exactRay(support, TreeInteractionGeometry.supportProbeY(root.getY()));
         }
 
         private boolean exactRay(BasePosition position, double targetY) {
             EntityPlayer player = minecraft.thePlayer;
             if (player == null || minecraft.theWorld.provider.dimensionId != position.getDimensionId()) return false;
-            Vec3 eyes = Vec3
-                .createVectorHelper(player.posX, player.posY + MinecraftRuntimeAccess.eyeHeight(player), player.posZ);
+            Vec3 eyes = MinecraftRuntimeAccess.playerInteractionOrigin(player);
             Vec3 targetPoint = Vec3.createVectorHelper(position.getX() + 0.5D, targetY, position.getZ() + 0.5D);
             double reach = minecraft.playerController.getBlockReachDistance();
             if (eyes.squareDistanceTo(targetPoint) > reach * reach) return false;
@@ -663,6 +683,16 @@ public final class LiveVanillaTreeBackend implements TreeBackend {
                 && hit.blockY == position.getY()
                 && hit.blockZ == position.getZ();
             if (exact) verifiedSide = hit.sideHit;
+            trace(
+                "interaction-ray",
+                "exact",
+                exact,
+                "eyes",
+                eyes,
+                "point",
+                targetPoint,
+                "hit",
+                hit == null ? "none" : hit.blockX + "," + hit.blockY + "," + hit.blockZ);
             return exact;
         }
 
@@ -676,9 +706,10 @@ public final class LiveVanillaTreeBackend implements TreeBackend {
 
         private void aim(double x, double y, double z) {
             EntityPlayer player = minecraft.thePlayer;
-            double dx = x - player.posX;
-            double dy = y - (player.posY + MinecraftRuntimeAccess.eyeHeight(player));
-            double dz = z - player.posZ;
+            Vec3 eyes = MinecraftRuntimeAccess.playerInteractionOrigin(player);
+            double dx = x - eyes.xCoord;
+            double dy = y - eyes.yCoord;
+            double dz = z - eyes.zCoord;
             player.rotationYaw = (float) (Math.atan2(dz, dx) * 180.0D / Math.PI) - 90.0F;
             player.rotationPitch = (float) -(Math.atan2(dy, Math.sqrt(dx * dx + dz * dz)) * 180.0D / Math.PI);
         }
@@ -788,6 +819,7 @@ public final class LiveVanillaTreeBackend implements TreeBackend {
     }
 
     private enum Phase {
+        WAITING_FOR_NAVIGATION,
         APPROACHING,
         WAITING_FOR_SESSION,
         DIGGING,
