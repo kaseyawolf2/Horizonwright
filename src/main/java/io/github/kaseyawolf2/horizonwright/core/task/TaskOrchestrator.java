@@ -204,6 +204,10 @@ public final class TaskOrchestrator implements IHorizonwrightController, ActionR
                     record.nextEligibleAtMillis = now;
                     record.detail = "queued after resume";
                     break;
+                case FAILED:
+                    laneOrder.get(record.spec.getLane())
+                        .add(record.spec.getId());
+                    // Fall through: explicitly retry failed work from its saved checkpoint.
                 case BLOCKED:
                     record.state = TaskState.QUEUED;
                     record.blockedReason = null;
@@ -237,7 +241,7 @@ public final class TaskOrchestrator implements IHorizonwrightController, ActionR
                 traceRecord("retry-now-requested", record);
                 return taskSnapshotAt(record.spec.getId(), readNow());
             }
-            if (record.state != TaskState.BLOCKED)
+            if (record.state != TaskState.BLOCKED && record.state != TaskState.FAILED)
                 throw new IllegalStateException("Task is not blocked or waiting for retry.");
         }
         return resume(taskId);

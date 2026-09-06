@@ -494,8 +494,9 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
                 return snapshot();
             }
             long now = System.nanoTime();
-            if (phase == Phase.APPROACHING ? deadline.approachExpired(now) : deadline.actionExpired(now)) {
-                if (phase == Phase.APPROACHING && isPamFruit()) {
+            boolean approaching = phase == Phase.APPROACHING || phase == Phase.WAITING_FOR_REPOSITION;
+            if (approaching ? deadline.approachExpired(now) : deadline.actionExpired(now)) {
+                if (approaching && isPamFruit()) {
                     skipInaccessibleFruit();
                     return snapshot();
                 }
@@ -504,7 +505,9 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
                 return snapshot();
             }
             if (phase == Phase.APPROACHING) pollApproach();
-            else if (phase == Phase.WAITING_FOR_ACTION_SESSION) beginActionWhenReady();
+            else if (phase == Phase.WAITING_FOR_REPOSITION) {
+                if (!tryFruitLogReposition()) skipInaccessibleFruit();
+            } else if (phase == Phase.WAITING_FOR_ACTION_SESSION) beginActionWhenReady();
             else if (phase == Phase.BREAKING) breakOneTick();
             else if (phase == Phase.PLANTING) plantOnce();
             else if (phase == Phase.DISPATCHING_REPLANT) awaitReplantDispatch();
@@ -1145,6 +1148,18 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
                     minecraft.thePlayer.posZ);
             }
             if (fruitLogApproachIndex >= fruitLogApproaches.length) return false;
+            if (!guard.isReadyForSession()) {
+                navigationHandle = null;
+                phase = Phase.WAITING_FOR_REPOSITION;
+                detail = "Waiting for previous approach cleanup before repositioning";
+                trace(
+                    "reposition-drain-wait",
+                    "nextAttempt",
+                    fruitLogApproachIndex + 1,
+                    "readiness",
+                    guard.readinessDiagnostic());
+                return true;
+            }
             int[] point = fruitLogApproaches[fruitLogApproachIndex++];
             navigationHandle = navigation.submit(
                 new NavigationRequest(
@@ -1349,6 +1364,7 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
     }
 
     private enum Phase {
+        WAITING_FOR_REPOSITION,
         APPROACHING,
         WAITING_FOR_ACTION_SESSION,
         BREAKING,

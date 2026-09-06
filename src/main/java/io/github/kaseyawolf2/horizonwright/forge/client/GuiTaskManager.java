@@ -154,7 +154,7 @@ public final class GuiTaskManager extends GuiReadableScreen {
                     .rerunTask(selectedTaskId);
                 selectedTaskId = rerun.getSpec()
                     .getId();
-                message = "Queued a fresh run. Original completion retained; schedules unchanged.";
+                message = "Queued a fresh run. Original history retained; schedules unchanged.";
                 clearConfirmation();
             } catch (RuntimeException failure) {
                 message = "Task was not rerun: " + safeMessage(failure);
@@ -232,8 +232,9 @@ public final class GuiTaskManager extends GuiReadableScreen {
                     .getObservedAtMillis());
             details = "Retry in " + ((remaining + 999L) / 1000L) + "s (then normal queue priority)\n" + details;
         }
-        retryButton.enabled = selected != null && (selected.getState() == TaskState.BLOCKED
-            || (selected.getState() == TaskState.QUEUED && selected.getRetryCount() > 0));
+        retryButton.enabled = selected != null
+            && (selected.getState() == TaskState.BLOCKED || selected.getState() == TaskState.FAILED
+                || (selected.getState() == TaskState.QUEUED && selected.getRetryCount() > 0));
         drawParagraph(details, left + 16, top + 208, panelWidth - 32, panelHeight - 256, 0xFFE0E0E0);
         drawString(
             fontRendererObj,
@@ -243,7 +244,8 @@ public final class GuiTaskManager extends GuiReadableScreen {
             message.startsWith("Task was not") || message.startsWith("Session unavailable") ? 0xFFFF7777 : 0xFF8FAAD0);
 
         deleteButton.enabled = selected != null && canDelete(selected);
-        rerunButton.enabled = selected != null && selected.getState() == TaskState.COMPLETED;
+        rerunButton.enabled = selected != null
+            && (selected.getState() == TaskState.COMPLETED || selected.getState() == TaskState.FAILED);
         deleteButton.displayString = selected != null && selected.getSpec()
             .getId()
             .equals(confirmationTaskId) ? "Confirm delete" : "Delete task";

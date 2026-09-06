@@ -589,8 +589,8 @@ public final class HorizonwrightRuntime implements AutoCloseable {
         TaskSnapshot original = controller.snapshot()
             .findTask(taskId)
             .orElseThrow(() -> new IllegalArgumentException("Unknown task: " + taskId));
-        if (original.getState() != TaskState.COMPLETED)
-            throw new IllegalStateException("Only completed tasks can be rerun.");
+        if (original.getState() != TaskState.COMPLETED && original.getState() != TaskState.FAILED)
+            throw new IllegalStateException("Only completed or failed tasks can be rerun.");
         TaskSpec spec = original.getSpec();
         TaskSpec replacement = new TaskSpec(
             "rerun-" + java.util.UUID.randomUUID(),

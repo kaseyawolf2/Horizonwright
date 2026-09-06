@@ -21,6 +21,29 @@ import io.github.kaseyawolf2.horizonwright.core.action.InMemoryActionBroker;
 public class TaskOrchestratorTest {
 
     @Test
+    public void explicitRetryRestoresFailedTaskToItsLaneWithoutDuplicatingIt() {
+        FakeClock clock = new FakeClock();
+        AtomicInteger steps = new AtomicInteger();
+        TaskOrchestrator orchestrator = newOrchestrator(clock, (spec, checkpoint) -> context -> {
+            steps.incrementAndGet();
+            return StepResult.failed(context.getActionEpoch(), context.getCheckpoint(), "hard failure", false);
+        });
+        orchestrator.submit(spec("failed-retry", TaskLane.MANUAL));
+        assertEquals(TaskState.FAILED, task(orchestrator.tick(), "failed-retry").getState());
+        TaskSnapshot queued = orchestrator.retryNow("failed-retry");
+        assertEquals(TaskState.QUEUED, queued.getState());
+        assertEquals(0, queued.getQueuePosition());
+        assertEquals(0, queued.getRetryCount());
+        assertEquals(TaskState.FAILED, task(orchestrator.tick(), "failed-retry").getState());
+        assertEquals(2, steps.get());
+        assertEquals(
+            1,
+            orchestrator.snapshot()
+                .getTasks()
+                .size());
+    }
+
+    @Test
     public void selectsFixedLanesInSafetyFirstOrder() {
         FakeClock clock = new FakeClock();
         List<String> execution = new ArrayList<>();
