@@ -18,6 +18,7 @@ public final class HusbandryBreedingCycle {
     private String phase = "NEW";
     private int initialAdults;
     private int reservedCulls;
+    private int confirmedCulls;
     private long waitingMillis;
     private long lastWait = -1L;
     private String diagnostic = "";
@@ -35,9 +36,17 @@ public final class HusbandryBreedingCycle {
         read(values, "newborns", newborns);
         initialAdults = Integer.parseInt(values.get("cycle.adults"));
         reservedCulls = Integer.parseInt(values.get("cycle.culls"));
+        confirmedCulls = values.containsKey("cycle.confirmedCulls")
+            ? Integer.parseInt(values.get("cycle.confirmedCulls"))
+            : Math.max(
+                0,
+                Integer.parseInt(values.getOrDefault("verifiedActions", "0"))
+                    - Integer.parseInt(values.getOrDefault("verifiedCollections", "0"))
+                    - fed.size());
         waitingMillis = Long.parseLong(values.get("cycle.wait"));
         if (initialAdults < 0 || reservedCulls < 0
-            || reservedCulls > newborns.size()
+            || confirmedCulls < 0
+            || confirmedCulls > reservedCulls
             || waitingMillis < 0
             || !baseline.containsAll(cohort)
             || !cohort.containsAll(attempted)
@@ -48,6 +57,13 @@ public final class HusbandryBreedingCycle {
 
     public HusbandryPlan plan(HusbandryPolicy policy, HusbandryObservation observation, boolean allowCulling,
         long nowMillis) {
+        return plan(policy, observation, allowCulling, nowMillis, 0);
+    }
+
+    public HusbandryPlan plan(HusbandryPolicy policy, HusbandryObservation observation, boolean allowCulling,
+        long nowMillis, int desiredHerdSize) {
+        if (desiredHerdSize != 0 && desiredHerdSize < policy.getMinimumAdults())
+            throw new IllegalArgumentException("desired herd size must preserve minimum adults");
         waiting = false;
         if (!policy.getPen()
             .equals(observation.getPen()) || !observation.isCompletePenScan() || !observation.isEntirePenLoaded())
@@ -122,11 +138,14 @@ public final class HusbandryBreedingCycle {
             phase = "CULL";
             lastWait = -1L;
         }
-        int floor = Math.max(policy.getMinimumAdults(), initialAdults - credits);
-        if (allowCulling && reservedCulls < credits
+        int desired = desiredHerdSize == 0 ? baseline.size() : desiredHerdSize;
+        int cullBudget = desiredHerdSize == 0 ? credits : Math.max(0, baseline.size() + credits - desired);
+        int floor = desiredHerdSize == 0 ? Math.max(policy.getMinimumAdults(), initialAdults - credits)
+            : policy.getMinimumAdults();
+        if (allowCulling && reservedCulls < cullBudget
             && adults > floor
             && eligibleAdults > 2
-            && animals.size() > baseline.size()) {
+            && animals.size() > desired) {
             // Ask the existing freshly revalidated knife/cull backend for exactly ONE adult.
             // Using currentAdults-1 avoids demanding that protected animals satisfy all remaining credits.
             HusbandryPolicy oneReplacement = new HusbandryPolicy(
@@ -136,15 +155,46 @@ public final class HusbandryBreedingCycle {
                 policy.getMinimumAdults(),
                 adults - 1);
             HusbandryPlan cull = new HusbandryPlanner().plan(oneReplacement, observation, true);
-            diagnostic = "Replacement culls " + reservedCulls + "/" + credits + "; new babies " + newborns.size();
+            diagnostic = "Cull attempts " + reservedCulls
+                + "/"
+                + cullBudget
+                + "; herd "
+                + animals.size()
+                + "/"
+                + desired
+                + "; new babies "
+                + newborns.size();
             return cull;
         }
+        if (desiredHerdSize > 0 && allowCulling
+            && animals.size() > desired
+            && adults > floor
+            && eligibleAdults > 2
+            && reservedCulls >= cullBudget
+            && confirmedCulls < reservedCulls)
+            return held(
+                policy,
+                observation,
+                "Herd remains " + animals.size()
+                    + "/"
+                    + desired
+                    + "; "
+                    + confirmedCulls
+                    + " kills confirmed, "
+                    + reservedCulls
+                    + " attempts reserved. An uncertain cull was not counted as a kill; review before starting a new pass.");
         diagnostic = "Breeding cycle finished: " + fed.size()
             + " adults fed, "
             + credits
             + " newborn(s), "
+            + confirmedCulls
+            + " adult kill(s) confirmed; "
             + reservedCulls
-            + " replacement cull(s) dispatched"
+            + " cull attempt(s) reserved"
+            + "; herd "
+            + animals.size()
+            + "/"
+            + desired
             + (!allowCulling ? "; culling disabled" : "; adult breeding reserve preserved");
         // Collection must not re-enter the old feed-below-minimum policy.
         for (HusbandryDropObservation drop : observation.getDrops()) {
@@ -168,6 +218,7 @@ public final class HusbandryBreedingCycle {
 
     public void confirmed(HusbandryActionKind kind, String identity) {
         if (kind == HusbandryActionKind.FEED_ADULT) fed.add(identity);
+        if (kind == HusbandryActionKind.CULL_EXCESS_ADULT) confirmedCulls++;
     }
 
     public boolean isWaiting() {
@@ -191,6 +242,7 @@ public final class HusbandryBreedingCycle {
         write(values, "newborns", newborns);
         values.put("cycle.adults", Integer.toString(initialAdults));
         values.put("cycle.culls", Integer.toString(reservedCulls));
+        values.put("cycle.confirmedCulls", Integer.toString(confirmedCulls));
         values.put("cycle.wait", Long.toString(waitingMillis));
     }
 

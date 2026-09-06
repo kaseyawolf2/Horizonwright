@@ -278,6 +278,22 @@ yet been physically recorded.
 
 ### Integrated GUI and inventory-feed follow-up
 
+Latest follow-up: wheat stays in the hotbar across all feeding interactions and
+is deliberately left there afterward; the displaced item remains in its former
+main-inventory slot. There is no per-animal reverse swap or forced selection
+restore. A newly selected feed waits at least 250 ms plus dispatch completion
+before use. This is a settling delay, not a server acknowledgement.
+
+New passes/saved schedules expose **Desired herd size** (adults plus babies),
+separate from **Minimum adults**. Set 10 total / minimum 2 and attacks ON:
+10 ready adults producing 5 calves should finish with 5 adults and 5 calves.
+A target above the current population permits growth without culling; a lower
+target permits reducing existing adult excess after the feeding phase. Babies
+are never culled. Old tasks lacking the new target retain replacement-only
+behavior. Revalidation keeps the selected animal while checking its current
+eligibility, not whether it remains first in the planner's sorted list.
+Status distinguishes confirmed kills from reserved/uncertain attempts.
+
 The GUI from the isolated `Horizonwright-GUI` workspace is now integrated in the
 main build. Check Tasks/Schedules switching, Areas list and equal-width controls,
 area type/bounds/chest settings, Base destinations, and full text on hover at
@@ -287,7 +303,7 @@ unloading; other area types explicitly report that automatic delivery is pending
 
 For feeding, place wheat only in main inventory (not the hotbar), then repeat
 with a completely occupied hotbar. Verify it stages wheat before interacting,
-returns the displaced item safely, and continues across stacks. Empty/consumed
+leaves the displaced item safely in main inventory, and continues across stacks. Empty/consumed
 stacks are ignored. If the selected feed changes before interaction, it rescans
 all 36 slots. Truly missing feed or rejected feeding must block rather than
 automatically retry animals. Logs include `husbandry-inventory` slot scans and

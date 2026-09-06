@@ -231,10 +231,11 @@ public final class GuiScheduleManager extends GuiReadableScreen {
             int minutes = ProfileAssetInput.positiveInteger(intervalField.getText(), "interval minutes");
             String[] bounds = reserveField.getText()
                 .split("/");
-            if (bounds.length != 1 && bounds.length != 3)
-                throw new IllegalArgumentException("enter minimum adults (at least 2)");
+            if (bounds.length != 1 && bounds.length != 2 && bounds.length != 3)
+                throw new IllegalArgumentException("enter minimum adults / desired total herd size");
             int minimum = ProfileAssetInput.positiveInteger(bounds[0], "minimum adults");
-            int maximum = Math.max(minimum, 8);
+            int maximum = bounds.length >= 2 ? ProfileAssetInput.positiveInteger(bounds[1], "desired herd size")
+                : Math.max(minimum, 10);
             int actions = 16;
             runtime.updateHusbandrySchedule(
                 selectedScheduleId,
@@ -328,7 +329,7 @@ public final class GuiScheduleManager extends GuiReadableScreen {
         drawString(fontRendererObj, "Minutes", left + 250, top + 226, 0xFFE0E0E0);
         drawString(
             fontRendererObj,
-            selected != null && isHusbandry(selected) ? "Min adults" : "Seed reserve",
+            selected != null && isHusbandry(selected) ? "Min adults / Herd" : "Seed reserve",
             left + 362,
             top + 226,
             0xFFE0E0E0);
@@ -453,7 +454,11 @@ public final class GuiScheduleManager extends GuiReadableScreen {
                 Integer.toString(
                     HusbandryTask.minimumAdults(
                         selected.getRule()
-                            .getTask())));
+                            .getTask()))
+                    + "/"
+                    + HusbandryTask.maximumAdults(
+                        selected.getRule()
+                            .getTask()));
         } else {
             targetField.setText("view only");
             intervalField.setText("n/a");

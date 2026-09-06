@@ -107,7 +107,12 @@ final class HusbandryTaskRunner implements TaskRunner {
                 HusbandryTask.maximumAdults(spec));
             HusbandryPlan plan = breedingCycle == null
                 ? planner.plan(policy, observation, HusbandryTask.allowCulling(spec))
-                : breedingCycle.plan(policy, observation, HusbandryTask.allowCulling(spec), context.getNowMillis());
+                : breedingCycle.plan(
+                    policy,
+                    observation,
+                    HusbandryTask.allowCulling(spec),
+                    context.getNowMillis(),
+                    HusbandryTask.desiredHerdSize(spec));
             if (breedingCycle != null) {
                 checkpoint = encode(verifiedActions);
                 DevelopmentTrace.event(

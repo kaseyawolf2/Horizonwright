@@ -73,6 +73,101 @@ public class HusbandryBreedingCycleTest {
     }
 
     @Test
+    public void desiredHerdCountsAdultsAndBabies() {
+        HusbandryBreedingCycle cycle = fresh();
+        List<AnimalObservation> animals = adults(10);
+        feedAll(cycle, animals, 10);
+        addBabies(animals, 5);
+        for (int index = 0; index < 5; index++) {
+            HusbandryAction action = cycle.plan(POLICY, observe(animals), true, 1000L, 10)
+                .getActions()
+                .get(0);
+            cycle.dispatched(action);
+            animals.removeIf(
+                animal -> animal.getIdentity()
+                    .equals(action.getAnimalIdentity()));
+            cycle.confirmed(action.getKind(), action.getAnimalIdentity());
+            cycle = restored(cycle);
+        }
+        assertTrue(
+            cycle.plan(POLICY, observe(animals), true, 2000L, 10)
+                .getActions()
+                .isEmpty());
+        assertEquals(10, animals.size());
+        assertTrue(
+            cycle.getDiagnostic()
+                .contains("5 adult kill(s) confirmed"));
+    }
+
+    @Test
+    public void desiredLargerHerdDoesNotCullNewBabiesAway() {
+        HusbandryBreedingCycle cycle = fresh();
+        List<AnimalObservation> animals = adults(4);
+        feedAll(cycle, animals, 4);
+        addBabies(animals, 2);
+        assertTrue(
+            cycle.plan(POLICY, observe(animals), true, 1000L, 10)
+                .getActions()
+                .isEmpty());
+        assertEquals(6, animals.size());
+    }
+
+    @Test
+    public void unconfirmedCullDoesNotReportDesiredHerdComplete() {
+        HusbandryBreedingCycle cycle = fresh();
+        List<AnimalObservation> animals = adults(4);
+        feedAll(cycle, animals, 4);
+        addBabies(animals, 2);
+        for (int index = 0; index < 2; index++) {
+            HusbandryAction action = cycle.plan(POLICY, observe(animals), true, 1000L, 4)
+                .getActions()
+                .get(0);
+            cycle.dispatched(action);
+        }
+        assertTrue(
+            cycle.plan(POLICY, observe(animals), true, 2000L, 4)
+                .isHeld());
+    }
+
+    @Test
+    public void desiredHerdCanReduceExistingExcessWithoutNewBirths() {
+        HusbandryBreedingCycle cycle = fresh();
+        List<AnimalObservation> animals = new ArrayList<>();
+        for (int index = 0; index < 10; index++) animals.add(animal("adult-" + index, true, false, false, false));
+        addBabies(animals, 5);
+        for (int index = 0; index < 5; index++) {
+            HusbandryAction action = cycle.plan(POLICY, observe(animals), true, 1000L, 10)
+                .getActions()
+                .get(0);
+            cycle.dispatched(action);
+            animals.removeIf(
+                animal -> animal.getIdentity()
+                    .equals(action.getAnimalIdentity()));
+            cycle.confirmed(action.getKind(), action.getAnimalIdentity());
+            cycle = restored(cycle);
+        }
+        assertEquals(10, animals.size());
+        assertTrue(
+            cycle.plan(POLICY, observe(animals), true, 2000L, 10)
+                .getActions()
+                .isEmpty());
+    }
+
+    @Test
+    public void cullRevalidationDoesNotSwitchToANewPreferredAnimal() {
+        List<AnimalObservation> animals = adults(4);
+        HusbandryPolicy oneCull = new HusbandryPolicy(PEN, LivestockSpecies.COW, 1L, 2, 3);
+        HusbandryPlanner planner = new HusbandryPlanner();
+        assertTrue(planner.canCullTarget(oneCull, observe(animals), "adult-0"));
+        animals.set(0, animal("adult-0", true, false, false, true));
+        assertFalse(planner.canCullTarget(oneCull, observe(animals), "adult-0"));
+        animals.set(0, animal("adult-0", true, false, true, false));
+        assertFalse(planner.canCullTarget(oneCull, observe(animals), "adult-0"));
+        animals.set(0, animal("adult-0", false, false, false, false));
+        assertFalse(planner.canCullTarget(oneCull, observe(animals), "adult-0"));
+    }
+
+    @Test
     public void partialBirthsAllowOnlyActualReplacementsAfterWaiting() {
         HusbandryBreedingCycle cycle = fresh();
         List<AnimalObservation> animals = adults(8);

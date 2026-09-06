@@ -55,6 +55,7 @@ public final class HusbandryTask {
         parameters.put(MAXIMUM_ACTIONS, Integer.toString(maximumActions));
         parameters.put(ALLOW_CULLING, Boolean.toString(allowCulling));
         parameters.put("breedingCycle", "true");
+        parameters.put("desiredHerdSize", Integer.toString(maximumAdults));
         return new ScheduledTaskSpec(
             TYPE,
             "Husbandry pass: " + pen + " / " + species.name(),
@@ -142,6 +143,14 @@ public final class HusbandryTask {
         return "true".equals(
             spec.getParameters()
                 .get("breedingCycle"));
+    }
+
+    public static int desiredHerdSize(TaskSpec spec) {
+        requireType(spec);
+        return spec.getParameters()
+            .containsKey("desiredHerdSize")
+                ? integer(spec.getParameters(), "desiredHerdSize", minimumAdults(spec), 1000)
+                : 0;
     }
 
     public static boolean allowCulling(ScheduledTaskSpec spec) {

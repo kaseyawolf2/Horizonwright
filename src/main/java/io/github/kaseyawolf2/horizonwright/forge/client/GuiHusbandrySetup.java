@@ -37,6 +37,7 @@ public final class GuiHusbandrySetup extends GuiReadableScreen {
     private final NamedArea pen;
     private LivestockSpecies species = LivestockSpecies.COW;
     private GuiTextField minimumAdults;
+    private GuiTextField desiredHerdSize;
     private GuiTextField intervalMinutes;
     private GuiButton speciesButton;
     private GuiButton cullButton;
@@ -69,6 +70,7 @@ public final class GuiHusbandrySetup extends GuiReadableScreen {
         buttonList.add(speciesButton);
         buttonList.add(new GuiHorizonwrightButton(SCAN_BUTTON, left + 336, top + 54, 106, 20, "Scan loaded pen"));
         minimumAdults = field(left + 148, top + 92, 72, "2");
+        desiredHerdSize = field(left + 148, top + 122, 72, "10");
         intervalMinutes = field(left + 148, top + 182, 72, "30");
         cullButton = new GuiHorizonwrightButton(CULL_BUTTON, left + 230, top + 122, 212, 20, "");
         buttonList.add(cullButton);
@@ -223,6 +225,7 @@ public final class GuiHusbandrySetup extends GuiReadableScreen {
     private void loadDefaults() {
         allowCulling = false;
         minimumAdults.setText("2");
+        desiredHerdSize.setText("10");
         intervalMinutes.setText("30");
         CurrentRuntimeUiResolver.Resolution resolution = CurrentRuntimeUiResolver.resolve(runtimeProvider);
         if (!resolution.isAvailable()) return;
@@ -235,6 +238,11 @@ public final class GuiHusbandrySetup extends GuiReadableScreen {
         allowCulling = HusbandryTask.allowCulling(
             existing.getRule()
                 .getTask());
+        desiredHerdSize.setText(
+            Integer.toString(
+                HusbandryTask.maximumAdults(
+                    existing.getRule()
+                        .getTask())));
         minimumAdults.setText(
             Integer.toString(
                 HusbandryTask.minimumAdults(
@@ -251,8 +259,10 @@ public final class GuiHusbandrySetup extends GuiReadableScreen {
         int minimum = ProfileAssetInput.positiveInteger(minimumAdults.getText(), "minimum adults");
         int minutes = ProfileAssetInput.positiveInteger(intervalMinutes.getText(), "interval minutes");
         if (minimum < 2) throw new IllegalArgumentException("minimum adults must preserve at least one breeding pair");
-        // Legacy fields stay in the task schema for old saved jobs, not as limits on this cycle.
-        return new Values(minimum, Math.max(minimum, 8), 16, minutes);
+        int desired = ProfileAssetInput.positiveInteger(desiredHerdSize.getText(), "desired herd size");
+        if (desired < minimum || desired > 1000)
+            throw new IllegalArgumentException("desired herd size must be at least minimum adults and at most 1000");
+        return new Values(minimum, desired, 16, minutes);
     }
 
     private HorizonwrightRuntime runtime() {
@@ -313,8 +323,8 @@ public final class GuiHusbandrySetup extends GuiReadableScreen {
         drawCenteredString(fontRendererObj, "Named pen: " + pen.getId(), width / 2, top + 29, 0xFF8FAAD0);
         label("Species", top + 60);
         label("Minimum adults", top + 98);
-        label("Breed then replace", top + 128);
-        label("1 adult per new baby; no fixed action cap", top + 158);
+        label("Desired herd size", top + 128);
+        label("Herd = adults + babies; breed before culling", top + 158);
         label("Every minutes", top + 188);
         drawParagraph(
             status,
@@ -344,7 +354,7 @@ public final class GuiHusbandrySetup extends GuiReadableScreen {
     }
 
     private GuiTextField[] fields() {
-        return new GuiTextField[] { minimumAdults, intervalMinutes };
+        return new GuiTextField[] { minimumAdults, desiredHerdSize, intervalMinutes };
     }
 
     private static String safeMessage(RuntimeException failure) {

@@ -196,7 +196,7 @@ public class HusbandryTaskRunnerTest {
         java.util.List<AnimalObservation> animals = new java.util.ArrayList<>(
             Arrays.asList(adult("a", true), adult("b", true), adult("c", true), adult("d", true)));
         harness = new Harness(observation(1L, animals), null);
-        TaskSpec spec = HusbandryTask.finitePass("cycle", "cow-pen", LivestockSpecies.COW, 2, 8, 1, true);
+        TaskSpec spec = HusbandryTask.finitePass("cycle", "cow-pen", LivestockSpecies.COW, 2, 4, 1, true);
         harness.controller.submit(spec);
         for (int index = 0; index < 4; index++) {
             TaskSnapshot submitted = task(harness.controller.tick(), spec.getId());

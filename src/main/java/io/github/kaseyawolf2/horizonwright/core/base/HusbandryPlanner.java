@@ -8,6 +8,27 @@ import java.util.List;
 /** Deterministic one-action policy; every action requires a new named-pen observation before another plan. */
 public final class HusbandryPlanner {
 
+    /** Revalidate the selected animal, not whether it is still first in a freshly sorted target list. */
+    public boolean canCullTarget(HusbandryPolicy policy, HusbandryObservation observation, String identity) {
+        if (!policy.getPen()
+            .equals(observation.getPen()) || !observation.isCompletePenScan() || !observation.isEntirePenLoaded())
+            return false;
+        int adults = 0;
+        int eligible = 0;
+        boolean targetEligible = false;
+        for (AnimalObservation animal : observation.getAnimals()) {
+            if (animal.getSpecies() != policy.getSpecies() || !policy.getPen()
+                .contains(animal.getPosition())) continue;
+            if (animal.isAdult()) adults++;
+            if (animal.isEligibleTarget()) eligible++;
+            if (animal.getIdentity()
+                .equals(identity)) targetEligible = animal.isEligibleTarget() && !animal.isBreedingEngaged();
+        }
+        return targetEligible && adults > policy.getMaximumAdults()
+            && adults > Math.max(2, policy.getMinimumAdults())
+            && eligible > 2;
+    }
+
     public HusbandryPlan plan(HusbandryPolicy policy, HusbandryObservation observation) {
         return plan(policy, observation, true);
     }

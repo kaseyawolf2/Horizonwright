@@ -189,15 +189,7 @@ public final class LiveVanillaHusbandryBackend implements HusbandryBackend {
             original.getMinimumAdults(),
             original.getMaximumAdults());
         HusbandryPlan replanned = new HusbandryPlanner().plan(policy, fresh);
-        boolean eligible = !replanned.isHeld() && replanned.getActions()
-            .size() == 1
-            && replanned.getActions()
-                .get(0)
-                .getKind() == HusbandryActionKind.CULL_EXCESS_ADULT
-            && identity.equals(
-                replanned.getActions()
-                    .get(0)
-                    .getAnimalIdentity());
+        boolean eligible = new HusbandryPlanner().canCullTarget(policy, fresh, identity);
         DevelopmentTrace.event(
             "husbandry-live",
             "cull-revalidation",
@@ -257,6 +249,7 @@ public final class LiveVanillaHusbandryBackend implements HusbandryBackend {
         private int hotbarSlot = -1;
         private boolean interactionDispatched;
         private boolean feedItemDispatched;
+        private long feedItemReadyNanos;
         private EntityAnimal cullTarget;
         private long nextAttackNanos;
         private long cullDeadlineNanos;
@@ -431,6 +424,7 @@ public final class LiveVanillaHusbandryBackend implements HusbandryBackend {
             minecraft.thePlayer.inventory.currentItem = hotbarSlot;
             minecraft.playerController.updateController();
             feedItemDispatched = false;
+            feedItemReadyNanos = add(System.nanoTime(), TimeUnit.MILLISECONDS.toNanos(250L));
             phase = Phase.WAITING_FOR_FEED_ITEM;
             detail = "Staging inventory feed and waiting for held-slot dispatch";
             trace("feed-item-staged");
@@ -442,7 +436,7 @@ public final class LiveVanillaHusbandryBackend implements HusbandryBackend {
         }
 
         private void feedWithSelectedItem() {
-            if (!feedItemDispatched) return;
+            if (!feedItemDispatched || System.nanoTime() - feedItemReadyNanos < 0L) return;
             if (!guard.isActiveLease(lease)) {
                 fail("Feeding lost inventory authority");
                 return;
@@ -699,6 +693,13 @@ public final class LiveVanillaHusbandryBackend implements HusbandryBackend {
         }
 
         private void returnStaged() {
+            // Feed remains in this hotbar slot across animals and after the phase. Restoring it
+            // after each predicted interaction races server inventory updates and can duplicate swaps.
+            // The displaced stack is already safely in the feed's former inventory slot.
+            if (action.getKind() == HusbandryActionKind.FEED_ADULT) {
+                staged = false;
+                return;
+            }
             if (!staged) return;
             if (action.getKind() == HusbandryActionKind.CULL_EXCESS_ADULT && !ownsSession) return;
             if (minecraft.thePlayer.inventory.getItemStack() != null
@@ -720,8 +721,7 @@ public final class LiveVanillaHusbandryBackend implements HusbandryBackend {
                 ownsSession = true;
             }
             returnStaged();
-            boolean feeding = action.getKind() == HusbandryActionKind.FEED_ADULT
-                || action.getKind() == HusbandryActionKind.CULL_EXCESS_ADULT && ownsSession;
+            boolean feeding = action.getKind() == HusbandryActionKind.CULL_EXCESS_ADULT && ownsSession;
             if (feeding) minecraft.thePlayer.inventory.currentItem = priorHotbarSlot;
             if (ownsSession) {
                 if (feeding) minecraft.playerController.updateController();
