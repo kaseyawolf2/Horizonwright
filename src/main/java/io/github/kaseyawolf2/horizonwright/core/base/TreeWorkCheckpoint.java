@@ -30,7 +30,7 @@ public final class TreeWorkCheckpoint {
                 .isEmpty()
             || replantPosition == null
             || capturedBlocks == null
-            || capturedBlocks.isEmpty()
+            || (capturedBlocks.isEmpty() && stage == TreeWorkStage.READY_TO_FELL)
             || capturedBlocks.contains(null)
             || capturedBlocks.size() > TreeObservation.MAX_CAPTURED_BLOCKS
             || expectedObservationRevision < 0L
@@ -52,6 +52,18 @@ public final class TreeWorkCheckpoint {
     }
 
     public static TreeWorkCheckpoint start(NamedArea treeFarm, long workRevision, TreeObservation observation) {
+        if (observation != null && observation.getState() == TreeObservationState.FELLED_CLEAR) {
+            return restore(
+                treeFarm,
+                workRevision,
+                observation.getTreeId(),
+                observation.getRequiredSaplingFingerprint(),
+                observation.getReplantPosition(),
+                observation.getTreeBlocks(),
+                observation.getRevision(),
+                observation.getObservationFingerprint(),
+                TreeWorkStage.READY_TO_REPLANT);
+        }
         if (observation == null || observation.getState() != TreeObservationState.STANDING) {
             throw new IllegalArgumentException("tree work must start from a standing-tree observation");
         }
@@ -65,6 +77,20 @@ public final class TreeWorkCheckpoint {
             observation.getRevision(),
             observation.getObservationFingerprint(),
             TreeWorkStage.READY_TO_FELL);
+    }
+
+    public List<BasePosition> getReplantPositions() {
+        if (!treeId.endsWith("|2x2")) return Collections.singletonList(replantPosition);
+        List<BasePosition> positions = new ArrayList<>();
+        for (int z = 0; z < 2; z++) for (int x = 0; x < 2; x++) {
+            positions.add(
+                new BasePosition(
+                    replantPosition.getDimensionId(),
+                    replantPosition.getX() + x,
+                    replantPosition.getY(),
+                    replantPosition.getZ() + z));
+        }
+        return Collections.unmodifiableList(positions);
     }
 
     public static TreeWorkCheckpoint restore(NamedArea treeFarm, long workRevision, String treeId,

@@ -31,6 +31,15 @@ import io.github.kaseyawolf2.horizonwright.core.task.TaskState;
 
 public class TreeTaskRunnerTest {
 
+    @Test
+    public void selectedPlantingPatternAndSpacingPersistInTaskParameters() {
+        TaskSpec spec = TreeTask.scheduledPass("woodlot", 4, 7, 9)
+            .instantiate("jungle-grid");
+        assertEquals(7, TreeTask.plantSpecies(spec.getParameters()));
+        assertEquals(9, TreeTask.plantSpacing(spec.getParameters()));
+        assertEquals(-1, TreeTask.plantSpecies(Collections.emptyMap()));
+    }
+
     private Harness harness;
 
     @After
@@ -74,6 +83,9 @@ public class TreeTaskRunnerTest {
 
         task(harness.controller.tick(), spec.getId());
         assertEquals(2, harness.backend.actions);
+        assertTrue(
+            harness.backend.lease.getCapabilities()
+                .contains(ActionCapability.CONTAINER));
         assertFalse(
             harness.backend.lease.getCapabilities()
                 .contains(ActionCapability.DIG));
@@ -191,6 +203,52 @@ public class TreeTaskRunnerTest {
             TreeObservationState.SAPLING_PLANTED,
             false,
             false);
+    }
+
+    @Test
+    public void emptyPlantingSiteStartsWithPlantingAndSurvivesCheckpointRoundTrip() {
+        harness = new Harness(clear(), 4);
+        TaskSpec spec = TreeTask.scheduledPass("woodlot", 2, 0, 5)
+            .instantiate("plant-empty");
+        harness.controller.submit(spec);
+        harness.controller.tick();
+        TaskSnapshot submitted = task(harness.controller.tick(), spec.getId());
+        assertEquals(1, harness.backend.actions);
+        assertTrue(
+            harness.backend.lease.getCapabilities()
+                .contains(ActionCapability.CONTAINER));
+        assertFalse(
+            harness.backend.lease.getCapabilities()
+                .contains(ActionCapability.DIG));
+        assertEquals(
+            io.github.kaseyawolf2.horizonwright.core.base.TreeWorkStage.READY_TO_REPLANT,
+            TreeTaskCheckpointCodec.decode(spec, submitted.getCheckpoint()).work.getStage());
+        harness.backend.confirm(planted());
+        assertEquals(TaskState.COMPLETED, task(harness.controller.tick(), spec.getId()).getState());
+    }
+
+    @Test
+    public void twoByTwoPlantingPatternIsRetainedInDurableWorkIdentity() {
+        TreeObservation site = new TreeObservation(
+            "empty@2,64,4|2x2",
+            1L,
+            "clear",
+            "minecraft:sapling:5",
+            Collections.emptyList(),
+            new BasePosition(0, 2, 64, 4),
+            TreeObservationState.FELLED_CLEAR,
+            false,
+            false);
+        NamedArea area = new NamedArea("test", "Test", new BasePosition(0, 0, 60, 0), new BasePosition(0, 10, 80, 10));
+        io.github.kaseyawolf2.horizonwright.core.base.TreeWorkCheckpoint work = io.github.kaseyawolf2.horizonwright.core.base.TreeWorkCheckpoint
+            .start(area, 1L, site);
+        assertEquals(
+            4,
+            work.getReplantPositions()
+                .size());
+        assertTrue(
+            work.getReplantPositions()
+                .contains(new BasePosition(0, 3, 64, 5)));
     }
 
     private static final class Harness implements AutoCloseable {

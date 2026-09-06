@@ -21,6 +21,12 @@ public final class TreeTask {
     }
 
     public static ScheduledTaskSpec scheduledPass(String areaId, int minimumSaplingReserve) {
+        return scheduledPass(areaId, minimumSaplingReserve, -1, 5);
+    }
+
+    public static ScheduledTaskSpec scheduledPass(String areaId, int minimumSaplingReserve, int species, int spacing) {
+        if (species < -1 || species > 7 || spacing < 2 || spacing > 16)
+            throw new IllegalArgumentException("Choose a supported sapling and spacing from 2 to 16 blocks");
         String area = required(areaId, "tree-farm area id");
         if (minimumSaplingReserve < 0) {
             throw new IllegalArgumentException("minimum sapling reserve must not be negative");
@@ -28,6 +34,8 @@ public final class TreeTask {
         Map<String, String> parameters = new LinkedHashMap<>();
         parameters.put(AREA_ID, area);
         parameters.put(MINIMUM_SAPLING_RESERVE, Integer.toString(minimumSaplingReserve));
+        parameters.put("plantSpecies", Integer.toString(species));
+        parameters.put("plantSpacing", Integer.toString(spacing));
         return new ScheduledTaskSpec(TYPE, "Tree pass: " + area, TaskLane.CHORE, parameters);
     }
 
@@ -111,5 +119,13 @@ public final class TreeTask {
         if (value == null || value.trim()
             .isEmpty()) throw new IllegalArgumentException(field + " is required");
         return value.trim();
+    }
+
+    public static int plantSpecies(Map<String, String> parameters) {
+        return Integer.parseInt(parameters.getOrDefault("plantSpecies", "-1"));
+    }
+
+    public static int plantSpacing(Map<String, String> parameters) {
+        return Integer.parseInt(parameters.getOrDefault("plantSpacing", "5"));
     }
 }

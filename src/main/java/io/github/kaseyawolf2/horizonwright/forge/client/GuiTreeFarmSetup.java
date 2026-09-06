@@ -27,6 +27,11 @@ public final class GuiTreeFarmSetup extends GuiReadableScreen {
     private final NamedArea area;
     private GuiTextField reserve;
     private GuiTextField interval;
+    private GuiTextField spacing;
+    private int plantingSpecies;
+    private GuiButton speciesButton;
+    private static final String[] SAPLINGS = { "Oak", "Spruce", "Birch", "Jungle", "Acacia", "Dark oak 2x2",
+        "Spruce 2x2", "Jungle 2x2" };
     private int left;
     private int top;
     private int panelWidth;
@@ -48,21 +53,30 @@ public final class GuiTreeFarmSetup extends GuiReadableScreen {
         buttonList.clear();
         panelWidth = Math.min(500, width - 24);
         left = (width - panelWidth) / 2;
-        top = Math.max(8, (height - 248) / 2);
+        top = Math.max(8, (height - 300) / 2);
         reserve = field(left + 154, top + 91, 70, "2");
         interval = field(left + 388, top + 91, 80, "30");
+        spacing = field(left + 388, top + 125, 80, "5");
         loadDefaults();
-        buttonList.add(new GuiHorizonwrightButton(QUEUE_BUTTON, left + 18, top + 128, 220, 22, "Queue one tree pass"));
+        speciesButton = new GuiHorizonwrightButton(
+            10,
+            left + 18,
+            top + 123,
+            220,
+            22,
+            "Plant: " + SAPLINGS[plantingSpecies]);
+        buttonList.add(speciesButton);
+        buttonList.add(new GuiHorizonwrightButton(QUEUE_BUTTON, left + 18, top + 164, 220, 22, "Queue one tree pass"));
         buttonList.add(
             new GuiHorizonwrightButton(
                 SCHEDULE_BUTTON,
                 left + 246,
-                top + 128,
+                top + 164,
                 panelWidth - 264,
                 22,
                 "Schedule tree passes"));
-        buttonList.add(new GuiHorizonwrightButton(CLOSE_BUTTON, left + 18, top + 202, 72, 20, "Close"));
-        buttonList.add(new GuiHorizonwrightButton(BACK_BUTTON, left + panelWidth - 90, top + 202, 72, 20, "Back"));
+        buttonList.add(new GuiHorizonwrightButton(CLOSE_BUTTON, left + 18, top + 254, 72, 20, "Close"));
+        buttonList.add(new GuiHorizonwrightButton(BACK_BUTTON, left + panelWidth - 90, top + 254, 72, 20, "Back"));
     }
 
     @Override
@@ -72,6 +86,11 @@ public final class GuiTreeFarmSetup extends GuiReadableScreen {
 
     @Override
     protected void actionPerformed(GuiButton button) {
+        if (button.id == 10) {
+            plantingSpecies = (plantingSpecies + 1) % SAPLINGS.length;
+            speciesButton.displayString = "Plant: " + SAPLINGS[plantingSpecies];
+            return;
+        }
         if (button.id == BACK_BUTTON) {
             mc.displayGuiScreen(parent);
             return;
@@ -93,7 +112,14 @@ public final class GuiTreeFarmSetup extends GuiReadableScreen {
         if (mc.theWorld == null) throw new IllegalStateException("join the bound world first");
         int minimum = ProfileAssetInput.nonNegativeInteger(reserve.getText(), "minimum sapling reserve");
         String taskId = "trees-" + area.getId() + "-" + MinecraftRuntimeAccess.totalWorldTime(mc.theWorld);
-        TaskSnapshot submitted = runtime.submitTreePass(TreeTask.finitePass(taskId, area.getId(), minimum));
+        TaskSnapshot submitted = runtime.submitTreePass(
+            TreeTask
+                .scheduledPass(
+                    area.getId(),
+                    minimum,
+                    plantingSpecies,
+                    ProfileAssetInput.positiveInteger(spacing.getText(), "sapling spacing"))
+                .instantiate(taskId));
         status = "Queued '" + submitted.getSpec()
             .getId() + "' with sapling reserve " + minimum + ".";
     }
@@ -105,12 +131,14 @@ public final class GuiTreeFarmSetup extends GuiReadableScreen {
         long intervalMillis = Math.multiplyExact((long) minutes, 60_000L);
         String id = "trees-" + area.getId();
         ScheduleSnapshot existing = findSchedule(runtime, id);
-        if (existing == null) runtime.scheduleTreePass(id, area.getId(), minimum, intervalMillis);
+        int plantSpacing = ProfileAssetInput.positiveInteger(spacing.getText(), "sapling spacing");
+        if (existing == null)
+            runtime.scheduleTreePass(id, area.getId(), minimum, intervalMillis, plantingSpecies, plantSpacing);
         else if (existing.getState() == ScheduleState.CANCELLED) {
             runtime.removeSchedule(id);
-            runtime.scheduleTreePass(id, area.getId(), minimum, intervalMillis);
+            runtime.scheduleTreePass(id, area.getId(), minimum, intervalMillis, plantingSpecies, plantSpacing);
         } else {
-            runtime.updateTreeSchedule(id, area.getId(), minimum, intervalMillis);
+            runtime.updateTreeSchedule(id, area.getId(), minimum, intervalMillis, plantingSpecies, plantSpacing);
             if (existing.getState() == ScheduleState.PAUSED) runtime.resumeSchedule(id);
         }
         status = "Saved '" + id + "' every " + minutes + " connected minute(s).";
@@ -131,6 +159,18 @@ public final class GuiTreeFarmSetup extends GuiReadableScreen {
                         .getTask())));
         long millis = existing.getRule()
             .getIntervalMillis();
+        plantingSpecies = Math.max(
+            0,
+            TreeTask.plantSpecies(
+                existing.getRule()
+                    .getTask()
+                    .getParameters()));
+        spacing.setText(
+            Integer.toString(
+                TreeTask.plantSpacing(
+                    existing.getRule()
+                        .getTask()
+                        .getParameters())));
         if (millis >= 60_000L && millis % 60_000L == 0L) interval.setText(Long.toString(millis / 60_000L));
     }
 
@@ -156,6 +196,7 @@ public final class GuiTreeFarmSetup extends GuiReadableScreen {
     public void updateScreen() {
         reserve.updateCursorCounter();
         interval.updateCursorCounter();
+        spacing.updateCursorCounter();
     }
 
     @Override
@@ -166,6 +207,7 @@ public final class GuiTreeFarmSetup extends GuiReadableScreen {
         }
         reserve.textboxKeyTyped(character, keyCode);
         interval.textboxKeyTyped(character, keyCode);
+        spacing.textboxKeyTyped(character, keyCode);
     }
 
     @Override
@@ -173,12 +215,13 @@ public final class GuiTreeFarmSetup extends GuiReadableScreen {
         super.mouseClicked(mouseX, mouseY, mouseButton);
         reserve.mouseClicked(mouseX, mouseY, mouseButton);
         interval.mouseClicked(mouseX, mouseY, mouseButton);
+        spacing.mouseClicked(mouseX, mouseY, mouseButton);
     }
 
     @Override
     protected void drawContents(int mouseX, int mouseY, float partialTicks) {
         drawDefaultBackground();
-        drawRect(left, top, left + panelWidth, top + 232, 0xEE10141B);
+        drawRect(left, top, left + panelWidth, top + 286, 0xEE10141B);
         drawCenteredString(fontRendererObj, "Ordinary tree farm", width / 2, top + 14, 0xFFF0C674);
         drawCenteredString(
             fontRendererObj,
@@ -195,15 +238,17 @@ public final class GuiTreeFarmSetup extends GuiReadableScreen {
             status.startsWith("Nothing") ? 0xFFFF7777 : 0xFFB8C8DE);
         drawString(fontRendererObj, "Keep saplings", left + 18, top + 97, 0xFFE0E0E0);
         drawString(fontRendererObj, "Every minutes", left + 270, top + 97, 0xFFE0E0E0);
+        drawString(fontRendererObj, "Spacing blocks", left + 270, top + 131, 0xFFE0E0E0);
         drawParagraph(
-            "The area must include every log from ground to canopy. Trees crossing its boundary and dark-oak 2x2 trees are skipped.",
+            "Empty farms plant the chosen pattern. Spacing is between pattern origins. Include the whole tree in the area's bounds; only vanilla trees are supported.",
             left + 18,
-            top + 166,
+            top + 202,
             panelWidth - 36,
             30,
             0xFF98A8BD);
         reserve.drawTextBox();
         interval.drawTextBox();
+        spacing.drawTextBox();
         super.drawContents(mouseX, mouseY, partialTicks);
     }
 

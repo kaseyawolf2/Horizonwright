@@ -105,7 +105,9 @@ final class TreeTaskRunner implements TaskRunner {
         TreeBackend.ScanRequest request = new TreeBackend.ScanRequest(
             spec.getId(),
             TreeTask.areaId(spec),
-            context.getActionEpoch());
+            context.getActionEpoch(),
+            TreeTask.plantSpecies(spec.getParameters()),
+            TreeTask.plantSpacing(spec.getParameters()));
         try {
             TreeBackend.PassSnapshot snapshot = backend.scan(request);
             validateScan(request, snapshot);
@@ -354,6 +356,7 @@ final class TreeTaskRunner implements TaskRunner {
                     ActionCapability.MOVEMENT,
                     ActionCapability.LOOK,
                     ActionCapability.PLACE,
+                    ActionCapability.CONTAINER,
                     ActionCapability.HELD_USE));
         }
         throw new IllegalArgumentException("tree decision does not require an action: " + action);

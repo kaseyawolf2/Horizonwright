@@ -165,7 +165,7 @@ final class TreeTaskCheckpointCodec {
 
     private static TreeWorkCheckpoint readWork(Map<String, String> values, NamedArea area) {
         int count = integer(values, "work.blockCount");
-        if (count < 1 || count > TreeObservation.MAX_CAPTURED_BLOCKS)
+        if (count < 0 || count > TreeObservation.MAX_CAPTURED_BLOCKS)
             throw new IllegalArgumentException("invalid tree work payload");
         List<BasePosition> blocks = new ArrayList<>(count);
         for (int index = 0; index < count; index++) blocks.add(readPosition(values, "work.block." + index + "."));

@@ -93,7 +93,7 @@ public final class LiveVanillaTreeBackend implements TreeBackend {
     public PassSnapshot scan(ScanRequest request) {
         requireClient(request);
         NamedArea area = observer.resolveArea(request.getAreaId());
-        List<TreeObservation> trees = observer.scan(area);
+        List<TreeObservation> trees = observer.scan(area, request.getPlantSpecies(), request.getPlantSpacing());
         DevelopmentTrace.event(
             "tree-live",
             "scan",
@@ -313,7 +313,12 @@ public final class LiveVanillaTreeBackend implements TreeBackend {
         }
 
         private void preparePlant() {
-            target = work.getReplantPosition();
+            target = observer.nextMissingSapling(work);
+            if (target == null) {
+                phase = Phase.CONFIRMING;
+                deadlineNanos = add(System.nanoTime(), ACTION_TIMEOUT_NANOS);
+                return;
+            }
             approachAttempt = 0;
             approachOrAct("Approaching the exact replant position");
         }
@@ -455,6 +460,16 @@ public final class LiveVanillaTreeBackend implements TreeBackend {
         }
 
         private void beginPlant() {
+            if (!observer.reserve(
+                work.getWorkRevision(),
+                work.getRequiredSaplingFingerprint(),
+                request.getDecision()
+                    .getReserveEvidence()
+                    .getMinimumReserve())
+                .canReplantAndPreserveReserve()) {
+                fail("Not enough matching saplings to finish the planting pattern while preserving reserve");
+                return;
+            }
             TreeObservation clear;
             try {
                 clear = observer.observe(work);
@@ -549,6 +564,13 @@ public final class LiveVanillaTreeBackend implements TreeBackend {
 
         private void confirmMutation() {
             try {
+                if (request.getDecision()
+                    .getAction() == TreeActionKind.PLANT_SAPLING && observer.nextMissingSapling(work) != null) {
+                    // Do not move on until the sapling just placed is actually observed.
+                    BasePosition missing = observer.nextMissingSapling(work);
+                    if (!missing.equals(target)) preparePlant();
+                    return;
+                }
                 TreeObservation after = observer.observeAfterMutation(work);
                 TreeObservationState expected = request.getDecision()
                     .getAction() == TreeActionKind.FELL_CAPTURED_BLOCKS ? TreeObservationState.FELLED_CLEAR

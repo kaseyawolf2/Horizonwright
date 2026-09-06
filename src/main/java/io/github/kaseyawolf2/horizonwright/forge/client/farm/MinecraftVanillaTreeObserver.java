@@ -59,6 +59,10 @@ public final class MinecraftVanillaTreeObserver {
     }
 
     public List<TreeObservation> scan(NamedArea area) {
+        return scan(area, -1, 5);
+    }
+
+    public List<TreeObservation> scan(NamedArea area, int plantingSpecies, int spacing) {
         requireClient();
         requireCurrentDimension(area);
         requireBoundedLoadedArea(area);
@@ -67,17 +71,64 @@ public final class MinecraftVanillaTreeObserver {
         BasePosition min = area.getMinimum();
         BasePosition max = area.getMaximum();
         long revision = positiveWorldRevision();
+        boolean occupiedByTree = false;
         for (int y = min.getY(); y <= max.getY(); y++) {
             for (int z = min.getZ(); z <= max.getZ(); z++) {
                 for (int x = min.getX(); x <= max.getX(); x++) {
                     BasePosition position = new BasePosition(min.getDimensionId(), x, y, z);
                     int species = logSpecies(position);
+                    Block scanned = MinecraftRuntimeAccess.block(minecraft.theWorld, x, y, z);
+                    if (species >= 0 || scanned == Blocks.sapling || scanned.isWood(minecraft.theWorld, x, y, z))
+                        occupiedByTree = true;
                     if (species < 0 || visited.contains(position)) continue;
                     Component component = component(area, position, species, visited);
                     TreeObservation observation = standingObservation(area, component, revision);
-                    if (observation != null) trees.add(observation);
+                    if (observation != null && !observation.isProtectedTree()) trees.add(observation);
+                    else if (observation != null) DevelopmentTrace.event(
+                        "tree-observer",
+                        "skip-protected-tree",
+                        "root",
+                        observation.getReplantPosition(),
+                        "reason",
+                        "boundary or unsupported root pattern");
                 }
             }
+        }
+        if (!occupiedByTree && plantingSpecies >= 0) {
+            int footprint = plantingSpecies >= 5 ? 2 : 1;
+            int actualSpecies = plantingSpecies == 6 ? 1 : plantingSpecies == 7 ? 3 : plantingSpecies;
+            for (int z = min.getZ(); z <= max.getZ(); z += spacing) {
+                for (int x = min.getX(); x <= max.getX(); x += spacing) {
+                    for (int y = max.getY(); y >= Math.max(1, min.getY()); y--) {
+                        if (!clearPlantingFootprint(area, x, y, z, footprint)) continue;
+                        BasePosition root = new BasePosition(min.getDimensionId(), x, y, z);
+                        String id = "vanilla-plant@" + min
+                            .getDimensionId() + ":" + x + "," + y + "," + z + ":" + plantingSpecies;
+                        if (footprint == 2) id += "|2x2";
+                        trees.add(
+                            new TreeObservation(
+                                id,
+                                revision,
+                                "sha256:" + sha256(id + "|clear"),
+                                saplingFingerprint(actualSpecies),
+                                Collections.emptyList(),
+                                root,
+                                TreeObservationState.FELLED_CLEAR,
+                                false,
+                                false));
+                        break;
+                    }
+                }
+            }
+            DevelopmentTrace.event(
+                "tree-observer",
+                "empty-farm-planting",
+                "species",
+                plantingSpecies,
+                "spacing",
+                spacing,
+                "sites",
+                trees.size());
         }
         Collections.sort(trees, Comparator.comparing(tree -> tree.getReplantPosition(), BOTTOM_UP));
         return Collections.unmodifiableList(trees);
@@ -91,6 +142,31 @@ public final class MinecraftVanillaTreeObserver {
         for (BasePosition block : work.getCapturedBlocks()) requireLoaded(block);
         if (work.getStage() == TreeWorkStage.READY_TO_FELL) return observeStanding(work);
         return observePostFell(work);
+    }
+
+    private boolean clearPlantingFootprint(NamedArea area, int x, int y, int z, int side) {
+        for (int dz = 0; dz < side; dz++) for (int dx = 0; dx < side; dx++) {
+            if (!area.contains(
+                new BasePosition(
+                    area.getMinimum()
+                        .getDimensionId(),
+                    x + dx,
+                    y,
+                    z + dz))
+                || !minecraft.theWorld.isAirBlock(x + dx, y, z + dz)) return false;
+            Block support = MinecraftRuntimeAccess.block(minecraft.theWorld, x + dx, y - 1, z + dz);
+            if (support != Blocks.grass && support != Blocks.dirt) return false;
+        }
+        return true;
+    }
+
+    public BasePosition nextMissingSapling(TreeWorkCheckpoint work) {
+        int species = saplingSpecies(work.getRequiredSaplingFingerprint());
+        for (BasePosition position : work.getReplantPositions()) {
+            requireLoaded(position);
+            if (!isSapling(position, species)) return position;
+        }
+        return null;
     }
 
     TreeObservation observeAfterMutation(TreeWorkCheckpoint work) {
@@ -174,11 +250,17 @@ public final class MinecraftVanillaTreeObserver {
 
     private TreeObservation observePostFell(TreeWorkCheckpoint work) {
         int species = saplingSpecies(work.getRequiredSaplingFingerprint());
-        BasePosition root = work.getReplantPosition();
-        if (isSapling(root, species)) {
+        if (nextMissingSapling(work) == null) {
             return postObservation(work, TreeObservationState.SAPLING_PLANTED, "sapling:" + species);
         }
+        for (BasePosition root : work.getReplantPositions()) {
+            if (!isSapling(root, species) && !minecraft.theWorld.isAirBlock(root.getX(), root.getY(), root.getZ())) {
+                throw new IllegalStateException("planting position is no longer clear at " + root);
+            }
+        }
         for (BasePosition block : work.getCapturedBlocks()) {
+            if (work.getReplantPositions()
+                .contains(block) && isSapling(block, species)) continue;
             if (!minecraft.theWorld.isAirBlock(block.getX(), block.getY(), block.getZ())) {
                 throw new IllegalStateException("captured tree is not yet clear at " + block);
             }
@@ -222,11 +304,21 @@ public final class MinecraftVanillaTreeObserver {
             .getY();
         List<BasePosition> roots = new ArrayList<>();
         for (BasePosition block : component.blocks) if (block.getY() == minimumY) roots.add(block);
-        boolean protectedTree = component.crossesBoundary || roots.size() != 1 || component.species == 5;
         BasePosition root = roots.get(0);
+        boolean square = roots.size() == 4
+            && (component.species == 1 || component.species == 3 || component.species == 5);
+        if (square) {
+            for (int z = 0; z < 2; z++) for (int x = 0; x < 2; x++) {
+                if (!roots
+                    .contains(new BasePosition(root.getDimensionId(), root.getX() + x, root.getY(), root.getZ() + z)))
+                    square = false;
+            }
+        }
+        boolean protectedTree = component.crossesBoundary || (!square && (roots.size() != 1 || component.species == 5));
         String sapling = saplingFingerprint(component.species);
         String treeId = "vanilla-tree@" + root
             .getDimensionId() + ":" + root.getX() + "," + root.getY() + "," + root.getZ() + ":" + component.species;
+        if (square) treeId += "|2x2";
         return new TreeObservation(
             treeId,
             revision,

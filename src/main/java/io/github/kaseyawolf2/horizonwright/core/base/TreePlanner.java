@@ -16,6 +16,10 @@ public final class TreePlanner {
         }
         checkpoint.requireCurrentObservation(tree);
         if (checkpoint.getStage() == TreeWorkStage.READY_TO_REPLANT) {
+            for (BasePosition site : checkpoint.getReplantPositions()) {
+                if (!treeFarm.contains(site))
+                    throw new IllegalStateException("Planting pattern crosses the tree-farm boundary");
+            }
             if (!reserveEvidence.isForMaterial(tree.getRequiredSaplingFingerprint())
                 || !reserveEvidence.canReplantAndPreserveReserve()) {
                 return decision(
@@ -73,7 +77,9 @@ public final class TreePlanner {
                 reserveEvidence);
         }
         if (!reserveEvidence.isForMaterial(tree.getRequiredSaplingFingerprint())
-            || !reserveEvidence.canReplantAndPreserveReserve()) {
+            || reserveEvidence.getAvailableSaplings() - reserveEvidence.getMinimumReserve()
+                < checkpoint.getReplantPositions()
+                    .size()) {
             return decision(
                 treeFarm,
                 checkpoint,

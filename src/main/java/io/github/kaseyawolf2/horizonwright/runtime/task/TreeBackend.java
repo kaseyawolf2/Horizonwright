@@ -28,6 +28,24 @@ public interface TreeBackend {
         private final String taskId;
         private final String areaId;
         private final long actionEpoch;
+        private int plantSpecies = -1;
+        private int plantSpacing = 5;
+
+        public ScanRequest(String taskId, String areaId, long actionEpoch, int species, int spacing) {
+            this(taskId, areaId, actionEpoch);
+            if (species < -1 || species > 7 || spacing < 2 || spacing > 16)
+                throw new IllegalArgumentException("Invalid tree planting settings");
+            plantSpecies = species;
+            plantSpacing = spacing;
+        }
+
+        public int getPlantSpecies() {
+            return plantSpecies;
+        }
+
+        public int getPlantSpacing() {
+            return plantSpacing;
+        }
 
         public ScanRequest(String taskId, String areaId, long actionEpoch) {
             this.taskId = required(taskId, "task id");
