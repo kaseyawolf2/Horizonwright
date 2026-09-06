@@ -317,8 +317,18 @@ for a new pass, or select a livestock schedule in Scheduled jobs, toggle it ON,
 and click Save settings. Editing a schedule applies to future occurrences;
 existing queued/blocked tasks retain the permission with which they were created.
 
-Use five ordinary adult cows, minimum 2 / maximum 4, and select an empty hotbar
-slot. Culling currently requires an empty hand to avoid unintegrated tool effects.
+Use five ordinary adult cows, minimum 2 / maximum 4, and provide a usable GregTech
+knife or butchery knife anywhere in the player inventory. Culling selects the
+highest effective Looting level (including GregTech material enchantments), then
+remaining durability for a tie. Bare-hand culling is no longer permitted: this
+instance's AngerMod config enables a 10% death-explosion chance and exempts these
+two GregTech knife metadata values. A knife needs more durability than the cost
+of the next attack. Missing or exhausted knives stop the task before another hit.
+Test two knives with different Looting, a knife in main inventory with a full
+hotbar, and loss/exhaustion of the last knife. Verify the selected knife stays
+held until death/drop processing completes, returns to its source slot, and the
+previous hotbar selection is restored. Debug output records Looting, slot, and
+remaining durability for every culling hit.
 One eligible animal should be attacked at intervals of at least 600 ms until
 death, followed by a complete pen scan, collection, and completion at four adults.
 The same animal is followed if it moves out of attack reach; each target has a
@@ -328,7 +338,7 @@ sufficient confirmation of death.
 Repeat with a named animal, an operator-protected animal, a baby, and an animal
 in breeding state. These must never be selected. Add protection while approaching
 a selected target: fresh revalidation must stop its attack. Also stop/pause during
-approach and between hits, change the held slot to a nonempty one, and remove an
+approach and between hits, remove the available knives, and remove an
 animal so the population reaches its maximum before the next attack. Verify no
 further attack is sent after the relevant condition is observed. Rejoin and check
 that the schedule's chosen toggle persisted. Debug traces include the selected

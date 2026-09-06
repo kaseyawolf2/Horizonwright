@@ -304,8 +304,13 @@ final class HusbandryTaskRunner implements TaskRunner {
                 ActionCapability.USE,
                 ActionCapability.HELD_USE,
                 ActionCapability.CONTAINER));
-        if (kind == HusbandryActionKind.CULL_EXCESS_ADULT) return Collections
-            .unmodifiableSet(EnumSet.of(ActionCapability.MOVEMENT, ActionCapability.LOOK, ActionCapability.ATTACK));
+        if (kind == HusbandryActionKind.CULL_EXCESS_ADULT) return Collections.unmodifiableSet(
+            EnumSet.of(
+                ActionCapability.MOVEMENT,
+                ActionCapability.LOOK,
+                ActionCapability.ATTACK,
+                ActionCapability.HELD_USE,
+                ActionCapability.CONTAINER));
         if (kind == HusbandryActionKind.COLLECT_DROPS)
             return Collections.unmodifiableSet(EnumSet.of(ActionCapability.MOVEMENT));
         throw new IllegalArgumentException("unsupported husbandry action " + kind);

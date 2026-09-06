@@ -47,8 +47,12 @@ public final class LiveVanillaHusbandryBackend implements HusbandryBackend {
         ActionCapability.HELD_USE,
         ActionCapability.CONTAINER);
     private static final long APPROACH_TIMEOUT_NANOS = NavigationRequest.MAX_RUNTIME_NANOS;
-    private static final EnumSet<ActionCapability> CULL_CAPABILITIES = EnumSet
-        .of(ActionCapability.MOVEMENT, ActionCapability.LOOK, ActionCapability.ATTACK);
+    private static final EnumSet<ActionCapability> CULL_CAPABILITIES = EnumSet.of(
+        ActionCapability.MOVEMENT,
+        ActionCapability.LOOK,
+        ActionCapability.ATTACK,
+        ActionCapability.HELD_USE,
+        ActionCapability.CONTAINER);
     private static final long ACTION_TIMEOUT_NANOS = TimeUnit.SECONDS.toNanos(30L);
     private static final double ENTITY_REACH_SQUARED = 20.25D;
 
@@ -97,8 +101,8 @@ public final class LiveVanillaHusbandryBackend implements HusbandryBackend {
         requireClient(plan);
         HusbandryAction action = firstAction(plan);
         if (action.getKind() == HusbandryActionKind.CULL_EXCESS_ADULT) {
-            if (MinecraftRuntimeAccess.heldItem(minecraft.thePlayer) != null) return ActionReadiness
-                .unavailable("Select an empty hotbar slot for culling; held tool effects are not supported");
+            if (GregTechCullingKnife.best(minecraft.thePlayer.inventory.mainInventory) == null) return ActionReadiness
+                .unavailable("Culling requires a usable GregTech knife or butchery knife in player inventory");
             return isFreshCullTarget(plan, action.getAnimalIdentity())
                 ? ActionReadiness.ready("Fresh complete pen scan permits this exact cull target")
                 : ActionReadiness.unavailable("The selected animal no longer meets the culling policy");
@@ -487,12 +491,9 @@ public final class LiveVanillaHusbandryBackend implements HusbandryBackend {
                 detail = "Following the selected adult back into visible attack reach";
                 return;
             }
-            if (MinecraftRuntimeAccess.heldItem(minecraft.thePlayer) != null) {
-                fail("Cull stopped: select an empty hotbar slot to avoid held tool effects");
-                return;
-            }
             guard.begin(lease);
             ownsSession = true;
+            if (!equipCullingKnife()) return;
             aimAt(animal.posX, animal.posY + animal.height * 0.5D, animal.posZ);
             minecraft.playerController.attackEntity(minecraft.thePlayer, animal);
             minecraft.thePlayer.swingItem();
@@ -501,9 +502,67 @@ public final class LiveVanillaHusbandryBackend implements HusbandryBackend {
             trace("cull-attack");
             ActionPacketDispatch.afterPendingWrites(minecraft, () -> {
                 synchronized (LiveHandle.this) {
-                    stopSession();
+                    // Keep the knife held through server death/drop processing. Only release the session.
+                    guard.quarantine(lease);
+                    guard.end(lease);
+                    ownsSession = false;
                 }
             });
+        }
+
+        private boolean equipCullingKnife() {
+            if (minecraft.thePlayer.inventory.getItemStack() != null
+                || minecraft.thePlayer.openContainer != minecraft.thePlayer.inventoryContainer) {
+                fail("Close the container and clear the cursor before equipping a culling knife");
+                return false;
+            }
+            GregTechCullingKnife.Candidate best = GregTechCullingKnife
+                .best(minecraft.thePlayer.inventory.mainInventory);
+            if (staged && best != null && best.slot != hotbarSlot) {
+                returnStaged();
+                best = GregTechCullingKnife.best(minecraft.thePlayer.inventory.mainInventory);
+            }
+            if (best == null) {
+                fail("Cull stopped: no GregTech knife has enough durability for another hit");
+                return false;
+            }
+            if (best.slot >= 9) {
+                returnStaged();
+                best = GregTechCullingKnife.best(minecraft.thePlayer.inventory.mainInventory);
+                if (best == null) {
+                    fail("Cull stopped: knife inventory changed");
+                    return false;
+                }
+                if (best.slot >= 9) {
+                    sourceSlot = best.slot;
+                    hotbarSlot = chooseHotbarSlot();
+                    minecraft.playerController.windowClick(
+                        minecraft.thePlayer.openContainer.windowId,
+                        sourceSlot,
+                        hotbarSlot,
+                        2,
+                        minecraft.thePlayer);
+                    staged = true;
+                } else hotbarSlot = best.slot;
+            } else hotbarSlot = best.slot;
+            minecraft.thePlayer.inventory.currentItem = hotbarSlot;
+            minecraft.playerController.updateController();
+            GregTechCullingKnife.Candidate held = GregTechCullingKnife
+                .inspect(MinecraftRuntimeAccess.heldItem(minecraft.thePlayer), hotbarSlot);
+            if (held == null || held.looting != best.looting) {
+                fail("Cull stopped: selected knife did not match the verified inventory selection");
+                return false;
+            }
+            DevelopmentTrace.event(
+                "husbandry-live",
+                "cull-knife",
+                "slot",
+                hotbarSlot,
+                "looting",
+                held.looting,
+                "remainingDurability",
+                held.remaining);
+            return true;
         }
 
         private void awaitDispatch() {
@@ -531,6 +590,7 @@ public final class LiveVanillaHusbandryBackend implements HusbandryBackend {
                 }
                 state = ActionState.CONFIRMED;
                 detail = "Selected adult death confirmed; complete pen rescanned before next action";
+                stopSession();
                 trace("cull-confirmed");
                 clearActive(this);
                 return;
@@ -600,6 +660,7 @@ public final class LiveVanillaHusbandryBackend implements HusbandryBackend {
 
         private void returnStaged() {
             if (!staged) return;
+            if (action.getKind() == HusbandryActionKind.CULL_EXCESS_ADULT && !ownsSession) return;
             if (minecraft.thePlayer.inventory.getItemStack() != null
                 || minecraft.thePlayer.openContainer != minecraft.thePlayer.inventoryContainer) return;
             minecraft.playerController.windowClick(
@@ -612,8 +673,15 @@ public final class LiveVanillaHusbandryBackend implements HusbandryBackend {
         }
 
         private void stopSession() {
+            if (action.getKind() == HusbandryActionKind.CULL_EXCESS_ADULT && !ownsSession
+                && lease.isValid()
+                && guard.isReadyForSession()) {
+                guard.begin(lease);
+                ownsSession = true;
+            }
             returnStaged();
-            boolean feeding = action.getKind() == HusbandryActionKind.FEED_ADULT;
+            boolean feeding = action.getKind() == HusbandryActionKind.FEED_ADULT
+                || action.getKind() == HusbandryActionKind.CULL_EXCESS_ADULT && ownsSession;
             if (feeding) minecraft.thePlayer.inventory.currentItem = priorHotbarSlot;
             if (ownsSession) {
                 if (feeding) minecraft.playerController.updateController();
