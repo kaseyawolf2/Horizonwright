@@ -311,6 +311,13 @@ attack authority or damaging an animal.
 
 ## Pending explicitly authorized culling checkpoint (2026-09-06)
 
+The configured action limit counts feeding and culling only. Confirmed pickups
+have a separate 256-action limit per pass. Both counters persist across rejoin;
+older checkpoints retain their previous work count conservatively but can still
+use the new collection allowance. Reproduce with an action cap of 1: complete
+one cull, then collect its drops and finish without an action-cap error. A second
+cull must still be blocked when that same work cap is exhausted.
+
 In the livestock setup page, **Allow animal attacks** defaults to OFF. Existing
 saved jobs without this parameter also default to OFF. Turn it ON deliberately
 for a new pass, or select a livestock schedule in Scheduled jobs, toggle it ON,

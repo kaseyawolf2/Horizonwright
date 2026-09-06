@@ -244,7 +244,7 @@ public class HusbandryTaskRunnerTest {
             true,
             true);
         harness = new Harness(observation(1L, fourStableAdults()), drops);
-        TaskSpec spec = HusbandryTask.finitePass("animals", "cow-pen", LivestockSpecies.COW, 2, 3, 8, true);
+        TaskSpec spec = HusbandryTask.finitePass("animals", "cow-pen", LivestockSpecies.COW, 2, 3, 1, true);
         harness.controller.submit(spec);
         task(harness.controller.tick(), spec.getId());
         assertEquals(HusbandryActionKind.CULL_EXCESS_ADULT, harness.backend.kind);
@@ -258,8 +258,39 @@ public class HusbandryTaskRunnerTest {
         harness.backend.after = observation(3L, stableAdults());
         harness.backend.handle.state = HusbandryBackend.ActionState.CONFIRMED;
         task(harness.controller.tick(), spec.getId());
-        assertEquals(TaskState.COMPLETED, task(harness.controller.tick(), spec.getId()).getState());
+        TaskSnapshot completed = task(harness.controller.tick(), spec.getId());
+        assertEquals(TaskState.COMPLETED, completed.getState());
+        assertEquals(
+            "2",
+            completed.getCheckpoint()
+                .getValues()
+                .get("verifiedActions"));
+        assertEquals(
+            "1",
+            completed.getCheckpoint()
+                .getValues()
+                .get("verifiedCollections"));
         assertEquals(2, harness.backend.actions);
+    }
+
+    @Test
+    public void legacyAndSeparateCollectionCheckpointsCanBeRestored() {
+        harness = new Harness(observation(1L, stableAdults()), null);
+        TaskSpec spec = task(2, 4, 16);
+        java.util.Map<String, String> values = new java.util.LinkedHashMap<>();
+        values.put("verifiedActions", "16");
+        new HusbandryTaskRunner(spec, new TaskCheckpoint(16L, values), new Access(harness.backend));
+        values.put("verifiedCollections", "6");
+        new HusbandryTaskRunner(spec, new TaskCheckpoint(16L, values), new Access(harness.backend));
+        values.put("verifiedCollections", "17");
+        try {
+            new HusbandryTaskRunner(spec, new TaskCheckpoint(16L, values), new Access(harness.backend));
+            org.junit.Assert.fail("collections cannot exceed all confirmed actions");
+        } catch (IllegalArgumentException expected) {
+            assertTrue(
+                expected.getMessage()
+                    .contains("collection count"));
+        }
     }
 
     private static TaskSnapshot task(ControllerSnapshot snapshot, String id) {

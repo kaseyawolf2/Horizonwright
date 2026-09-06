@@ -332,7 +332,7 @@ public final class GuiHusbandrySetup extends GuiScreen {
         label("Species", top + 60);
         label("Minimum adults", top + 98);
         label("Maximum adults", top + 128);
-        label("Maximum actions/pass", top + 158);
+        label("Feed/cull actions/pass", top + 158);
         label("Every minutes", top + 188);
         fontRendererObj.drawSplitString(
             status,

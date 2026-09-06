@@ -31,6 +31,9 @@ final class HusbandryTaskRunner implements TaskRunner {
     private final HusbandryPlanner planner = new HusbandryPlanner();
     private TaskCheckpoint checkpoint;
     private int verifiedActions;
+    private int verifiedCollections;
+    private HusbandryActionKind activeKind;
+    private static final int MAX_COLLECTIONS_PER_PASS = 256;
     private HusbandryBackend activeBackend;
     private HusbandryBackend.ActionHandle activeHandle;
     private ActionLease activeLease;
@@ -48,6 +51,7 @@ final class HusbandryTaskRunner implements TaskRunner {
         this.runtime = runtime;
         this.checkpoint = checkpoint;
         this.verifiedActions = decode(checkpoint);
+        this.verifiedCollections = decodeCollections(checkpoint, verifiedActions);
     }
 
     @Override
@@ -103,10 +107,19 @@ final class HusbandryTaskRunner implements TaskRunner {
                         + (!HusbandryTask.allowCulling(spec) && plan.getObservedAdults() > policy.getMaximumAdults()
                             ? "; population above maximum; culling disabled"
                             : "; population policy satisfied"));
-            if (verifiedActions >= HusbandryTask.maximumActions(spec)) {
+            boolean collection = plan.getActions()
+                .get(0)
+                .getKind() == HusbandryActionKind.COLLECT_DROPS;
+            if (collection && verifiedCollections >= MAX_COLLECTIONS_PER_PASS) {
                 return blocked(
                     context,
-                    "Husbandry pass reached its configured action cap",
+                    "Husbandry collection reached its separate 256-pickup limit",
+                    "a new pass to collect remaining drops");
+            }
+            if (!collection && verifiedActions - verifiedCollections >= HusbandryTask.maximumActions(spec)) {
+                return blocked(
+                    context,
+                    "Husbandry pass reached its configured feed/cull action cap",
                     "operator review of the pen policy");
             }
             HusbandryBackend.ActionReadiness readiness = backend.readiness(plan);
@@ -151,6 +164,7 @@ final class HusbandryTaskRunner implements TaskRunner {
             activeHandle = handle;
             activeLease = lease;
             activeRequestId = requestId;
+            activeKind = action.getKind();
             return StepResult.progress(context.getActionEpoch(), checkpoint, "Submitted " + action.getKind());
         } catch (RuntimeException failure) {
             lease.close();
@@ -178,6 +192,7 @@ final class HusbandryTaskRunner implements TaskRunner {
                 return StepResult.waitFor(context.getActionEpoch(), checkpoint, 0L, progress.getDetail());
             }
             if (progress.getState() == HusbandryBackend.ActionState.CONFIRMED) {
+                if (activeKind == HusbandryActionKind.COLLECT_DROPS) verifiedCollections++;
                 releaseActive();
                 verifiedActions++;
                 checkpoint = encode(verifiedActions);
@@ -240,6 +255,7 @@ final class HusbandryTaskRunner implements TaskRunner {
         activeHandle = null;
         activeLease = null;
         activeRequestId = null;
+        activeKind = null;
     }
 
     private void requireContext(TaskStepContext context) {
@@ -252,14 +268,18 @@ final class HusbandryTaskRunner implements TaskRunner {
     private TaskCheckpoint encode(int actions) {
         Map<String, String> values = new LinkedHashMap<>();
         values.put("verifiedActions", Integer.toString(actions));
+        values.put("verifiedCollections", Integer.toString(verifiedCollections));
         return new TaskCheckpoint(checkpoint.getRevision() + 1L, values);
     }
 
     private static int decode(TaskCheckpoint checkpoint) {
         if (checkpoint.getRevision() == 0L && checkpoint.getValues()
             .isEmpty()) return 0;
-        if (checkpoint.getValues()
+        if ((checkpoint.getValues()
             .size() != 1
+            && !(checkpoint.getValues()
+                .size() == 2 && checkpoint.getValues()
+                    .containsKey("verifiedCollections")))
             || !checkpoint.getValues()
                 .containsKey("verifiedActions"))
             throw new IllegalArgumentException("invalid husbandry checkpoint");
@@ -271,6 +291,22 @@ final class HusbandryTaskRunner implements TaskRunner {
             return value;
         } catch (NumberFormatException failure) {
             throw new IllegalArgumentException("invalid husbandry count", failure);
+        }
+    }
+
+    private static int decodeCollections(TaskCheckpoint checkpoint, int total) {
+        String value = checkpoint.getValues()
+            .get("verifiedCollections");
+        // Old checkpoints did not distinguish pickups. Retain their work count conservatively,
+        // but give them the separate collection allowance so existing blocked jobs can finish.
+        if (value == null) return 0;
+        try {
+            int count = Integer.parseInt(value);
+            if (count < 0 || count > total || count > MAX_COLLECTIONS_PER_PASS)
+                throw new IllegalArgumentException("invalid husbandry collection count");
+            return count;
+        } catch (NumberFormatException failure) {
+            throw new IllegalArgumentException("invalid husbandry collection count", failure);
         }
     }
 
