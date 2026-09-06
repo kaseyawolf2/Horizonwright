@@ -74,16 +74,35 @@ public final class GuiExcavationSetup extends GuiReadableScreen {
         radius = field(left + 356, top + 48, 48, "8");
         bottomY = field(left + 138, top + 76, 48, Integer.toString(currentY() - 4));
         topY = field(left + 356, top + 76, 48, Integer.toString(currentY()));
-        loadoutId = field(left + 138, top + 140, 120, "mining");
-        storageId = field(left + 356, top + 140, 120, "ore-chest");
-        stationId = field(left + 138, top + 168, 120, "tool-forge");
-        toolSlot = field(left + 356, top + 168, 48, "0");
-        workDamage = field(left + 138, top + 196, 48, "1");
-        servicesButton = new GuiHorizonwrightButton(SERVICES_BUTTON, left + 282, top + 196, 194, 20, "Services: ON");
+        loadoutId = field(left + 138, top + (boundArea == null ? 140 : 96), 120, "mining");
+        storageId = field(left + 356, top + (boundArea == null ? 140 : 96), 120, "ore-chest");
+        stationId = field(left + 138, top + (boundArea == null ? 168 : 124), 120, "tool-forge");
+        toolSlot = field(left + 356, top + (boundArea == null ? 168 : 124), 48, "0");
+        workDamage = field(left + 138, top + (boundArea == null ? 196 : 152), 48, "1");
+        servicesButton = new GuiHorizonwrightButton(
+            SERVICES_BUTTON,
+            left + 282,
+            top + (boundArea == null ? 196 : 152),
+            194,
+            20,
+            "Services: ON");
         buttonList.add(servicesButton);
         buttonList.add(
-            new GuiHorizonwrightButton(SUBMIT_BUTTON, left + 18, top + 268, panelWidth - 36, 22, "Queue excavation"));
-        buttonList.add(new GuiHorizonwrightButton(BACK_BUTTON, left + panelWidth - 82, top + 296, 70, 20, "Back"));
+            new GuiHorizonwrightButton(
+                SUBMIT_BUTTON,
+                left + 18,
+                top + (boundArea == null ? 268 : 224),
+                panelWidth - 36,
+                22,
+                "Queue excavation"));
+        buttonList.add(
+            new GuiHorizonwrightButton(
+                BACK_BUTTON,
+                left + panelWidth - 82,
+                top + (boundArea == null ? 296 : 252),
+                70,
+                20,
+                "Back"));
         populateSavedNames();
         loadoutId.setText(AutomaticInventory.ID);
         loadoutId.setVisible(false);
@@ -92,6 +111,10 @@ public final class GuiExcavationSetup extends GuiReadableScreen {
         stationId.setText("default-repair");
         if (boundArea != null) {
             taskId.setText(boundArea.getId());
+            for (GuiTextField inherited : new GuiTextField[] { taskId, radius, bottomY, topY }) {
+                inherited.setVisible(false);
+                inherited.setEnabled(false);
+            }
             int span = Math.min(
                 boundArea.getMaximum()
                     .getX()
@@ -158,13 +181,19 @@ public final class GuiExcavationSetup extends GuiReadableScreen {
                         - boundArea.getMinimum()
                             .getZ())
                         / 2;
-            String id = ProfileAssetInput.stableId(taskId.getText(), "task name");
+            String id = boundArea == null ? ProfileAssetInput.stableId(taskId.getText(), "task name")
+                : boundArea.getId() + "-mine-" + MinecraftRuntimeAccess.totalWorldTime(mc.theWorld);
             if (boundArea != null && boundArea.getMinimum()
                 .getDimensionId() != mc.theWorld.provider.dimensionId)
                 throw new IllegalArgumentException("Travel to the area's dimension first.");
-            int parsedRadius = ProfileAssetInput.nonNegativeInteger(radius.getText(), "radius");
-            int parsedBottom = integer(bottomY.getText(), "bottom Y");
-            int parsedTop = integer(topY.getText(), "top Y");
+            int parsedRadius = boundArea == null ? ProfileAssetInput.nonNegativeInteger(radius.getText(), "radius")
+                : boundArea.isCircular() ? boundArea.getRadius() : 2;
+            int parsedBottom = boundArea == null ? integer(bottomY.getText(), "bottom Y")
+                : boundArea.getMinimum()
+                    .getY();
+            int parsedTop = boundArea == null ? integer(topY.getText(), "top Y")
+                : boundArea.getMaximum()
+                    .getY();
             TaskSpec spec;
             if (!servicesEnabled) {
                 spec = ExcavationTaskSubmission.withoutServices(
@@ -229,7 +258,7 @@ public final class GuiExcavationSetup extends GuiReadableScreen {
     @Override
     protected void drawContents(int mouseX, int mouseY, float partialTicks) {
         drawDefaultBackground();
-        drawRect(left, top, left + panelWidth, top + 322, 0xE010141B);
+        drawRect(left, top, left + panelWidth, top + (boundArea == null ? 322 : 278), 0xE010141B);
         drawCenteredString(fontRendererObj, "New clean-volume excavation", width / 2, top + 14, 0xFFF0C674);
         drawCenteredString(
             fontRendererObj,
@@ -237,39 +266,56 @@ public final class GuiExcavationSetup extends GuiReadableScreen {
             width / 2,
             top + 29,
             0xFF8FAAD0);
-        label("Task name", left + 18, top + 54);
-        label(
-            boundArea != null && !boundArea.isCircular() ? "Saved rectangle" : "Radius (0-250)",
-            left + 270,
-            top + 54);
-        label("Bottom Y", left + 18, top + 82);
-        label("Top Y", left + 270, top + 82);
-        drawString(fontRendererObj, "Optional shared services", left + 18, top + 116, 0xFFF0C674);
-        drawString(fontRendererObj, "Tools: automatic", left + 18, top + 156, 0xFFB8C8DE);
-        label("Storage", left + 270, top + 146);
-        label("Repair station", left + 18, top + 174);
+        if (boundArea == null) {
+            label("Task name", left + 18, top + 54);
+            label(
+                boundArea != null && !boundArea.isCircular() ? "Saved rectangle" : "Radius (0-250)",
+                left + 270,
+                top + 54);
+            label("Bottom Y", left + 18, top + 82);
+            label("Top Y", left + 270, top + 82);
+        } else {
+            drawString(fontRendererObj, "Area: " + boundArea.getDisplayName(), left + 18, top + 50, 0xFFB8C8DE);
+        }
+        drawString(
+            fontRendererObj,
+            "Optional shared services",
+            left + 18,
+            top + (boundArea == null ? 116 : 72),
+            0xFFF0C674);
+        drawString(fontRendererObj, "Tools: automatic", left + 18, top + (boundArea == null ? 156 : 112), 0xFFB8C8DE);
+        label("Storage", left + 270, top + (boundArea == null ? 146 : 102));
+        label("Repair station", left + 18, top + (boundArea == null ? 174 : 130));
 
-        label("Work damage", left + 18, top + 202);
-        drawString(fontRendererObj, "Center now: " + centerSummary(), left + 18, top + 230, 0xFFB8C8DE);
+        label("Work damage", left + 18, top + (boundArea == null ? 202 : 158));
+        drawString(
+            fontRendererObj,
+            "Center now: " + centerSummary(),
+            left + 18,
+            top + (boundArea == null ? 230 : 186),
+            0xFFB8C8DE);
         drawString(
             fontRendererObj,
             truncate(status, 76),
             left + 18,
-            top + 246,
+            top + (boundArea == null ? 246 : 202),
             status.startsWith("Nothing") ? 0xFFFF7777 : 0xFFB8C8DE);
         for (GuiTextField field : fields()) field.drawTextBox();
         super.drawContents(mouseX, mouseY, partialTicks);
-        if (mouseX >= left + 18 && mouseX < left + 190 && mouseY >= top + 196 && mouseY < top + 216) drawHoveringText(
-            java.util.Arrays.asList(
-                "Work damage (legacy estimate)",
-                "Estimated tool durability points used by upcoming work.",
-                "Not block damage, mining speed, or a percentage.",
-                "Currently recorded for diagnostics only; it does not trigger repairs.",
-                "The default Tinkers policy repairs tools when broken.",
-                "Leave at 1 unless testing diagnostics."),
-            mouseX,
-            mouseY,
-            fontRendererObj);
+        if (mouseX >= left + 18 && mouseX < left + 190
+            && mouseY >= top + (boundArea == null ? 196 : 152)
+            && mouseY < top + (boundArea == null ? 216 : 172))
+            drawHoveringText(
+                java.util.Arrays.asList(
+                    "Work damage (legacy estimate)",
+                    "Estimated tool durability points used by upcoming work.",
+                    "Not block damage, mining speed, or a percentage.",
+                    "Currently recorded for diagnostics only; it does not trigger repairs.",
+                    "The default Tinkers policy repairs tools when broken.",
+                    "Leave at 1 unless testing diagnostics."),
+                mouseX,
+                mouseY,
+                fontRendererObj);
     }
 
     @Override

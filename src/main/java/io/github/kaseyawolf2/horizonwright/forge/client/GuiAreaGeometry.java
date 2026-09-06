@@ -39,7 +39,7 @@ final class GuiAreaGeometry extends GuiReadableScreen {
         Keyboard.enableRepeatEvents(true);
         buttonList.clear();
         left = (width - 500) / 2;
-        top = (height - 310) / 2;
+        top = (height - 258) / 2;
         BasePosition a = original == null ? feet()
             : original.isCircular() ? original.getCenter() : original.getMinimum();
         BasePosition b = original == null ? a : original.getMaximum();
@@ -55,7 +55,7 @@ final class GuiAreaGeometry extends GuiReadableScreen {
         fields = new GuiTextField[10];
         for (int i = 0; i < 10; i++) {
             int x = i == 0 ? 110 : 50 + ((i - 1) % 3) * 115;
-            int y = i == 0 ? 44 : i <= 3 ? 100 : i <= 6 ? 152 : 204;
+            int y = i == 0 ? 44 : i <= 3 ? 100 : 152;
             fields[i] = readableField(fontRendererObj, left + x, top + y, i == 0 ? 250 : 90, 18);
             fields[i].setText(defaults[i]);
         }
@@ -63,8 +63,8 @@ final class GuiAreaGeometry extends GuiReadableScreen {
             new GuiHorizonwrightButton(1, left + 18, top + 70, 464, 20, circle ? "Shape: Circle" : "Shape: Rectangle"));
         buttonList.add(new GuiHorizonwrightButton(2, left + 405, top + 100, 77, 20, "My feet"));
         buttonList.add(new GuiHorizonwrightButton(3, left + 405, top + 152, 77, 20, "My feet"));
-        buttonList.add(new GuiHorizonwrightButton(4, left + 18, top + 266, 340, 20, "Save geometry"));
-        buttonList.add(new GuiHorizonwrightButton(0, left + 402, top + 266, 80, 20, "Back"));
+        buttonList.add(new GuiHorizonwrightButton(4, left + 18, top + 214, 340, 20, "Save geometry"));
+        buttonList.add(new GuiHorizonwrightButton(0, left + 402, top + 214, 80, 20, "Back"));
         visibility();
     }
 
@@ -139,18 +139,18 @@ final class GuiAreaGeometry extends GuiReadableScreen {
     @Override
     protected void drawContents(int x, int y, float ticks) {
         drawDefaultBackground();
-        drawRect(left, top, left + 500, top + 310, 0xEE10141B);
+        drawRect(left, top, left + 500, top + 258, 0xEE10141B);
         drawCenteredString(fontRendererObj, "Area geometry", width / 2, top + 14, 0xFFF0C674);
         drawString(fontRendererObj, "Name", left + 18, top + 49, 0xFFB8C8DE);
         drawString(fontRendererObj, circle ? "Center XYZ" : "Corner 1 XYZ", left + 18, top + 91, 0xFFB8C8DE);
         if (!circle) drawString(fontRendererObj, "Corner 2 XYZ", left + 18, top + 139, 0xFFB8C8DE);
         else {
-            drawString(fontRendererObj, "Radius", left + 50, top + 192, 0xFFB8C8DE);
-            drawString(fontRendererObj, "Bottom Y", left + 165, top + 192, 0xFFB8C8DE);
-            drawString(fontRendererObj, "Top Y", left + 280, top + 192, 0xFFB8C8DE);
+            drawString(fontRendererObj, "Radius", left + 50, top + 139, 0xFFB8C8DE);
+            drawString(fontRendererObj, "Bottom Y", left + 165, top + 139, 0xFFB8C8DE);
+            drawString(fontRendererObj, "Top Y", left + 280, top + 139, 0xFFB8C8DE);
         }
         for (GuiTextField field : fields) field.drawTextBox();
-        drawParagraph(message, left + 18, top + 235, 464, 26, 0xFFB8C8DE);
+        drawParagraph(message, left + 18, top + 183, 464, 26, 0xFFB8C8DE);
         super.drawContents(x, y, ticks);
     }
 

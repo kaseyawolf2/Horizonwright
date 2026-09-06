@@ -79,26 +79,39 @@ public final class GuiManagedQuarrySetup extends GuiReadableScreen {
         radius = field(left + 356, top + 44, 48, "8");
         bottomY = field(left + 138, top + 70, 48, Integer.toString(currentY() - 8));
         topY = field(left + 356, top + 70, 48, Integer.toString(currentY()));
-        rampMaterial = field(left + 138, top + 112, 120, "minecraft:cobblestone");
-        lightMaterial = field(left + 356, top + 112, 120, "minecraft:torch");
-        fillerMaterial = field(left + 138, top + 138, 120, "minecraft:cobblestone");
-        lightInterval = field(left + 356, top + 138, 48, "4");
-        loadoutId = field(left + 138, top + 202, 120, "mining");
-        storageId = field(left + 356, top + 202, 120, "ore-chest");
-        stationId = field(left + 138, top + 228, 120, "tool-forge");
-        toolSlot = field(left + 356, top + 228, 48, "0");
-        workDamage = field(left + 138, top + 254, 48, "1");
-        servicesButton = new GuiHorizonwrightButton(SERVICES_BUTTON, left + 282, top + 254, 194, 20, "Services: ON");
+        rampMaterial = field(left + 138, top + (boundArea == null ? 112 : 68), 120, "minecraft:cobblestone");
+        lightMaterial = field(left + 356, top + (boundArea == null ? 112 : 68), 120, "minecraft:torch");
+        fillerMaterial = field(left + 138, top + (boundArea == null ? 138 : 94), 120, "minecraft:cobblestone");
+        lightInterval = field(left + 356, top + (boundArea == null ? 138 : 94), 48, "4");
+        loadoutId = field(left + 138, top + (boundArea == null ? 202 : 158), 120, "mining");
+        storageId = field(left + 356, top + (boundArea == null ? 202 : 158), 120, "ore-chest");
+        stationId = field(left + 138, top + (boundArea == null ? 228 : 184), 120, "tool-forge");
+        toolSlot = field(left + 356, top + (boundArea == null ? 228 : 184), 48, "0");
+        workDamage = field(left + 138, top + (boundArea == null ? 254 : 210), 48, "1");
+        servicesButton = new GuiHorizonwrightButton(
+            SERVICES_BUTTON,
+            left + 282,
+            top + (boundArea == null ? 254 : 210),
+            194,
+            20,
+            "Services: ON");
         buttonList.add(servicesButton);
         buttonList.add(
             new GuiHorizonwrightButton(
                 SUBMIT_BUTTON,
                 left + 18,
-                top + 326,
+                top + (boundArea == null ? 326 : 282),
                 panelWidth - 36,
                 22,
                 "Queue managed quarry"));
-        buttonList.add(new GuiHorizonwrightButton(BACK_BUTTON, left + panelWidth - 82, top + 354, 70, 20, "Back"));
+        buttonList.add(
+            new GuiHorizonwrightButton(
+                BACK_BUTTON,
+                left + panelWidth - 82,
+                top + (boundArea == null ? 354 : 310),
+                70,
+                20,
+                "Back"));
         populateSavedNames();
         loadoutId.setText(AutomaticInventory.ID);
         loadoutId.setVisible(false);
@@ -107,6 +120,10 @@ public final class GuiManagedQuarrySetup extends GuiReadableScreen {
         stationId.setText("default-repair");
         if (boundArea != null) {
             taskId.setText(boundArea.getId());
+            for (GuiTextField inherited : new GuiTextField[] { taskId, radius, bottomY, topY }) {
+                inherited.setVisible(false);
+                inherited.setEnabled(false);
+            }
             int span = Math.min(
                 boundArea.getMaximum()
                     .getX()
@@ -173,13 +190,19 @@ public final class GuiManagedQuarrySetup extends GuiReadableScreen {
                         - boundArea.getMinimum()
                             .getZ())
                         / 2;
-            String id = ProfileAssetInput.stableId(taskId.getText(), "task name");
+            String id = boundArea == null ? ProfileAssetInput.stableId(taskId.getText(), "task name")
+                : boundArea.getId() + "-mine-" + MinecraftRuntimeAccess.totalWorldTime(mc.theWorld);
             if (boundArea != null && boundArea.getMinimum()
                 .getDimensionId() != mc.theWorld.provider.dimensionId)
                 throw new IllegalArgumentException("Travel to the area's dimension first.");
-            int parsedRadius = ProfileAssetInput.nonNegativeInteger(radius.getText(), "radius");
-            int parsedBottom = integer(bottomY.getText(), "bottom Y");
-            int parsedTop = integer(topY.getText(), "top Y");
+            int parsedRadius = boundArea == null ? ProfileAssetInput.nonNegativeInteger(radius.getText(), "radius")
+                : boundArea.isCircular() ? boundArea.getRadius() : 2;
+            int parsedBottom = boundArea == null ? integer(bottomY.getText(), "bottom Y")
+                : boundArea.getMinimum()
+                    .getY();
+            int parsedTop = boundArea == null ? integer(topY.getText(), "top Y")
+                : boundArea.getMaximum()
+                    .getY();
             ManagedQuarryConfiguration configuration = new ManagedQuarryConfiguration(
                 ManagedQuarryMaterialInput.requirePlaceableBlock(rampMaterial.getText(), "ramp block"),
                 ManagedQuarryMaterialInput.requirePlaceableBlock(lightMaterial.getText(), "light block"),
@@ -251,7 +274,7 @@ public final class GuiManagedQuarrySetup extends GuiReadableScreen {
     @Override
     protected void drawContents(int mouseX, int mouseY, float partialTicks) {
         drawDefaultBackground();
-        drawRect(left, top, left + panelWidth, top + 384, 0xE010141B);
+        drawRect(left, top, left + panelWidth, top + (boundArea == null ? 384 : 340), 0xE010141B);
         drawCenteredString(fontRendererObj, "New managed quarry", width / 2, top + 10, 0xFFF0C674);
         drawCenteredString(
             fontRendererObj,
@@ -259,44 +282,66 @@ public final class GuiManagedQuarrySetup extends GuiReadableScreen {
             width / 2,
             top + 25,
             0xFF8FAAD0);
-        label("Task name", left + 18, top + 50);
-        label(
-            boundArea != null && !boundArea.isCircular() ? "Saved rectangle" : "Radius (2-250)",
-            left + 270,
-            top + 50);
-        label("Bottom Y", left + 18, top + 76);
-        label("Top Y", left + 270, top + 76);
-        drawString(fontRendererObj, "Approved infrastructure", left + 18, top + 94, 0xFFF0C674);
-        label("Ramp block", left + 18, top + 118);
-        label("Light block", left + 270, top + 118);
-        label("Fluid filler", left + 18, top + 144);
-        label("Light every", left + 270, top + 144);
-        drawString(fontRendererObj, "Optional shared services", left + 18, top + 178, 0xFFF0C674);
-        drawString(fontRendererObj, "Tools: automatic", left + 18, top + 208, 0xFFB8C8DE);
-        label("Storage", left + 270, top + 208);
-        label("Repair station", left + 18, top + 234);
+        if (boundArea == null) {
+            label("Task name", left + 18, top + 50);
+            label(
+                boundArea != null && !boundArea.isCircular() ? "Saved rectangle" : "Radius (2-250)",
+                left + 270,
+                top + 50);
+            label("Bottom Y", left + 18, top + 76);
+            label("Top Y", left + 270, top + 76);
+        } else {
+            drawString(fontRendererObj, "Area: " + boundArea.getDisplayName(), left + 18, top + 50, 0xFFB8C8DE);
+        }
+        drawString(
+            fontRendererObj,
+            "Approved infrastructure",
+            left + 18,
+            top + (boundArea == null ? 94 : 50),
+            0xFFF0C674);
+        label("Ramp block", left + 18, top + (boundArea == null ? 118 : 74));
+        label("Light block", left + 270, top + (boundArea == null ? 118 : 74));
+        label("Fluid filler", left + 18, top + (boundArea == null ? 144 : 100));
+        label("Light every", left + 270, top + (boundArea == null ? 144 : 100));
+        drawString(
+            fontRendererObj,
+            "Optional shared services",
+            left + 18,
+            top + (boundArea == null ? 178 : 134),
+            0xFFF0C674);
+        drawString(fontRendererObj, "Tools: automatic", left + 18, top + (boundArea == null ? 208 : 164), 0xFFB8C8DE);
+        label("Storage", left + 270, top + (boundArea == null ? 208 : 164));
+        label("Repair station", left + 18, top + (boundArea == null ? 234 : 190));
 
-        label("Work damage", left + 18, top + 260);
-        drawString(fontRendererObj, "Center now: " + centerSummary(), left + 18, top + 286, 0xFFB8C8DE);
+        label("Work damage", left + 18, top + (boundArea == null ? 260 : 216));
+        drawString(
+            fontRendererObj,
+            "Center now: " + centerSummary(),
+            left + 18,
+            top + (boundArea == null ? 286 : 242),
+            0xFFB8C8DE);
         drawString(
             fontRendererObj,
             truncate(status, 76),
             left + 18,
-            top + 304,
+            top + (boundArea == null ? 304 : 260),
             status.startsWith("Nothing") ? 0xFFFF7777 : 0xFFB8C8DE);
         for (GuiTextField field : fields()) field.drawTextBox();
         super.drawContents(mouseX, mouseY, partialTicks);
-        if (mouseX >= left + 18 && mouseX < left + 190 && mouseY >= top + 254 && mouseY < top + 274) drawHoveringText(
-            java.util.Arrays.asList(
-                "Work damage (legacy estimate)",
-                "Estimated tool durability points used by upcoming work.",
-                "Not block damage, mining speed, or a percentage.",
-                "Currently recorded for diagnostics only; it does not trigger repairs.",
-                "The default Tinkers policy repairs tools when broken.",
-                "Leave at 1 unless testing diagnostics."),
-            mouseX,
-            mouseY,
-            fontRendererObj);
+        if (mouseX >= left + 18 && mouseX < left + 190
+            && mouseY >= top + (boundArea == null ? 254 : 210)
+            && mouseY < top + (boundArea == null ? 274 : 230))
+            drawHoveringText(
+                java.util.Arrays.asList(
+                    "Work damage (legacy estimate)",
+                    "Estimated tool durability points used by upcoming work.",
+                    "Not block damage, mining speed, or a percentage.",
+                    "Currently recorded for diagnostics only; it does not trigger repairs.",
+                    "The default Tinkers policy repairs tools when broken.",
+                    "Leave at 1 unless testing diagnostics."),
+                mouseX,
+                mouseY,
+                fontRendererObj);
     }
 
     @Override
