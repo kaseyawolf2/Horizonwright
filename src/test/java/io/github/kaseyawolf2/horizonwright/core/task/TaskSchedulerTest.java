@@ -16,6 +16,71 @@ import org.junit.Test;
 public class TaskSchedulerTest {
 
     @Test
+    public void manualRunResetsIntervalAndPersistsSequence() {
+        TaskScheduler scheduler = new TaskScheduler();
+        scheduler.submit(interval("manual", 100000L, 100000L, TaskLane.CHORE, 0));
+        evaluate(scheduler, 0L, connected(), false);
+        evaluate(scheduler, 25000L, connected(), false);
+        assertEquals(
+            "Next activation: 1m 15s connected time",
+            ScheduleTiming.describe(
+                scheduler.inspect("manual")
+                    .get(),
+                scheduler.snapshot()));
+        assertEquals(
+            "schedule[manual]#1",
+            scheduler.runNow("manual", connected(), Collections.<String>emptySet())
+                .getTask()
+                .getId());
+        assertEquals(
+            125000L,
+            scheduler.inspect("manual")
+                .get()
+                .getNextConnectedDueMillis());
+        assertTrue(evaluate(scheduler, 100000L, connected(), false).isEmpty());
+        TaskScheduler restored = new TaskScheduler();
+        restored.restore(scheduler.snapshot());
+        assertEquals(
+            "schedule[manual]#2",
+            restored.runNow("manual", connected(), Collections.<String>emptySet())
+                .getTask()
+                .getId());
+    }
+
+    @Test
+    public void manualRunRejectsOccupiedAndPausedSchedulesWithoutCountingRun() {
+        TaskScheduler scheduler = new TaskScheduler();
+        scheduler.submit(interval("manual", 100L, 100L, TaskLane.CHORE, 0));
+        try {
+            scheduler.runNow("manual", connected(), Collections.singleton("manual"));
+            fail("occupied run accepted");
+        } catch (IllegalStateException expected) {
+            assertEquals(
+                0L,
+                scheduler.inspect("manual")
+                    .get()
+                    .getTotalRuns());
+        }
+        scheduler.pause("manual");
+        assertEquals(
+            "Next activation: paused",
+            ScheduleTiming.describe(
+                scheduler.inspect("manual")
+                    .get(),
+                scheduler.snapshot()));
+        try {
+            scheduler.runNow("manual", connected(), Collections.<String>emptySet());
+            fail("paused run accepted");
+        } catch (IllegalStateException expected) {
+            assertEquals(
+                0L,
+                scheduler.inspect("manual")
+                    .get()
+                    .getTotalRuns());
+        }
+    }
+
+    @Test
     public void connectedIntervalsExcludeOfflineTimeAndEmitAtMostOneMissedRun() {
         TaskScheduler scheduler = new TaskScheduler();
         scheduler.submit(interval("ore", 100L, 100L, TaskLane.CHORE, 0));

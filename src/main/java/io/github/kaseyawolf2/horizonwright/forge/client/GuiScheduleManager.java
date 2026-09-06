@@ -30,6 +30,8 @@ public final class GuiScheduleManager extends GuiReadableScreen {
     private static final int PREVIOUS_BUTTON = 2;
     private static final int NEXT_BUTTON = 3;
     private static final int STATE_BUTTON = 4;
+    private static final int RUN_NOW_BUTTON = 8;
+    private GuiButton runNowButton;
     private static final int SAVE_BUTTON = 5;
     private static final int DELETE_BUTTON = 6;
     private static final int CULL_BUTTON = 7;
@@ -44,6 +46,8 @@ public final class GuiScheduleManager extends GuiReadableScreen {
     private GuiTextField targetField;
     private GuiTextField intervalField;
     private GuiTextField reserveField;
+    private GuiTextField minimumAdultsField;
+    private GuiTextField herdSizeField;
     private GuiButton previousButton;
     private GuiButton nextButton;
     private GuiButton stateButton;
@@ -76,7 +80,7 @@ public final class GuiScheduleManager extends GuiReadableScreen {
         Keyboard.enableRepeatEvents(true);
         buttonList.clear();
         panelWidth = Math.min(500, width - 24);
-        panelHeight = Math.min(350, height - 16);
+        panelHeight = Math.min(390, height - 16);
         left = (width - panelWidth) / 2;
         top = Math.max(8, (height - panelHeight) / 2);
         buttonList.add(new GuiHorizonwrightButton(20, left + 16, top + 12, 120, 20, "Tasks"));
@@ -101,12 +105,16 @@ public final class GuiScheduleManager extends GuiReadableScreen {
         nextButton = new GuiHorizonwrightButton(NEXT_BUTTON, left + 94, top + 166, 72, 20, "Next");
         buttonList.add(previousButton);
         buttonList.add(nextButton);
-        cullButton = new GuiHorizonwrightButton(CULL_BUTTON, left + 244, top + 166, 240, 20, "");
+        runNowButton = new GuiHorizonwrightButton(RUN_NOW_BUTTON, left + 364, top + 166, 120, 20, "Run now");
+        buttonList.add(runNowButton);
+        cullButton = new GuiHorizonwrightButton(CULL_BUTTON, left + 244, top + 314, 240, 20, "");
         buttonList.add(cullButton);
 
         targetField = field(left + 16, top + 240, 218);
         intervalField = field(left + 250, top + 240, 96);
         reserveField = field(left + 362, top + 240, 116);
+        minimumAdultsField = field(left + 172, top + 288, 140);
+        herdSizeField = field(left + 328, top + 288, 156);
 
         int actionY = top + panelHeight - 28;
         stateButton = new GuiHorizonwrightButton(STATE_BUTTON, left + 16, actionY, 86, 20, "Pause");
@@ -117,6 +125,9 @@ public final class GuiScheduleManager extends GuiReadableScreen {
         buttonList.add(deleteButton);
         buttonList.add(new GuiHorizonwrightButton(BACK_BUTTON, left + panelWidth - 76, actionY, 60, 20, "Back"));
         refreshSchedules();
+        ScheduleSnapshot selected = selectedSchedule();
+        if (selected != null) populateEditor(selected);
+        configureButtons();
     }
 
     @Override
@@ -158,7 +169,11 @@ public final class GuiScheduleManager extends GuiReadableScreen {
         }
         try {
             HorizonwrightRuntime runtime = requireRuntime();
-            if (button.id == STATE_BUTTON) {
+            if (button.id == RUN_NOW_BUTTON) {
+                runtime.runScheduleNow(selectedScheduleId);
+                message = "Queued using saved settings. Existing work keeps its priority.";
+                clearDeleteConfirmation();
+            } else if (button.id == STATE_BUTTON) {
                 if (selected.getState() == ScheduleState.ACTIVE) {
                     runtime.pauseSchedule(selectedScheduleId);
                     message = "Paused '" + selectedScheduleId + "'. No new occurrences will start.";
@@ -188,7 +203,7 @@ public final class GuiScheduleManager extends GuiReadableScreen {
             .getId();
         clearDeleteConfirmation();
         populateEditor(selected);
-        message = description(selected);
+        message = "Changes apply to future occurrences; already queued tasks keep their settings.";
     }
 
     private void saveSelected(HorizonwrightRuntime runtime, ScheduleSnapshot selected) {
@@ -229,13 +244,10 @@ public final class GuiScheduleManager extends GuiReadableScreen {
         } else if (HusbandryTask.TYPE.equals(type)) {
             requireSavedArea(target);
             int minutes = ProfileAssetInput.positiveInteger(intervalField.getText(), "interval minutes");
-            String[] bounds = reserveField.getText()
-                .split("/");
-            if (bounds.length != 1 && bounds.length != 2 && bounds.length != 3)
-                throw new IllegalArgumentException("enter minimum adults / desired total herd size");
-            int minimum = ProfileAssetInput.positiveInteger(bounds[0], "minimum adults");
-            int maximum = bounds.length >= 2 ? ProfileAssetInput.positiveInteger(bounds[1], "desired herd size")
-                : Math.max(minimum, 10);
+            int minimum = ProfileAssetInput.positiveInteger(minimumAdultsField.getText(), "minimum adults");
+            int maximum = ProfileAssetInput.positiveInteger(herdSizeField.getText(), "desired herd size");
+            if (minimum < 2 || maximum < minimum) throw new IllegalArgumentException(
+                "Keep at least two adult breeders; herd size must be at least minimum adults");
             int actions = 16;
             runtime.updateHusbandrySchedule(
                 selectedScheduleId,
@@ -276,9 +288,7 @@ public final class GuiScheduleManager extends GuiReadableScreen {
 
     @Override
     public void updateScreen() {
-        targetField.updateCursorCounter();
-        intervalField.updateCursorCounter();
-        reserveField.updateCursorCounter();
+        for (GuiTextField field : editorFields()) if (field.getVisible()) field.updateCursorCounter();
     }
 
     @Override
@@ -287,17 +297,14 @@ public final class GuiScheduleManager extends GuiReadableScreen {
             mc.displayGuiScreen(parent);
             return;
         }
-        targetField.textboxKeyTyped(character, keyCode);
-        intervalField.textboxKeyTyped(character, keyCode);
-        reserveField.textboxKeyTyped(character, keyCode);
+        for (GuiTextField field : editorFields()) if (field.getVisible()) field.textboxKeyTyped(character, keyCode);
     }
 
     @Override
     protected void mouseClicked(int mouseX, int mouseY, int mouseButton) {
         super.mouseClicked(mouseX, mouseY, mouseButton);
-        targetField.mouseClicked(mouseX, mouseY, mouseButton);
-        intervalField.mouseClicked(mouseX, mouseY, mouseButton);
-        reserveField.mouseClicked(mouseX, mouseY, mouseButton);
+        for (GuiTextField field : editorFields())
+            if (field.getVisible()) field.mouseClicked(mouseX, mouseY, mouseButton);
     }
 
     @Override
@@ -314,28 +321,15 @@ public final class GuiScheduleManager extends GuiReadableScreen {
             left + 16,
             top + 194,
             0xFFB8C8DE);
-        drawString(
-            fontRendererObj,
-            truncate(message, 78),
+        drawTypeEditor(selected);
+        drawParagraph(
+            message,
             left + 16,
-            top + 208,
+            top + 337,
+            panelWidth - 32,
+            20,
             message.startsWith("Nothing") || message.startsWith("Session unavailable") ? 0xFFFF7777 : 0xFF8FAAD0);
-        drawString(
-            fontRendererObj,
-            selected == null ? "Target" : targetLabel(selected),
-            left + 16,
-            top + 226,
-            0xFFE0E0E0);
-        drawString(fontRendererObj, "Minutes", left + 250, top + 226, 0xFFE0E0E0);
-        drawString(
-            fontRendererObj,
-            selected != null && isHusbandry(selected) ? "Min adults / Herd" : "Seed reserve",
-            left + 362,
-            top + 226,
-            0xFFE0E0E0);
-        targetField.drawTextBox();
-        intervalField.drawTextBox();
-        reserveField.drawTextBox();
+        for (GuiTextField field : editorFields()) if (field.getVisible()) field.drawTextBox();
         super.drawContents(mouseX, mouseY, partialTicks);
     }
 
@@ -389,9 +383,7 @@ public final class GuiScheduleManager extends GuiReadableScreen {
         cullButton.visible = isHusbandry(selected);
         cullButton.enabled = editable && isHusbandry(selected);
         cullButton.displayString = "Allow animal attacks: " + (allowCulling ? "ON" : "OFF");
-        targetField.setEnabled(editable);
-        intervalField.setEnabled(editable && (isFarm(selected) || isTree(selected) || isHusbandry(selected)));
-        reserveField.setEnabled(editable && (isFarm(selected) || isTree(selected) || isHusbandry(selected)));
+        configureEditor(selected);
         saveButton.enabled = editable;
         stateButton.enabled = selected != null && selected.getState() != ScheduleState.CANCELLED;
         stateButton.displayString = selected != null && selected.getState() == ScheduleState.PAUSED ? "Resume"
@@ -403,6 +395,7 @@ public final class GuiScheduleManager extends GuiReadableScreen {
     }
 
     private void populateEditor(ScheduleSnapshot selected) {
+        clearEditor();
         allowCulling = isHusbandry(selected) && HusbandryTask.allowCulling(
             selected.getRule()
                 .getTask());
@@ -450,15 +443,16 @@ public final class GuiScheduleManager extends GuiReadableScreen {
                 Long.toString(
                     selected.getRule()
                         .getIntervalMillis() / 60_000L));
-            reserveField.setText(
+            minimumAdultsField.setText(
                 Integer.toString(
                     HusbandryTask.minimumAdults(
                         selected.getRule()
-                            .getTask()))
-                    + "/"
-                    + HusbandryTask.maximumAdults(
+                            .getTask())));
+            herdSizeField.setText(
+                Integer.toString(
+                    HusbandryTask.maximumAdults(
                         selected.getRule()
-                            .getTask()));
+                            .getTask())));
         } else {
             targetField.setText("view only");
             intervalField.setText("n/a");
@@ -467,9 +461,101 @@ public final class GuiScheduleManager extends GuiReadableScreen {
     }
 
     private void clearEditor() {
-        targetField.setText("");
-        intervalField.setText("");
-        reserveField.setText("");
+        for (GuiTextField field : editorFields()) {
+            field.setText("");
+            field.setFocused(false);
+        }
+    }
+
+    private GuiTextField[] editorFields() {
+        return new GuiTextField[] { targetField, intervalField, reserveField, minimumAdultsField, herdSizeField };
+    }
+
+    private void configureEditor(ScheduleSnapshot selected) {
+        boolean editable = selected != null && isEditable(selected);
+        showField(targetField, editable, 16, 246, isHusbandry(selected) ? 300 : panelWidth - 32);
+        showField(
+            intervalField,
+            isFarm(selected) || isTree(selected) || isHusbandry(selected),
+            16,
+            288,
+            isHusbandry(selected) ? 140 : 224);
+        showField(reserveField, isFarm(selected) || isTree(selected), 256, 288, panelWidth - 272);
+        showField(minimumAdultsField, isHusbandry(selected), 172, 288, 140);
+        showField(herdSizeField, isHusbandry(selected), 328, 288, panelWidth - 344);
+    }
+
+    private void showField(GuiTextField field, boolean visible, int x, int y, int fieldWidth) {
+        field.setVisible(visible);
+        field.setEnabled(visible);
+        if (!visible) field.setFocused(false);
+        field.xPosition = left + x;
+        field.yPosition = top + y;
+        field.width = fieldWidth;
+    }
+
+    private void editorLabel(String label, int x, int y) {
+        drawString(fontRendererObj, label, left + x, top + y, 0xFFE0E0E0);
+    }
+
+    private void drawTypeEditor(ScheduleSnapshot selected) {
+        runNowButton.enabled = selected != null && selected.getState() == ScheduleState.ACTIVE;
+        if (selected != null) {
+            drawString(
+                fontRendererObj,
+                io.github.kaseyawolf2.horizonwright.core.task.ScheduleTiming.describe(
+                    selected,
+                    requireRuntime().controllerSnapshot()
+                        .getScheduler()),
+                left + 16,
+                top + 210,
+                0xFFF0C674);
+        }
+        if (selected == null || !isEditable(selected)) {
+            drawParagraph(
+                selected == null ? "Select a schedule above to open its settings."
+                    : "This schedule type is view-only. You can still pause or delete it.",
+                left + 16,
+                top + 232,
+                panelWidth - 32,
+                60,
+                0xFFB8C8DE);
+            return;
+        }
+        String title = isSleep(selected) ? "Nightly sleep settings"
+            : isHusbandry(selected) ? "Livestock cycle settings"
+                : isTree(selected) ? "Tree farm settings" : "Crop farm settings";
+        editorLabel(title + " - " + targetLabel(selected), 16, 232);
+        if (isSleep(selected)) {
+            drawParagraph(
+                "Runs once each Minecraft night at the saved bed. No minute interval or seed reserve is needed.",
+                left + 16,
+                top + 278,
+                panelWidth - 32,
+                48,
+                0xFFB8C8DE);
+        } else if (isHusbandry(selected)) {
+            editorLabel("Species (fixed)", 336, 232);
+            editorLabel(
+                HusbandryTask.species(
+                    selected.getRule()
+                        .getTask())
+                    .name(),
+                336,
+                250);
+            editorLabel("Every (minutes)", 16, 274);
+            editorLabel("Minimum adults", 172, 274);
+            editorLabel("Desired herd size", 328, 274);
+            editorLabel("Herd = adults + babies", 16, 320);
+        } else {
+            editorLabel("Every (connected minutes)", 16, 274);
+            editorLabel(isTree(selected) ? "Saplings to keep" : "Seeds to keep", 256, 274);
+            editorLabel(
+                isTree(selected) ? "Fell and replant within the saved tree area."
+                    : "Harvest within the saved crop area.",
+                16,
+                320);
+        }
     }
 
     private ScheduleSnapshot selectedSchedule() {

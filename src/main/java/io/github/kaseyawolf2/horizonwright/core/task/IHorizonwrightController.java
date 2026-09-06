@@ -32,6 +32,10 @@ public interface IHorizonwrightController {
 
     ScheduleSnapshot resumeSchedule(String scheduleId);
 
+    default ScheduleSnapshot runScheduleNow(String scheduleId, ScheduleEnvironment environment) {
+        throw new UnsupportedOperationException("Immediate schedules are unavailable.");
+    }
+
     ScheduleSnapshot cancelSchedule(String scheduleId);
 
     /** Permanently removes a schedule while leaving already-created task history intact. */

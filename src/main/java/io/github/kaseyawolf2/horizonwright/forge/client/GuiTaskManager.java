@@ -20,6 +20,7 @@ public final class GuiTaskManager extends GuiReadableScreen {
     private static final int PREVIOUS_BUTTON = 3;
     private static final int NEXT_BUTTON = 4;
     private static final int CLEAR_COMPLETED_BUTTON = 5;
+    private static final int RERUN_BUTTON = 6;
     private static final int TASKS_TAB = 20;
     private static final int SCHEDULES_TAB = 21;
     private static final int TASK_BUTTON_BASE = 100;
@@ -34,6 +35,7 @@ public final class GuiTaskManager extends GuiReadableScreen {
     private GuiButton previousButton;
     private GuiButton nextButton;
     private GuiButton clearCompletedButton;
+    private GuiButton rerunButton;
     private int left;
     private int top;
     private int panelWidth;
@@ -95,6 +97,14 @@ public final class GuiTaskManager extends GuiReadableScreen {
             "Delete task");
         buttonList.add(previousButton);
         buttonList.add(nextButton);
+        rerunButton = new GuiHorizonwrightButton(
+            RERUN_BUTTON,
+            left + panelWidth - 132,
+            top + 166,
+            116,
+            20,
+            "Rerun task");
+        buttonList.add(rerunButton);
         clearCompletedButton = new GuiHorizonwrightButton(
             CLEAR_COMPLETED_BUTTON,
             left + 16,
@@ -130,6 +140,21 @@ public final class GuiTaskManager extends GuiReadableScreen {
         }
         if (button.id == CLEAR_COMPLETED_BUTTON) {
             clearCompletedTasks();
+            return;
+        }
+        if (button.id == RERUN_BUTTON && selectedTaskId != null) {
+            try {
+                CurrentRuntimeUiResolver.Resolution resolution = CurrentRuntimeUiResolver.resolve(runtimeProvider);
+                if (!resolution.isAvailable()) throw new IllegalStateException(resolution.getDiagnostic());
+                TaskSnapshot rerun = resolution.getRuntime()
+                    .rerunTask(selectedTaskId);
+                selectedTaskId = rerun.getSpec()
+                    .getId();
+                message = "Queued a fresh run. Original completion retained; schedules unchanged.";
+                clearConfirmation();
+            } catch (RuntimeException failure) {
+                message = "Task was not rerun: " + safeMessage(failure);
+            }
             return;
         }
         if (button.id >= TASK_BUTTON_BASE && button.id < TASK_BUTTON_BASE + TASKS_PER_PAGE) {
@@ -192,6 +217,7 @@ public final class GuiTaskManager extends GuiReadableScreen {
             message.startsWith("Task was not") || message.startsWith("Session unavailable") ? 0xFFFF7777 : 0xFF8FAAD0);
 
         deleteButton.enabled = selected != null && canDelete(selected);
+        rerunButton.enabled = selected != null && selected.getState() == TaskState.COMPLETED;
         deleteButton.displayString = selected != null && selected.getSpec()
             .getId()
             .equals(confirmationTaskId) ? "Confirm delete" : "Delete task";

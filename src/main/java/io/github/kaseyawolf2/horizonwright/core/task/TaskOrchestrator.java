@@ -950,6 +950,18 @@ public final class TaskOrchestrator implements IHorizonwrightController, ActionR
             .remove(record.spec.getId());
     }
 
+    @Override
+    public ScheduleSnapshot runScheduleNow(String scheduleId, ScheduleEnvironment environment) {
+        ScheduleSnapshot result;
+        synchronized (this) {
+            enqueueScheduledTask(scheduler.runNow(scheduleId, environment, occupiedScheduleIds()), readNow());
+            result = scheduler.inspect(scheduleId)
+                .get();
+        }
+        drainDeferredCallbacks();
+        return result;
+    }
+
     private void enqueueScheduledTask(ScheduledTaskRequest request, long now) {
         TaskSpec spec = request.getTask();
         if (tasks.containsKey(spec.getId())) {

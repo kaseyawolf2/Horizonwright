@@ -38,6 +38,58 @@ import io.github.kaseyawolf2.horizonwright.runtime.task.TreeTask;
 public class HorizonwrightRuntimeTest {
 
     @Test
+    public void rerunCopiesSettingsButRetainsCompletedHistoryAndStartsFresh() {
+        HorizonwrightRuntime runtime = new HorizonwrightRuntime(
+            new InMemoryActionBroker(),
+            new ActionSessionGuard(),
+            new FixedClock());
+        RecordingBackend backend = new RecordingBackend();
+        runtime.installNavigationBackend(backend);
+        io.github.kaseyawolf2.horizonwright.core.task.TaskSnapshot original = runtime.submitGoTo(0, 4, 64, 4, 1);
+        try {
+            runtime.rerunTask(
+                original.getSpec()
+                    .getId());
+            fail("unfinished task was rerun");
+        } catch (IllegalStateException expected) {
+            assertTrue(
+                expected.getMessage()
+                    .contains("completed"));
+        }
+        runtime.clientTick();
+        backend.handle.state = NavigationState.COMPLETED;
+        runtime.clientTick();
+        io.github.kaseyawolf2.horizonwright.core.task.TaskSnapshot rerun = runtime.rerunTask(
+            original.getSpec()
+                .getId());
+        assertFalse(
+            original.getSpec()
+                .getId()
+                .equals(
+                    rerun.getSpec()
+                        .getId()));
+        assertEquals(
+            original.getSpec()
+                .getParameters(),
+            rerun.getSpec()
+                .getParameters());
+        assertEquals(TaskState.QUEUED, rerun.getState());
+        assertEquals(
+            0L,
+            rerun.getCheckpoint()
+                .getRevision());
+        assertEquals(
+            TaskState.COMPLETED,
+            runtime.controllerSnapshot()
+                .findTask(
+                    original.getSpec()
+                        .getId())
+                .get()
+                .getState());
+        runtime.close();
+    }
+
+    @Test
     public void explicitEnvironmentTicksControllerAndCloseRevokesActiveWork() {
         InMemoryActionBroker broker = new InMemoryActionBroker();
         RecordingBackend backend = new RecordingBackend();

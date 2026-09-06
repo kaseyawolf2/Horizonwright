@@ -575,6 +575,33 @@ public final class HorizonwrightRuntime implements AutoCloseable {
         return controller.remove(taskId);
     }
 
+    public ScheduleSnapshot runScheduleNow(String scheduleId) {
+        ensureOpen();
+        if (actionBroker.isAutomationLocked())
+            throw new IllegalStateException("Automation is stopped; reset it first.");
+        return controller.runScheduleNow(scheduleId, scheduleEnvironment);
+    }
+
+    public TaskSnapshot rerunTask(String taskId) {
+        ensureOpen();
+        if (actionBroker.isAutomationLocked())
+            throw new IllegalStateException("Automation is stopped; reset it first.");
+        TaskSnapshot original = controller.snapshot()
+            .findTask(taskId)
+            .orElseThrow(() -> new IllegalArgumentException("Unknown task: " + taskId));
+        if (original.getState() != TaskState.COMPLETED)
+            throw new IllegalStateException("Only completed tasks can be rerun.");
+        TaskSpec spec = original.getSpec();
+        TaskSpec replacement = new TaskSpec(
+            "rerun-" + java.util.UUID.randomUUID(),
+            spec.getType(),
+            spec.getDisplayName(),
+            spec.getLane(),
+            spec.getParameters());
+        DevelopmentTrace.event("runtime", "task-rerun", "original", taskId, "newTask", replacement.getId());
+        return controller.submit(replacement);
+    }
+
     public boolean isDryRun() {
         return dryRun;
     }

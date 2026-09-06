@@ -90,6 +90,34 @@ public final class TaskScheduler {
         return record.snapshot();
     }
 
+    ScheduledTaskRequest runNow(String scheduleId, ScheduleEnvironment environment, Set<String> occupied) {
+        ScheduleRecord record = requireSchedule(scheduleId);
+        if (record.state != ScheduleState.ACTIVE) throw new IllegalStateException("Resume this schedule first.");
+        if (!environment.isConnected()) throw new IllegalStateException("Join a world first.");
+        if (!environment.getConditions()
+            .containsAll(record.rule.getRequiredConditions())) {
+            throw new IllegalStateException("Schedule conditions are not currently met.");
+        }
+        if (occupied.contains(scheduleId))
+            throw new IllegalStateException("This schedule already has unfinished work.");
+        if (record.sequence == Long.MAX_VALUE) throw new IllegalStateException("Schedule sequence exhausted.");
+        String taskId = "schedule[" + record.rule.getId() + "]#" + (record.sequence + 1);
+        TaskSpec task = record.rule.getTask()
+            .instantiate(taskId);
+        record.sequence++;
+        record.totalRuns++;
+        record.lastTaskId = taskId;
+        record.nextConnectedDueMillis = safeAdd(connectedElapsedMillis, record.rule.getIntervalMillis());
+        if (environment.hasWorldTime()) {
+            long occurrence = occurrenceContaining(record.rule, environment.getWorldTimeTicks());
+            if (occurrence != ScheduleSnapshot.NO_WORLD_OCCURRENCE)
+                record.lastWorldOccurrence = Math.max(record.lastWorldOccurrence, occurrence);
+        }
+        record.idleLatched = true;
+        trace("run-now", record, "task", taskId);
+        return new ScheduledTaskRequest(record.rule.getId(), task, false, record.rule.getRelativeOrder());
+    }
+
     public ScheduleSnapshot remove(String scheduleId) {
         ScheduleRecord record = requireSchedule(scheduleId);
         ScheduleSnapshot removed = record.snapshot();
