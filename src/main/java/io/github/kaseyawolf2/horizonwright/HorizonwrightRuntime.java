@@ -346,13 +346,26 @@ public final class HorizonwrightRuntime implements AutoCloseable {
 
     public ScheduleSnapshot scheduleHusbandry(String scheduleId, String penId, LivestockSpecies species,
         int minimumAdults, int maximumAdults, int maximumActions, long intervalMillis) {
+        return scheduleHusbandry(
+            scheduleId,
+            penId,
+            species,
+            minimumAdults,
+            maximumAdults,
+            maximumActions,
+            false,
+            intervalMillis);
+    }
+
+    public ScheduleSnapshot scheduleHusbandry(String scheduleId, String penId, LivestockSpecies species,
+        int minimumAdults, int maximumAdults, int maximumActions, boolean allowCulling, long intervalMillis) {
         ensureOpen();
         if (intervalMillis < 1L) throw new IllegalArgumentException("husbandry schedule interval must be positive");
         requireAutomationAvailable("scheduling new work");
         return controller.submitSchedule(
             ScheduleRule.connectedInterval(
                 scheduleId,
-                HusbandryTask.scheduledPass(penId, species, minimumAdults, maximumAdults, maximumActions),
+                HusbandryTask.scheduledPass(penId, species, minimumAdults, maximumAdults, maximumActions, allowCulling),
                 intervalMillis,
                 intervalMillis,
                 java.util.Collections.<String>emptySet(),
@@ -361,12 +374,25 @@ public final class HorizonwrightRuntime implements AutoCloseable {
 
     public ScheduleSnapshot updateHusbandrySchedule(String scheduleId, String penId, LivestockSpecies species,
         int minimumAdults, int maximumAdults, int maximumActions, long intervalMillis) {
+        return updateHusbandrySchedule(
+            scheduleId,
+            penId,
+            species,
+            minimumAdults,
+            maximumAdults,
+            maximumActions,
+            false,
+            intervalMillis);
+    }
+
+    public ScheduleSnapshot updateHusbandrySchedule(String scheduleId, String penId, LivestockSpecies species,
+        int minimumAdults, int maximumAdults, int maximumActions, boolean allowCulling, long intervalMillis) {
         ensureOpen();
         if (intervalMillis < 1L) throw new IllegalArgumentException("husbandry schedule interval must be positive");
         return controller.updateSchedule(
             ScheduleRule.connectedInterval(
                 scheduleId,
-                HusbandryTask.scheduledPass(penId, species, minimumAdults, maximumAdults, maximumActions),
+                HusbandryTask.scheduledPass(penId, species, minimumAdults, maximumAdults, maximumActions, allowCulling),
                 intervalMillis,
                 intervalMillis,
                 java.util.Collections.<String>emptySet(),

@@ -108,6 +108,42 @@ public class HusbandryAndSleepPlannerTest {
     }
 
     @Test
+    public void cullingDisabledStillCollectsDropsAboveMaximum() {
+        HusbandryDropObservation drop = new HusbandryDropObservation(
+            "drop",
+            "minecraft:leather",
+            new BasePosition(0, 5, 64, 5));
+        HusbandryPlan plan = husbandry.plan(
+            cows,
+            observation(15L, "excess-drops", fiveEligibleCows(), Collections.singletonList(drop), true, true),
+            false);
+        assertFalse(plan.isHeld());
+        assertEquals(
+            HusbandryActionKind.COLLECT_DROPS,
+            plan.getActions()
+                .get(0)
+                .getKind());
+    }
+
+    @Test
+    public void newProtectionOrPopulationChangeInvalidatesPreviousCullSelection() {
+        HusbandryObservation before = observation(16L, "before", fiveEligibleCows(), noDrops(), true, true);
+        assertSingleAnimalAction(husbandry.plan(cows, before), HusbandryActionKind.CULL_EXCESS_ADULT, "e");
+        List<AnimalObservation> changed = new ArrayList<>(fiveEligibleCows());
+        changed.remove(changed.size() - 1);
+        changed.add(animal("e", LivestockSpecies.COW, true, false, false, true, false, false));
+        assertSingleAnimalAction(
+            husbandry.plan(cows, observation(17L, "protected-now", changed, noDrops(), true, true)),
+            HusbandryActionKind.CULL_EXCESS_ADULT,
+            "d");
+        changed.remove(changed.size() - 1);
+        assertTrue(
+            husbandry.plan(cows, observation(18L, "at-maximum", changed, noDrops(), true, true))
+                .getActions()
+                .isEmpty());
+    }
+
+    @Test
     public void dropCollectionTargetsOneTypedDropStrictlyInsideNamedPen() {
         HusbandryDropObservation outside = new HusbandryDropObservation(
             "outside-drop",

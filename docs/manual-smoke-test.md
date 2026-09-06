@@ -305,8 +305,39 @@ after the same item-entity identity disappears from a fresh complete scan. Test
 with a full inventory: an uncollected drop must remain unconfirmed rather than
 being reported as collected. Pause during each approach and confirm no action is
 recorded before its postcondition. Finally configure a maximum below the current
-eligible adult count. The pass must block with the explicit culling-authorization
-diagnostic and must not acquire attack authority or damage any animal.
+eligible adult count with **Allow animal attacks: OFF**. The pass must collect
+available drops, then finish with an above-maximum diagnostic without acquiring
+attack authority or damaging an animal.
+
+## Pending explicitly authorized culling checkpoint (2026-09-06)
+
+In the livestock setup page, **Allow animal attacks** defaults to OFF. Existing
+saved jobs without this parameter also default to OFF. Turn it ON deliberately
+for a new pass, or select a livestock schedule in Scheduled jobs, toggle it ON,
+and click Save settings. Editing a schedule applies to future occurrences;
+existing queued/blocked tasks retain the permission with which they were created.
+
+Use five ordinary adult cows, minimum 2 / maximum 4, and select an empty hotbar
+slot. Culling currently requires an empty hand to avoid unintegrated tool effects.
+One eligible animal should be attacked at intervals of at least 600 ms until
+death, followed by a complete pen scan, collection, and completion at four adults.
+The same animal is followed if it moves out of attack reach; each target has a
+five-minute overall bound. An entity disappearing or leaving the pen is not
+sufficient confirmation of death.
+
+Repeat with a named animal, an operator-protected animal, a baby, and an animal
+in breeding state. These must never be selected. Add protection while approaching
+a selected target: fresh revalidation must stop its attack. Also stop/pause during
+approach and between hits, change the held slot to a nonempty one, and remove an
+animal so the population reaches its maximum before the next attack. Verify no
+further attack is sent after the relevant condition is observed. Rejoin and check
+that the schedule's chosen toggle persisted. Debug traces include the selected
+identity, fresh adult count, eligibility, attack dispatch, and death confirmation.
+
+Automated tests cover defaults, per-request authorization propagation, no attack
+lease for nonviolent work, overpopulation with culling disabled, protection and
+population changes, and confirmation before the next full pen scan. Live culling
+and its GUI remain pending physical confirmation.
 
 ## Pending registered-bed sleep checkpoint
 

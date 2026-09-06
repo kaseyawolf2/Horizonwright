@@ -19,6 +19,7 @@ import io.github.kaseyawolf2.horizonwright.core.base.HusbandryActionKind;
 import io.github.kaseyawolf2.horizonwright.core.base.HusbandryDropObservation;
 import io.github.kaseyawolf2.horizonwright.core.base.HusbandryObservation;
 import io.github.kaseyawolf2.horizonwright.core.base.HusbandryPlan;
+import io.github.kaseyawolf2.horizonwright.core.base.HusbandryPlanner;
 import io.github.kaseyawolf2.horizonwright.core.base.HusbandryPolicy;
 import io.github.kaseyawolf2.horizonwright.core.navigation.BackendAvailability;
 import io.github.kaseyawolf2.horizonwright.core.navigation.NavigationBackend;
@@ -31,7 +32,7 @@ import io.github.kaseyawolf2.horizonwright.forge.client.network.ActionPacketDisp
 import io.github.kaseyawolf2.horizonwright.runtime.task.HusbandryActionAuthorization;
 import io.github.kaseyawolf2.horizonwright.runtime.task.HusbandryBackend;
 
-/** Non-destructive vanilla husbandry executor; automatic culling remains explicitly unavailable. */
+/** Vanilla husbandry with explicit per-request authorization and fresh validation before each attack. */
 public final class LiveVanillaHusbandryBackend implements HusbandryBackend {
 
     public interface NavigationSource {
@@ -46,6 +47,8 @@ public final class LiveVanillaHusbandryBackend implements HusbandryBackend {
         ActionCapability.HELD_USE,
         ActionCapability.CONTAINER);
     private static final long APPROACH_TIMEOUT_NANOS = NavigationRequest.MAX_RUNTIME_NANOS;
+    private static final EnumSet<ActionCapability> CULL_CAPABILITIES = EnumSet
+        .of(ActionCapability.MOVEMENT, ActionCapability.LOOK, ActionCapability.ATTACK);
     private static final long ACTION_TIMEOUT_NANOS = TimeUnit.SECONDS.toNanos(30L);
     private static final double ENTITY_REACH_SQUARED = 20.25D;
 
@@ -73,7 +76,7 @@ public final class LiveVanillaHusbandryBackend implements HusbandryBackend {
         if (navigation == null) return Availability.unavailable("No navigation backend is configured for husbandry");
         BackendAvailability status = navigation.availability();
         return status.isAvailable()
-            ? Availability.available("Vanilla feeding and drop collection ready; automatic culling remains disabled")
+            ? Availability.available("Vanilla feeding, collection, and explicitly authorized culling ready")
             : Availability.unavailable("Husbandry navigation unavailable: " + status.getDiagnostic());
     }
 
@@ -93,8 +96,12 @@ public final class LiveVanillaHusbandryBackend implements HusbandryBackend {
     public synchronized ActionReadiness readiness(HusbandryPlan plan) {
         requireClient(plan);
         HusbandryAction action = firstAction(plan);
-        if (!HusbandryActionAuthorization.isAuthorized(action.getKind())) {
-            return ActionReadiness.unavailable(HusbandryActionAuthorization.diagnostic(action.getKind()));
+        if (action.getKind() == HusbandryActionKind.CULL_EXCESS_ADULT) {
+            if (MinecraftRuntimeAccess.heldItem(minecraft.thePlayer) != null) return ActionReadiness
+                .unavailable("Select an empty hotbar slot for culling; held tool effects are not supported");
+            return isFreshCullTarget(plan, action.getAnimalIdentity())
+                ? ActionReadiness.ready("Fresh complete pen scan permits this exact cull target")
+                : ActionReadiness.unavailable("The selected animal no longer meets the culling policy");
         }
         if (action.getKind() == HusbandryActionKind.COLLECT_DROPS) {
             EntityItem drop = observer.findDrop(
@@ -121,11 +128,12 @@ public final class LiveVanillaHusbandryBackend implements HusbandryBackend {
             throw new IllegalStateException("another husbandry action is active");
         HusbandryPlan plan = request.getPlan();
         HusbandryAction action = firstAction(plan);
-        if (!HusbandryActionAuthorization.isAuthorized(action.getKind())) {
+        if (!HusbandryActionAuthorization.isAuthorized(action.getKind(), request.isCullingAllowed())) {
             throw new IllegalStateException(HusbandryActionAuthorization.diagnostic(action.getKind()));
         }
         EnumSet<ActionCapability> required = action.getKind() == HusbandryActionKind.FEED_ADULT ? FEED_CAPABILITIES
-            : EnumSet.of(ActionCapability.MOVEMENT);
+            : action.getKind() == HusbandryActionKind.CULL_EXCESS_ADULT ? CULL_CAPABILITIES
+                : EnumSet.of(ActionCapability.MOVEMENT);
         if (lease == null || !lease.isValid()
             || lease.getEpoch() != request.getActionEpoch()
             || !lease.getCapabilities()
@@ -166,6 +174,40 @@ public final class LiveVanillaHusbandryBackend implements HusbandryBackend {
         }
         return plan.getActions()
             .get(0);
+    }
+
+    private boolean isFreshCullTarget(HusbandryPlan original, String identity) {
+        HusbandryObservation fresh = observer.observe(original.getPenId());
+        HusbandryPolicy policy = new HusbandryPolicy(
+            original.getPen(),
+            original.getSpecies(),
+            original.getPolicyRevision(),
+            original.getMinimumAdults(),
+            original.getMaximumAdults());
+        HusbandryPlan replanned = new HusbandryPlanner().plan(policy, fresh);
+        boolean eligible = !replanned.isHeld() && replanned.getActions()
+            .size() == 1
+            && replanned.getActions()
+                .get(0)
+                .getKind() == HusbandryActionKind.CULL_EXCESS_ADULT
+            && identity.equals(
+                replanned.getActions()
+                    .get(0)
+                    .getAnimalIdentity());
+        DevelopmentTrace.event(
+            "husbandry-live",
+            "cull-revalidation",
+            "identity",
+            identity,
+            "eligible",
+            eligible,
+            "adults",
+            replanned.getObservedAdults(),
+            "maximum",
+            original.getMaximumAdults(),
+            "hold",
+            replanned.getHoldReason());
+        return eligible;
     }
 
     private boolean eligibleFeedTarget(HusbandryPlan plan, EntityAnimal animal,
@@ -210,6 +252,9 @@ public final class LiveVanillaHusbandryBackend implements HusbandryBackend {
         private int sourceSlot = -1;
         private int hotbarSlot = -1;
         private boolean interactionDispatched;
+        private EntityAnimal cullTarget;
+        private long nextAttackNanos;
+        private long cullDeadlineNanos;
         private volatile boolean cancellationRequested;
 
         private LiveHandle(ActionRequest request, ActionLease lease, NavigationBackend navigation,
@@ -222,7 +267,14 @@ public final class LiveVanillaHusbandryBackend implements HusbandryBackend {
         }
 
         private void start() {
-            if (action.getKind() == HusbandryActionKind.FEED_ADULT && canReachAnimal()) {
+            if (action.getKind() == HusbandryActionKind.CULL_EXCESS_ADULT) {
+                cullTarget = exactAnimal();
+                if (cullTarget == null || cullTarget.getHealth() <= 0.0F) {
+                    throw new IllegalStateException("Cull target is no longer a living loaded animal");
+                }
+                cullDeadlineNanos = add(System.nanoTime(), APPROACH_TIMEOUT_NANOS);
+            }
+            if (action.getKind() != HusbandryActionKind.COLLECT_DROPS && canReachAnimal()) {
                 phase = Phase.WAITING_FOR_SESSION;
                 state = ActionState.EXECUTING;
                 deadlineNanos = add(System.nanoTime(), ACTION_TIMEOUT_NANOS);
@@ -267,13 +319,20 @@ public final class LiveVanillaHusbandryBackend implements HusbandryBackend {
                 fail("Husbandry action lease was revoked");
                 return snapshot();
             }
+            if (action.getKind() == HusbandryActionKind.CULL_EXCESS_ADULT
+                && System.nanoTime() - cullDeadlineNanos >= 0L) {
+                fail("Cull deadline exceeded for the selected animal");
+                return snapshot();
+            }
             if (System.nanoTime() - deadlineNanos >= 0L) {
                 fail("Husbandry action deadline exceeded during " + phase);
                 return snapshot();
             }
             if (phase == Phase.APPROACHING) pollApproach();
-            else if (phase == Phase.WAITING_FOR_SESSION) feedWhenReady();
-            else if (phase == Phase.WAITING_FOR_DISPATCH) awaitDispatch();
+            else if (phase == Phase.WAITING_FOR_SESSION) {
+                if (action.getKind() == HusbandryActionKind.CULL_EXCESS_ADULT) cullWhenReady();
+                else feedWhenReady();
+            } else if (phase == Phase.WAITING_FOR_DISPATCH) awaitDispatch();
             else if (phase == Phase.CONFIRMING) confirm();
             return snapshot();
         }
@@ -291,7 +350,7 @@ public final class LiveVanillaHusbandryBackend implements HusbandryBackend {
         }
 
         private void pollApproach() {
-            if (action.getKind() == HusbandryActionKind.FEED_ADULT && canReachAnimal()) {
+            if (action.getKind() != HusbandryActionKind.COLLECT_DROPS && canReachAnimal()) {
                 navigationHandle.cancel();
                 navigationHandle = null;
                 phase = Phase.WAITING_FOR_SESSION;
@@ -384,6 +443,69 @@ public final class LiveVanillaHusbandryBackend implements HusbandryBackend {
             });
         }
 
+        private void cullWhenReady() {
+            if (!request.isCullingAllowed() || !lease.getCapabilities()
+                .contains(ActionCapability.ATTACK)) {
+                fail("Culling was not authorized for this request");
+                return;
+            }
+            if (!guard.isReadyForSession()) {
+                detail = "Waiting for attack/navigation packets to drain";
+                return;
+            }
+            // Entity disappearance alone can mean unloading or leaving the pen, never proof of death.
+            if (cullTarget != null && cullTarget.getHealth() <= 0.0F) {
+                phase = Phase.CONFIRMING;
+                detail = "Selected animal has died; rescanning complete pen";
+                return;
+            }
+            long now = System.nanoTime();
+            if (now < nextAttackNanos) return;
+            EntityAnimal animal = exactAnimal();
+            if (animal == null || animal != cullTarget
+                || animal.isDead
+                || !isFreshCullTarget(request.getPlan(), action.getAnimalIdentity())) {
+                fail("Cull stopped: target protection, population, or loaded pen changed");
+                return;
+            }
+            if (!canReachAnimal()) {
+                long approachNow = System.nanoTime();
+                navigationHandle = navigation.submit(
+                    new NavigationRequest(
+                        request.getRequestId() + "-follow",
+                        request.getActionEpoch(),
+                        minecraft.theWorld.provider.dimensionId,
+                        (int) Math.floor(animal.posX),
+                        (int) Math.floor(animal.posY),
+                        (int) Math.floor(animal.posZ),
+                        1,
+                        approachNow,
+                        Math.min(APPROACH_TIMEOUT_NANOS, cullDeadlineNanos - approachNow)),
+                    lease);
+                phase = Phase.APPROACHING;
+                deadlineNanos = cullDeadlineNanos;
+                detail = "Following the selected adult back into visible attack reach";
+                return;
+            }
+            if (MinecraftRuntimeAccess.heldItem(minecraft.thePlayer) != null) {
+                fail("Cull stopped: select an empty hotbar slot to avoid held tool effects");
+                return;
+            }
+            guard.begin(lease);
+            ownsSession = true;
+            aimAt(animal.posX, animal.posY + animal.height * 0.5D, animal.posZ);
+            minecraft.playerController.attackEntity(minecraft.thePlayer, animal);
+            minecraft.thePlayer.swingItem();
+            nextAttackNanos = add(now, TimeUnit.MILLISECONDS.toNanos(600L));
+            detail = "Attacked the revalidated excess adult; waiting for server health update";
+            trace("cull-attack");
+            ActionPacketDispatch.afterPendingWrites(minecraft, () -> {
+                synchronized (LiveHandle.this) {
+                    stopSession();
+                }
+            });
+        }
+
         private void awaitDispatch() {
             if (!interactionDispatched) {
                 detail = "Waiting for feeding packet boundary";
@@ -401,6 +523,18 @@ public final class LiveVanillaHusbandryBackend implements HusbandryBackend {
             HusbandryObservation after = observer.observe(
                 request.getPlan()
                     .getPenId());
+            if (action.getKind() == HusbandryActionKind.CULL_EXCESS_ADULT) {
+                AnimalObservation remaining = animal(after, action.getAnimalIdentity());
+                if (cullTarget == null || cullTarget.getHealth() > 0.0F || remaining != null) {
+                    detail = "Waiting for verified death and removal from the complete pen scan";
+                    return;
+                }
+                state = ActionState.CONFIRMED;
+                detail = "Selected adult death confirmed; complete pen rescanned before next action";
+                trace("cull-confirmed");
+                clearActive(this);
+                return;
+            }
             if (after.getRevision() <= request.getPlan()
                 .getObservationRevision() || after.getObservationFingerprint()
                     .equals(
@@ -445,7 +579,8 @@ public final class LiveVanillaHusbandryBackend implements HusbandryBackend {
         private boolean canReachAnimal() {
             EntityAnimal animal = exactAnimal();
             return animal != null && withinPen(request.getPlan(), animal)
-                && minecraft.thePlayer.getDistanceSqToEntity(animal) <= ENTITY_REACH_SQUARED
+                && minecraft.thePlayer.getDistanceSqToEntity(animal)
+                    <= (action.getKind() == HusbandryActionKind.CULL_EXCESS_ADULT ? 9.0D : ENTITY_REACH_SQUARED)
                 && minecraft.thePlayer.canEntityBeSeen(animal);
         }
 
@@ -478,9 +613,10 @@ public final class LiveVanillaHusbandryBackend implements HusbandryBackend {
 
         private void stopSession() {
             returnStaged();
-            minecraft.thePlayer.inventory.currentItem = priorHotbarSlot;
+            boolean feeding = action.getKind() == HusbandryActionKind.FEED_ADULT;
+            if (feeding) minecraft.thePlayer.inventory.currentItem = priorHotbarSlot;
             if (ownsSession) {
-                minecraft.playerController.updateController();
+                if (feeding) minecraft.playerController.updateController();
                 guard.quarantine(lease);
                 guard.end(lease);
                 ownsSession = false;

@@ -9,6 +9,10 @@ import java.util.List;
 public final class HusbandryPlanner {
 
     public HusbandryPlan plan(HusbandryPolicy policy, HusbandryObservation observation) {
+        return plan(policy, observation, true);
+    }
+
+    public HusbandryPlan plan(HusbandryPolicy policy, HusbandryObservation observation, boolean allowCulling) {
         if (policy == null || observation == null) {
             throw new IllegalArgumentException("policy and observation are required");
         }
@@ -73,7 +77,7 @@ public final class HusbandryPlanner {
         }
 
         int excess = adults.size() - policy.getMaximumAdults();
-        if (excess <= 0) {
+        if (excess <= 0 || !allowCulling) {
             List<HusbandryDropObservation> drops = new ArrayList<HusbandryDropObservation>();
             for (HusbandryDropObservation drop : observation.getDrops()) {
                 if (policy.getPen()

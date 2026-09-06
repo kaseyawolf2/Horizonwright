@@ -29,6 +29,7 @@ public final class GuiHusbandrySetup extends GuiScreen {
     private static final int QUEUE_BUTTON = 4;
     private static final int SCHEDULE_BUTTON = 5;
     private static final int SCAN_BUTTON = 6;
+    private static final int CULL_BUTTON = 7;
 
     private final GuiScreen parent;
     private final CurrentRuntimeProvider runtimeProvider;
@@ -40,6 +41,8 @@ public final class GuiHusbandrySetup extends GuiScreen {
     private GuiTextField maximumActions;
     private GuiTextField intervalMinutes;
     private GuiButton speciesButton;
+    private GuiButton cullButton;
+    private boolean allowCulling;
     private int left;
     private int top;
     private int panelWidth;
@@ -70,6 +73,8 @@ public final class GuiHusbandrySetup extends GuiScreen {
         maximumAdults = field(left + 148, top + 122, 72, "8");
         maximumActions = field(left + 148, top + 152, 72, "16");
         intervalMinutes = field(left + 148, top + 182, 72, "30");
+        cullButton = new GuiHorizonwrightButton(CULL_BUTTON, left + 230, top + 122, 212, 20, "");
+        buttonList.add(cullButton);
         buttonList.add(new GuiHorizonwrightButton(QUEUE_BUTTON, left + 18, top + 218, 196, 22, "Queue one pass"));
         buttonList.add(
             new GuiHorizonwrightButton(
@@ -105,6 +110,13 @@ public final class GuiHusbandrySetup extends GuiScreen {
             species = values[(species.ordinal() + 1) % values.length];
             loadDefaults();
             updateSpeciesButton();
+            return;
+        }
+        if (button.id == CULL_BUTTON) {
+            allowCulling = !allowCulling;
+            updateSpeciesButton();
+            status = allowCulling ? "Culling authorized for this pass/schedule; protected animals are excluded."
+                : "Culling disabled; feeding and collection can still run.";
             return;
         }
         try {
@@ -173,9 +185,10 @@ public final class GuiHusbandrySetup extends GuiScreen {
                 species,
                 values.minimumAdults,
                 values.maximumAdults,
-                values.maximumActions));
+                values.maximumActions,
+                allowCulling));
         status = "Queued '" + task.getSpec()
-            .getId() + "'; feeding/collection enabled, culling disabled.";
+            .getId() + "'; culling " + (allowCulling ? "enabled." : "disabled.");
     }
 
     private void schedulePasses() {
@@ -192,8 +205,9 @@ public final class GuiHusbandrySetup extends GuiScreen {
                 values.minimumAdults,
                 values.maximumAdults,
                 values.maximumActions,
+                allowCulling,
                 intervalMillis);
-            status = "Scheduled '" + scheduleId + "'; feeding/collection enabled, culling disabled.";
+            status = "Scheduled '" + scheduleId + "'; culling " + (allowCulling ? "enabled." : "disabled.");
         } else {
             runtime.updateHusbandrySchedule(
                 scheduleId,
@@ -202,6 +216,7 @@ public final class GuiHusbandrySetup extends GuiScreen {
                 values.minimumAdults,
                 values.maximumAdults,
                 values.maximumActions,
+                allowCulling,
                 intervalMillis);
             if (existing.getState() == ScheduleState.PAUSED) runtime.resumeSchedule(scheduleId);
             status = "Updated recurring livestock policy '" + scheduleId + "'.";
@@ -209,6 +224,7 @@ public final class GuiHusbandrySetup extends GuiScreen {
     }
 
     private void loadDefaults() {
+        allowCulling = false;
         minimumAdults.setText("2");
         maximumAdults.setText("8");
         maximumActions.setText("16");
@@ -221,6 +237,9 @@ public final class GuiHusbandrySetup extends GuiScreen {
                 .getTask()
                 .getType()))
             return;
+        allowCulling = HusbandryTask.allowCulling(
+            existing.getRule()
+                .getTask());
         minimumAdults.setText(
             Integer.toString(
                 HusbandryTask.minimumAdults(
@@ -331,6 +350,7 @@ public final class GuiHusbandrySetup extends GuiScreen {
 
     private void updateSpeciesButton() {
         speciesButton.displayString = species.name();
+        cullButton.displayString = "Allow animal attacks: " + (allowCulling ? "ON" : "OFF");
     }
 
     private GuiTextField field(int x, int y, int width, String value) {

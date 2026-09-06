@@ -32,6 +32,7 @@ public final class GuiScheduleManager extends GuiScreen {
     private static final int STATE_BUTTON = 4;
     private static final int SAVE_BUTTON = 5;
     private static final int DELETE_BUTTON = 6;
+    private static final int CULL_BUTTON = 7;
     private static final int SCHEDULE_BUTTON_BASE = 100;
     private static final int SCHEDULES_PER_PAGE = 5;
 
@@ -48,6 +49,8 @@ public final class GuiScheduleManager extends GuiScreen {
     private GuiButton stateButton;
     private GuiButton saveButton;
     private GuiButton deleteButton;
+    private GuiButton cullButton;
+    private boolean allowCulling;
     private int left;
     private int top;
     private int panelWidth;
@@ -93,6 +96,8 @@ public final class GuiScheduleManager extends GuiScreen {
         nextButton = new GuiHorizonwrightButton(NEXT_BUTTON, left + 94, top + 166, 72, 20, "Next");
         buttonList.add(previousButton);
         buttonList.add(nextButton);
+        cullButton = new GuiHorizonwrightButton(CULL_BUTTON, left + 244, top + 166, 240, 20, "");
+        buttonList.add(cullButton);
 
         targetField = field(left + 92, top + 224, 132);
         intervalField = field(left + 314, top + 224, 54);
@@ -136,6 +141,12 @@ public final class GuiScheduleManager extends GuiScreen {
         }
         ScheduleSnapshot selected = selectedSchedule();
         if (selected == null) return;
+        if (button.id == CULL_BUTTON && isHusbandry(selected)) {
+            allowCulling = !allowCulling;
+            message = "Animal attacks " + (allowCulling ? "enabled" : "disabled")
+                + "; click Save settings to apply to future runs.";
+            return;
+        }
         try {
             HorizonwrightRuntime runtime = requireRuntime();
             if (button.id == STATE_BUTTON) {
@@ -224,6 +235,7 @@ public final class GuiScheduleManager extends GuiScreen {
                 minimum,
                 maximum,
                 actions,
+                allowCulling,
                 Math.multiplyExact(minutes, 60_000L));
             message = "Saved '" + selectedScheduleId
                 + "': pen '"
@@ -368,6 +380,9 @@ public final class GuiScheduleManager extends GuiScreen {
 
         ScheduleSnapshot selected = selectedSchedule();
         boolean editable = selected != null && isEditable(selected);
+        cullButton.visible = isHusbandry(selected);
+        cullButton.enabled = editable && isHusbandry(selected);
+        cullButton.displayString = "Allow animal attacks: " + (allowCulling ? "ON" : "OFF");
         targetField.setEnabled(editable);
         intervalField.setEnabled(editable && (isFarm(selected) || isTree(selected) || isHusbandry(selected)));
         reserveField.setEnabled(editable && (isFarm(selected) || isTree(selected) || isHusbandry(selected)));
@@ -382,6 +397,9 @@ public final class GuiScheduleManager extends GuiScreen {
     }
 
     private void populateEditor(ScheduleSnapshot selected) {
+        allowCulling = isHusbandry(selected) && HusbandryTask.allowCulling(
+            selected.getRule()
+                .getTask());
         if (isFarm(selected)) {
             targetField.setText(
                 FarmTask.plotId(

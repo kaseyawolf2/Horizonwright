@@ -14,6 +14,7 @@ public class HusbandryActionAuthorizationTest {
         assertTrue(HusbandryActionAuthorization.isAuthorized(HusbandryActionKind.FEED_ADULT));
         assertTrue(HusbandryActionAuthorization.isAuthorized(HusbandryActionKind.COLLECT_DROPS));
         assertFalse(HusbandryActionAuthorization.isAuthorized(HusbandryActionKind.CULL_EXCESS_ADULT));
+        assertTrue(HusbandryActionAuthorization.isAuthorized(HusbandryActionKind.CULL_EXCESS_ADULT, true));
     }
 
     @Test

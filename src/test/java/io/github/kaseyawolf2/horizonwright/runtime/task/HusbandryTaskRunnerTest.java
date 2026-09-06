@@ -174,6 +174,61 @@ public class HusbandryTaskRunnerTest {
         return HusbandryTask.finitePass("animals", "cow-pen", LivestockSpecies.COW, minimum, maximum, actionCap);
     }
 
+    @Test
+    public void excessPopulationWithoutCullingCompletesWithoutAttackLease() {
+        harness = new Harness(observation(1L, fourStableAdults()), null);
+        TaskSpec spec = task(2, 2, 8);
+        harness.controller.submit(spec);
+        TaskSnapshot result = task(harness.controller.tick(), spec.getId());
+        assertEquals(TaskState.COMPLETED, result.getState());
+        assertEquals(0, harness.backend.actions);
+        assertTrue(
+            harness.broker.snapshot()
+                .getActiveOwners()
+                .isEmpty());
+    }
+
+    @Test
+    public void authorizedCullWaitsForConfirmationThenRescansAndStopsAtMaximum() {
+        harness = new Harness(observation(1L, fourStableAdults()), observation(2L, stableAdults()));
+        TaskSpec spec = HusbandryTask.finitePass("animals", "cow-pen", LivestockSpecies.COW, 2, 3, 8, true);
+        harness.controller.submit(spec);
+        task(harness.controller.tick(), spec.getId());
+        assertEquals(HusbandryActionKind.CULL_EXCESS_ADULT, harness.backend.kind);
+        assertTrue(harness.backend.cullingAllowed);
+        assertTrue(
+            harness.backend.lease.getCapabilities()
+                .contains(ActionCapability.ATTACK));
+        assertFalse(
+            harness.backend.lease.getCapabilities()
+                .contains(ActionCapability.USE));
+        TaskSnapshot waiting = task(harness.controller.tick(), spec.getId());
+        assertEquals(TaskCheckpoint.empty(), waiting.getCheckpoint());
+        harness.backend.handle.state = HusbandryBackend.ActionState.CONFIRMED;
+        task(harness.controller.tick(), spec.getId());
+        assertEquals(TaskState.COMPLETED, task(harness.controller.tick(), spec.getId()).getState());
+        assertEquals(2, harness.backend.observations);
+        assertEquals(1, harness.backend.actions);
+    }
+
+    @Test
+    public void oldTasksDefaultToNoCullingAndSchedulesRetainExplicitChoice() {
+        TaskSpec spec = task(2, 4, 8);
+        java.util.Map<String, String> legacy = new java.util.LinkedHashMap<>(spec.getParameters());
+        legacy.remove("allowCulling");
+        TaskSpec old = new io.github.kaseyawolf2.horizonwright.core.task.ScheduledTaskSpec(
+            spec.getType(),
+            spec.getDisplayName(),
+            spec.getLane(),
+            legacy).instantiate("old");
+        assertFalse(HusbandryTask.allowCulling(old));
+        assertTrue(
+            HusbandryTask.allowCulling(
+                HusbandryTask.scheduledPass("cow-pen", LivestockSpecies.COW, 2, 4, 8, true)
+                    .instantiate("scheduled")));
+        assertFalse(HusbandryTask.allowCulling(spec));
+    }
+
     private static TaskSnapshot task(ControllerSnapshot snapshot, String id) {
         return snapshot.findTask(id)
             .orElseThrow(() -> new AssertionError("missing task " + id));
@@ -270,6 +325,7 @@ public class HusbandryTaskRunnerTest {
         private ActionLease lease;
         private Handle handle;
         private boolean ready = true;
+        private boolean cullingAllowed;
 
         private RecordingBackend(HusbandryObservation initial, HusbandryObservation after) {
             current = initial;
@@ -300,6 +356,7 @@ public class HusbandryTaskRunnerTest {
 
         @Override
         public ActionHandle execute(ActionRequest request, ActionLease lease) {
+            cullingAllowed = request.isCullingAllowed();
             actions++;
             this.lease = lease;
             kind = request.getPlan()

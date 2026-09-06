@@ -43,6 +43,7 @@ final class HusbandryTaskRunner implements TaskRunner {
         HusbandryTask.species(spec);
         HusbandryTask.maximumAdults(spec);
         HusbandryTask.maximumActions(spec);
+        HusbandryTask.allowCulling(spec);
         this.spec = spec;
         this.runtime = runtime;
         this.checkpoint = checkpoint;
@@ -91,11 +92,17 @@ final class HusbandryTaskRunner implements TaskRunner {
                 1L,
                 HusbandryTask.minimumAdults(spec),
                 HusbandryTask.maximumAdults(spec));
-            HusbandryPlan plan = planner.plan(policy, observation);
+            HusbandryPlan plan = planner.plan(policy, observation, HusbandryTask.allowCulling(spec));
             if (plan.isHeld()) return blocked(context, plan.getHoldReason(), "a complete, loaded, safe named pen");
             if (plan.getActions()
                 .isEmpty())
-                return completed(context, "Husbandry pass confirmed stable after " + verifiedActions + " action(s)");
+                return completed(
+                    context,
+                    "Husbandry pass finished after " + verifiedActions
+                        + " action(s)"
+                        + (!HusbandryTask.allowCulling(spec) && plan.getObservedAdults() > policy.getMaximumAdults()
+                            ? "; population above maximum; culling disabled"
+                            : "; population policy satisfied"));
             if (verifiedActions >= HusbandryTask.maximumActions(spec)) {
                 return blocked(
                     context,
@@ -132,7 +139,8 @@ final class HusbandryTaskRunner implements TaskRunner {
             spec.getId(),
             context.getActionEpoch(),
             verifiedActions,
-            plan);
+            plan,
+            HusbandryTask.allowCulling(spec));
         try {
             if (!lease.isValid() || runtime.getHusbandryBackend() != backend)
                 throw new IllegalStateException("husbandry authority changed");

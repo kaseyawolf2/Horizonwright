@@ -144,9 +144,15 @@ public interface HusbandryBackend {
         private final long actionEpoch;
         private final int verifiedActions;
         private final HusbandryPlan plan;
+        private final boolean allowCulling;
 
         public ActionRequest(String requestId, String taskId, long actionEpoch, int verifiedActions,
             HusbandryPlan plan) {
+            this(requestId, taskId, actionEpoch, verifiedActions, plan, false);
+        }
+
+        public ActionRequest(String requestId, String taskId, long actionEpoch, int verifiedActions, HusbandryPlan plan,
+            boolean allowCulling) {
             this.requestId = required(requestId, "request id");
             this.taskId = required(taskId, "task id");
             if (actionEpoch < 1L || verifiedActions < 0 || plan == null || !plan.requiresPostconditionVerification()) {
@@ -155,6 +161,11 @@ public interface HusbandryBackend {
             this.actionEpoch = actionEpoch;
             this.verifiedActions = verifiedActions;
             this.plan = plan;
+            this.allowCulling = allowCulling;
+        }
+
+        public boolean isCullingAllowed() {
+            return allowCulling;
         }
 
         public String getRequestId() {

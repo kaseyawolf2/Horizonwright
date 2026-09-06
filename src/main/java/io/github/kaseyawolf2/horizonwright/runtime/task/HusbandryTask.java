@@ -17,6 +17,7 @@ public final class HusbandryTask {
     static final String MINIMUM_ADULTS = "minimumAdults";
     static final String MAXIMUM_ADULTS = "maximumAdults";
     static final String MAXIMUM_ACTIONS = "maximumActions";
+    static final String ALLOW_CULLING = "allowCulling";
 
     private HusbandryTask() {}
 
@@ -25,8 +26,19 @@ public final class HusbandryTask {
         return scheduledPass(penId, species, minimumAdults, maximumAdults, maximumActions).instantiate(taskId);
     }
 
+    public static TaskSpec finitePass(String taskId, String penId, LivestockSpecies species, int minimumAdults,
+        int maximumAdults, int maximumActions, boolean allowCulling) {
+        return scheduledPass(penId, species, minimumAdults, maximumAdults, maximumActions, allowCulling)
+            .instantiate(taskId);
+    }
+
     public static ScheduledTaskSpec scheduledPass(String penId, LivestockSpecies species, int minimumAdults,
         int maximumAdults, int maximumActions) {
+        return scheduledPass(penId, species, minimumAdults, maximumAdults, maximumActions, false);
+    }
+
+    public static ScheduledTaskSpec scheduledPass(String penId, LivestockSpecies species, int minimumAdults,
+        int maximumAdults, int maximumActions, boolean allowCulling) {
         String pen = required(penId, "pen id");
         if (species == null) throw new IllegalArgumentException("livestock species is required");
         if (minimumAdults < 2 || maximumAdults < minimumAdults) {
@@ -41,6 +53,7 @@ public final class HusbandryTask {
         parameters.put(MINIMUM_ADULTS, Integer.toString(minimumAdults));
         parameters.put(MAXIMUM_ADULTS, Integer.toString(maximumAdults));
         parameters.put(MAXIMUM_ACTIONS, Integer.toString(maximumActions));
+        parameters.put(ALLOW_CULLING, Boolean.toString(allowCulling));
         return new ScheduledTaskSpec(
             TYPE,
             "Husbandry pass: " + pen + " / " + species.name(),
@@ -115,6 +128,23 @@ public final class HusbandryTask {
             && penId != null
             && penId.trim()
                 .equals(penId(spec));
+    }
+
+    public static boolean allowCulling(TaskSpec spec) {
+        requireType(spec);
+        return allowCulling(spec.getParameters());
+    }
+
+    public static boolean allowCulling(ScheduledTaskSpec spec) {
+        requireType(spec);
+        return allowCulling(spec.getParameters());
+    }
+
+    private static boolean allowCulling(Map<String, String> parameters) {
+        String value = parameters.get(ALLOW_CULLING);
+        if (value == null || "false".equals(value)) return false;
+        if ("true".equals(value)) return true;
+        throw new IllegalArgumentException("allowCulling must be true or false");
     }
 
     public static boolean isForPen(ScheduledTaskSpec spec, String penId) {
