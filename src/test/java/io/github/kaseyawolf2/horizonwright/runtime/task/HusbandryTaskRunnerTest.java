@@ -229,6 +229,39 @@ public class HusbandryTaskRunnerTest {
         assertFalse(HusbandryTask.allowCulling(spec));
     }
 
+    @Test
+    public void cullingTransitionsToCollectionWithBaritoneAuthorityThenCompletes() {
+        HusbandryObservation drops = new HusbandryObservation(
+            PEN,
+            2L,
+            "after-cull-drops",
+            stableAdults(),
+            Collections.singletonList(
+                new io.github.kaseyawolf2.horizonwright.core.base.HusbandryDropObservation(
+                    "leather",
+                    "minecraft:leather",
+                    new BasePosition(0, 2, 64, 2))),
+            true,
+            true);
+        harness = new Harness(observation(1L, fourStableAdults()), drops);
+        TaskSpec spec = HusbandryTask.finitePass("animals", "cow-pen", LivestockSpecies.COW, 2, 3, 8, true);
+        harness.controller.submit(spec);
+        task(harness.controller.tick(), spec.getId());
+        assertEquals(HusbandryActionKind.CULL_EXCESS_ADULT, harness.backend.kind);
+        harness.backend.handle.state = HusbandryBackend.ActionState.CONFIRMED;
+        task(harness.controller.tick(), spec.getId());
+        task(harness.controller.tick(), spec.getId());
+        assertEquals(HusbandryActionKind.COLLECT_DROPS, harness.backend.kind);
+        assertEquals(
+            java.util.EnumSet.of(ActionCapability.MOVEMENT, ActionCapability.LOOK),
+            harness.backend.lease.getCapabilities());
+        harness.backend.after = observation(3L, stableAdults());
+        harness.backend.handle.state = HusbandryBackend.ActionState.CONFIRMED;
+        task(harness.controller.tick(), spec.getId());
+        assertEquals(TaskState.COMPLETED, task(harness.controller.tick(), spec.getId()).getState());
+        assertEquals(2, harness.backend.actions);
+    }
+
     private static TaskSnapshot task(ControllerSnapshot snapshot, String id) {
         return snapshot.findTask(id)
             .orElseThrow(() -> new AssertionError("missing task " + id));
@@ -318,7 +351,7 @@ public class HusbandryTaskRunnerTest {
     private static final class RecordingBackend implements HusbandryBackend {
 
         private HusbandryObservation current;
-        private final HusbandryObservation after;
+        private HusbandryObservation after;
         private int observations;
         private int actions;
         private HusbandryActionKind kind;

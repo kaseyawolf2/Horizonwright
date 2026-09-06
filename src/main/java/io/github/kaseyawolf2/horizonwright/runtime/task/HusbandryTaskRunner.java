@@ -312,7 +312,7 @@ final class HusbandryTaskRunner implements TaskRunner {
                 ActionCapability.HELD_USE,
                 ActionCapability.CONTAINER));
         if (kind == HusbandryActionKind.COLLECT_DROPS)
-            return Collections.unmodifiableSet(EnumSet.of(ActionCapability.MOVEMENT));
+            return Collections.unmodifiableSet(EnumSet.of(ActionCapability.MOVEMENT, ActionCapability.LOOK));
         throw new IllegalArgumentException("unsupported husbandry action " + kind);
     }
 

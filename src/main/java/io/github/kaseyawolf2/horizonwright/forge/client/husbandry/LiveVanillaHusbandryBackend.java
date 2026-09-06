@@ -137,7 +137,7 @@ public final class LiveVanillaHusbandryBackend implements HusbandryBackend {
         }
         EnumSet<ActionCapability> required = action.getKind() == HusbandryActionKind.FEED_ADULT ? FEED_CAPABILITIES
             : action.getKind() == HusbandryActionKind.CULL_EXCESS_ADULT ? CULL_CAPABILITIES
-                : EnumSet.of(ActionCapability.MOVEMENT);
+                : EnumSet.of(ActionCapability.MOVEMENT, ActionCapability.LOOK);
         if (lease == null || !lease.isValid()
             || lease.getEpoch() != request.getActionEpoch()
             || !lease.getCapabilities()
