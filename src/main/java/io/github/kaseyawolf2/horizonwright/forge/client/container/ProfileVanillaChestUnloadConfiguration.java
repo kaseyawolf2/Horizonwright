@@ -1,7 +1,7 @@
 package io.github.kaseyawolf2.horizonwright.forge.client.container;
 
 import net.minecraft.client.Minecraft;
-import net.minecraft.inventory.ContainerChest;
+import net.minecraft.inventory.Container;
 import net.minecraft.inventory.IInventory;
 import net.minecraft.inventory.InventoryLargeChest;
 import net.minecraft.tileentity.TileEntity;
@@ -33,8 +33,7 @@ public final class ProfileVanillaChestUnloadConfiguration implements LiveVanilla
     }
 
     @Override
-    public LiveVanillaChestUnloadBackend.Configuration resolve(String loadoutId, String storageId,
-        ContainerChest chest) {
+    public LiveVanillaChestUnloadBackend.Configuration resolve(String loadoutId, String storageId, Container chest) {
         if (!minecraft.func_152345_ab() || minecraft.theWorld == null || chest == null) {
             throw new IllegalStateException("a joined client thread with an open chest is required");
         }
@@ -65,7 +64,7 @@ public final class ProfileVanillaChestUnloadConfiguration implements LiveVanilla
             throw mismatch(storageId);
         }
         IInventory configured = (IInventory) tile;
-        IInventory open = chest.getLowerChestInventory();
+        IInventory open = SupportedChestLayout.inventory(chest);
         if (open != configured && (!(open instanceof InventoryLargeChest)
             || !((InventoryLargeChest) open).isPartOfLargeChest(configured))) {
             throw mismatch(storageId);

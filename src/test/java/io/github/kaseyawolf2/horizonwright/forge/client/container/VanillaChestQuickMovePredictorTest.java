@@ -31,8 +31,25 @@ public class VanillaChestQuickMovePredictorTest {
     private static final NamedLoadout EMPTY = new NamedLoadout("empty", "Empty", Collections.emptyList());
 
     @Test
+    public void rejectsReorderedPlayerSlotsBeforePredictingTransfers() {
+        net.minecraft.entity.player.InventoryPlayer player = new net.minecraft.entity.player.InventoryPlayer(null);
+        ContainerChest chest = new ContainerChest(player, new InventoryBasic("storage", false, 27));
+        Collections.swap(chest.inventorySlots, 27, 28);
+        org.junit.Assert.assertThrows(IllegalStateException.class, () -> SupportedChestLayout.inventory(chest));
+    }
+
+    @Test
+    public void doesNotInferSupportForSubclassOrMissingContainer() {
+        org.junit.Assert.assertFalse(SupportedChestLayout.supports(null));
+        ContainerChest subclass = new ContainerChest(
+            new net.minecraft.entity.player.InventoryPlayer(null),
+            new InventoryBasic("storage", false, 27)) {};
+        org.junit.Assert.assertFalse(SupportedChestLayout.supports(subclass));
+    }
+
+    @Test
     public void predictsExactVanillaMergeOrderAndPlayerSlotMapping() {
-        InventoryBasic player = new InventoryBasic("player", false, 36);
+        net.minecraft.entity.player.InventoryPlayer player = new net.minecraft.entity.player.InventoryPlayer(null);
         InventoryBasic storage = new InventoryBasic("storage", false, 27);
         storage.setInventorySlotContents(0, new ItemStack(ORE, 60));
         player.setInventorySlotContents(0, new ItemStack(ORE, 10));
@@ -120,7 +137,7 @@ public class VanillaChestQuickMovePredictorTest {
 
     @Test
     public void refusesToPredictWhenExactChestCannotAcceptAWholeStackMove() {
-        InventoryBasic player = new InventoryBasic("player", false, 36);
+        net.minecraft.entity.player.InventoryPlayer player = new net.minecraft.entity.player.InventoryPlayer(null);
         InventoryBasic storage = new InventoryBasic("storage", false, 9);
         for (int slot = 0; slot < storage.getSizeInventory(); slot++) {
             storage.setInventorySlotContents(slot, new ItemStack(DIRT, 64));
@@ -144,7 +161,7 @@ public class VanillaChestQuickMovePredictorTest {
 
     @Test
     public void rejectsNonEmptyCursorBeforeAnyPrediction() {
-        InventoryBasic player = new InventoryBasic("player", false, 36);
+        net.minecraft.entity.player.InventoryPlayer player = new net.minecraft.entity.player.InventoryPlayer(null);
         InventoryBasic storage = new InventoryBasic("storage", false, 27);
         ContainerChest chest = new ContainerChest(player, storage);
         try {

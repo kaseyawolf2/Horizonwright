@@ -3,7 +3,7 @@ package io.github.kaseyawolf2.horizonwright.forge.client.container;
 import java.util.Set;
 
 import net.minecraft.client.Minecraft;
-import net.minecraft.inventory.ContainerChest;
+import net.minecraft.inventory.Container;
 
 import io.github.kaseyawolf2.horizonwright.core.action.ActionCapability;
 import io.github.kaseyawolf2.horizonwright.core.action.ActionLease;
@@ -25,7 +25,7 @@ public final class LiveVanillaChestUnloadBackend implements UnloadBackend {
 
     public interface ConfigurationSource {
 
-        Configuration resolve(String loadoutId, String storageId, ContainerChest chest);
+        Configuration resolve(String loadoutId, String storageId, Container chest);
     }
 
     public static final class Configuration {
@@ -63,17 +63,16 @@ public final class LiveVanillaChestUnloadBackend implements UnloadBackend {
         if (!minecraft.func_152345_ab() || minecraft.thePlayer == null) {
             return UnloadBackendAvailability.unavailable("A joined Minecraft client thread is required");
         }
-        return minecraft.thePlayer.openContainer != null
-            && minecraft.thePlayer.openContainer.getClass() == ContainerChest.class
-                ? UnloadBackendAvailability.available("Exact vanilla 1.7.10 chest adapter ready")
-                : UnloadBackendAvailability
-                    .unavailable("Open an exact vanilla chest; modded containers are not inferred");
+        return SupportedChestLayout.supports(minecraft.thePlayer.openContainer)
+            ? UnloadBackendAvailability.available("Integrated chest adapter ready")
+            : UnloadBackendAvailability.unavailable(
+                "Open the saved vanilla, Iron Chests, or Et Futurum chest; other storage integrations are not ready");
     }
 
     @Override
     public UnloadObservationResult observe(UnloadObservationRequest request) {
         requireClient(request);
-        ContainerChest chest = (ContainerChest) minecraft.thePlayer.openContainer;
+        Container chest = (Container) minecraft.thePlayer.openContainer;
         Configuration resolved = configuration.resolve(request.getLoadoutId(), request.getStorageId(), chest);
         NamedLoadout loadout = resolved.loadout;
         StorageItemFilter filter = resolved.destinationFilter;

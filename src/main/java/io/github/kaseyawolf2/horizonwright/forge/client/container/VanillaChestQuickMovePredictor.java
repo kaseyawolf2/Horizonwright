@@ -4,7 +4,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
-import net.minecraft.inventory.ContainerChest;
+import net.minecraft.inventory.Container;
 import net.minecraft.inventory.Slot;
 import net.minecraft.item.ItemStack;
 
@@ -17,7 +17,7 @@ import io.github.kaseyawolf2.horizonwright.core.logistics.UnloadClickPrediction;
 import io.github.kaseyawolf2.horizonwright.core.logistics.UnloadPlan;
 import io.github.kaseyawolf2.horizonwright.core.logistics.UnloadPlanner;
 
-/** Exact 1.7.10 {@link ContainerChest} player-to-chest quick-move model. */
+/** Exact 1.7.10 {@link Container} player-to-chest quick-move model. */
 final class VanillaChestQuickMovePredictor {
 
     private static final int PLAYER_SLOT_COUNT = 36;
@@ -30,11 +30,11 @@ final class VanillaChestQuickMovePredictor {
         this.snapshots = snapshots;
     }
 
-    Prediction predict(ContainerChest chest, ItemStack cursor, NamedLoadout loadout, StorageItemFilter filter,
+    Prediction predict(Container chest, ItemStack cursor, NamedLoadout loadout, StorageItemFilter filter,
         String clickIdPrefix) {
         requireExactLayout(chest, cursor);
         ContainerSnapshot initial = snapshots.capture(chest, cursor, 0L);
-        int chestSlots = chest.getLowerChestInventory()
+        int chestSlots = SupportedChestLayout.inventory(chest)
             .getSizeInventory();
         List<ItemStack> simulated = copyWindowStacks(chest);
         List<ItemFingerprint> playerSlots = playerFingerprints(simulated, chestSlots);
@@ -48,6 +48,8 @@ final class VanillaChestQuickMovePredictor {
         long revision = 0L;
         for (Integer playerSlot : plan.getUnloadableSlots()) {
             int windowSlot = windowSlot(chestSlots, playerSlot);
+            if (!SupportedChestLayout.accepts(chest, simulated.get(windowSlot), chestSlots))
+                throw new IllegalStateException("Storage rejects approved player slot " + playerSlot);
             ContainerSnapshot before = snapshot(initial, simulated, revision++);
             if (!quickMoveIntoChest(simulated, windowSlot, chestSlots)) {
                 throw new IllegalStateException("vanilla chest has no capacity for approved player slot " + playerSlot);
@@ -65,29 +67,14 @@ final class VanillaChestQuickMovePredictor {
         return new Prediction(playerSlots, predictions);
     }
 
-    private static void requireExactLayout(ContainerChest chest, ItemStack cursor) {
-        if (chest == null || chest.getClass() != ContainerChest.class) {
-            throw new IllegalArgumentException("only the exact vanilla ContainerChest layout is supported");
-        }
+    private static void requireExactLayout(Container chest, ItemStack cursor) {
+        SupportedChestLayout.inventory(chest);
         if (cursor != null) {
             throw new IllegalStateException("unloading requires an empty cursor");
         }
-        int chestSlots = chest.getLowerChestInventory()
-            .getSizeInventory();
-        if (chestSlots <= 0 || chestSlots % 9 != 0
-            || chestSlots > 54
-            || chest.inventorySlots.size() != chestSlots + PLAYER_SLOT_COUNT) {
-            throw new IllegalStateException("vanilla chest slot count is not recognized");
-        }
-        for (int index = 0; index < chest.inventorySlots.size(); index++) {
-            Object value = chest.inventorySlots.get(index);
-            if (!(value instanceof Slot) || ((Slot) value).slotNumber != index) {
-                throw new IllegalStateException("vanilla chest slots are not contiguous");
-            }
-        }
     }
 
-    private static List<ItemStack> copyWindowStacks(ContainerChest chest) {
+    private static List<ItemStack> copyWindowStacks(Container chest) {
         List<ItemStack> result = new ArrayList<>(chest.inventorySlots.size());
         for (Object value : chest.inventorySlots) {
             ItemStack stack = ((Slot) value).getStack();
