@@ -368,5 +368,15 @@ final class TreeTaskCheckpointCodec {
                     false));
             return new State(area, passRevision, sites, 0, verifiedTrees, null, true, pending);
         }
+
+        State beginGridPlanting(List<TreeObservation> sites) {
+            List<TreeWorkCheckpoint> grid = new ArrayList<>();
+            for (TreeObservation site : sites) {
+                if (site.getState() != TreeObservationState.FELLED_CLEAR || site.isProtectedTree())
+                    throw new IllegalArgumentException("Grid must contain only clear planting sites");
+                grid.add(TreeWorkCheckpoint.start(area, passRevision, site));
+            }
+            return new State(area, passRevision, sites, 0, verifiedTrees, null, true, grid);
+        }
     }
 }

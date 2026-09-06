@@ -63,6 +63,14 @@ public final class MinecraftVanillaTreeObserver {
     }
 
     public List<TreeObservation> scan(NamedArea area, int plantingSpecies, int spacing) {
+        return scan(area, plantingSpecies, spacing, false);
+    }
+
+    public List<TreeObservation> plantingGrid(NamedArea area, int species, int spacing) {
+        return scan(area, species, spacing, true);
+    }
+
+    private List<TreeObservation> scan(NamedArea area, int plantingSpecies, int spacing, boolean gridOnly) {
         requireClient();
         requireCurrentDimension(area);
         requireBoundedLoadedArea(area);
@@ -80,7 +88,7 @@ public final class MinecraftVanillaTreeObserver {
                     Block scanned = MinecraftRuntimeAccess.block(minecraft.theWorld, x, y, z);
                     if (species >= 0 || scanned == Blocks.sapling || scanned.isWood(minecraft.theWorld, x, y, z))
                         occupiedByTree = true;
-                    if (species < 0 || visited.contains(position)) continue;
+                    if (gridOnly || species < 0 || visited.contains(position)) continue;
                     Component component = component(area, position, species, visited);
                     TreeObservation observation = standingObservation(area, component, revision);
                     if (observation != null && !observation.isProtectedTree()) trees.add(observation);
@@ -94,7 +102,7 @@ public final class MinecraftVanillaTreeObserver {
                 }
             }
         }
-        if (!occupiedByTree && plantingSpecies >= 0) {
+        if ((gridOnly || !occupiedByTree) && plantingSpecies >= 0) {
             int footprint = plantingSpecies >= 5 ? 2 : 1;
             int actualSpecies = plantingSpecies == 6 ? 1 : plantingSpecies == 7 ? 3 : plantingSpecies;
             for (int z = min.getZ(); z <= max.getZ(); z += spacing) {

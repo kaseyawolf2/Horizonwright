@@ -74,6 +74,17 @@ final class TreeTaskRunner implements TaskRunner {
                     "live tree execution",
                     "Disable dry-run, then resume this task."));
         }
+        if (TreeTask.plantSpecies(spec.getParameters()) < 0) {
+            cancelActive();
+            return StepResult.blocked(
+                context.getActionEpoch(),
+                checkpoint,
+                BlockedReason.missingRequirement(
+                    "This older tree task has no selected planting species for the grid.",
+                    spec.getId(),
+                    "configured sapling species and grid spacing",
+                    "Choose species and spacing in Tree Farm setup and create a new pass."));
+        }
         TreeBackend backend = runtime.getTreeBackend();
         FarmBackend.Availability availability = backend == null
             ? FarmBackend.Availability.unavailable("No ordinary-tree backend is configured")
@@ -281,7 +292,20 @@ final class TreeTaskRunner implements TaskRunner {
             collection.cancel();
             collection = null;
             releaseActive();
-            pass = pass.beginPlanting();
+            int species = TreeTask.plantSpecies(spec.getParameters());
+            if (species < 0) throw new IllegalStateException(
+                "Choose the planting species and spacing in Tree Farm setup before running a grid replant pass");
+            TreeBackend.ScanRequest gridRequest = new TreeBackend.ScanRequest(
+                spec.getId(),
+                TreeTask.areaId(spec),
+                context.getActionEpoch(),
+                species,
+                TreeTask.plantSpacing(spec.getParameters()));
+            TreeBackend.PassSnapshot grid = backend.plantingGrid(gridRequest);
+            validateScan(gridRequest, grid);
+            if (!pass.area.equals(grid.getArea()))
+                throw new IllegalStateException("Tree area changed before grid planting");
+            pass = pass.beginGridPlanting(grid.getObservations());
             return persist(context, "Tree drops collected; beginning deferred sapling planting");
         } catch (RuntimeException failure) {
             return failure(context, "Tree drop collection failed: " + describe(failure), true);

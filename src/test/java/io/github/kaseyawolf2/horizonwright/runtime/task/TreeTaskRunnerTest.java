@@ -43,12 +43,50 @@ public class TreeTaskRunnerTest {
     private Harness harness;
 
     @Test
+    public void plantingUsesNewGridSiteInsteadOfFelledRoot() {
+        harness = new Harness(standing(), 8);
+        TaskSpec spec = TreeTask.scheduledPass("woodlot", 2, 0, 5)
+            .instantiate("grid-test");
+        harness.backend.gridOverride = Collections.singletonList(secondTree(clear()));
+        harness.backend.observed.put("second-oak", secondTree(clear()));
+        harness.controller.submit(spec);
+        harness.controller.tick();
+        harness.controller.tick();
+        harness.backend.confirm(clear());
+        harness.controller.tick();
+        TaskSnapshot gridSaved = task(harness.controller.tick(), spec.getId());
+        TreeTaskCheckpointCodec.State restored = TreeTaskCheckpointCodec.decode(spec, gridSaved.getCheckpoint());
+        assertTrue(restored.planting);
+        assertEquals(
+            new BasePosition(0, 5, 64, 4),
+            restored.pending.get(0)
+                .getReplantPosition());
+        harness.controller.tick();
+        assertEquals(
+            new BasePosition(0, 5, 64, 4),
+            harness.backend.handle.request.getDecision()
+                .getReplantPosition());
+        harness.backend.confirm(secondTree(planted()));
+        assertEquals(TaskState.COMPLETED, task(harness.controller.tick(), spec.getId()).getState());
+    }
+
+    @Test
+    public void legacyTaskWithoutGridSettingsBlocksBeforeFelling() {
+        harness = new Harness(standing(), 8);
+        TaskSpec spec = TreeTask.finitePass("legacy", "woodlot", 2);
+        harness.controller.submit(spec);
+        assertEquals(TaskState.BLOCKED, task(harness.controller.tick(), spec.getId()).getState());
+        assertEquals(0, harness.backend.actions);
+    }
+
+    @Test
     public void allTreesAreFelledBeforeCollectionAndPlantingAndCollectionResumes() {
         harness = new Harness(standing(), 8);
         TreeObservation second = secondTree(standing());
         harness.backend.scanTrees = Arrays.asList(standing(), second);
         harness.backend.observed.put(second.getTreeId(), second);
-        TaskSpec spec = TreeTask.finitePass("two-trees", "woodlot", 2);
+        TaskSpec spec = TreeTask.scheduledPass("woodlot", 2, 0, 5)
+            .instantiate("two-trees");
         harness.controller.submit(spec);
         harness.controller.tick();
         harness.controller.tick();
@@ -113,7 +151,8 @@ public class TreeTaskRunnerTest {
     @Test
     public void fellAndReplantAdvanceOnlyAfterSeparateConfirmedPostconditions() {
         harness = new Harness(standing(), 4);
-        TaskSpec spec = TreeTask.finitePass("trees", "woodlot", 2);
+        TaskSpec spec = TreeTask.scheduledPass("woodlot", 2, 0, 5)
+            .instantiate("trees");
         harness.controller.submit(spec);
 
         assertEquals(TaskState.RUNNING, task(harness.controller.tick(), spec.getId()).getState());
@@ -181,7 +220,8 @@ public class TreeTaskRunnerTest {
     @Test
     public void pauseDuringReplantCancelsWithoutLosingDurableClearFrontier() {
         harness = new Harness(standing(), 4);
-        TaskSpec spec = TreeTask.finitePass("trees", "woodlot", 2);
+        TaskSpec spec = TreeTask.scheduledPass("woodlot", 2, 0, 5)
+            .instantiate("trees");
         harness.controller.submit(spec);
         harness.controller.tick();
         harness.controller.tick();
@@ -210,7 +250,8 @@ public class TreeTaskRunnerTest {
     @Test
     public void reserveShortageBlocksBeforeFellingAuthorityIsAcquired() {
         harness = new Harness(standing(), 2);
-        TaskSpec spec = TreeTask.finitePass("trees", "woodlot", 2);
+        TaskSpec spec = TreeTask.scheduledPass("woodlot", 2, 0, 5)
+            .instantiate("trees");
         harness.controller.submit(spec);
         harness.controller.tick();
 
@@ -377,6 +418,7 @@ public class TreeTaskRunnerTest {
         private int collections;
         private boolean collectionReady = true;
         private java.util.List<TreeObservation> scanTrees;
+        private java.util.List<TreeObservation> gridOverride;
         private final java.util.Map<String, TreeObservation> observed = new java.util.HashMap<>();
         private ActionLease lease;
         private Handle handle;
@@ -417,6 +459,15 @@ public class TreeTaskRunnerTest {
                     "minecraft:sapling:0",
                     saplings,
                     request.getMinimumSaplingReserve()));
+        }
+
+        @Override
+        public PassSnapshot plantingGrid(ScanRequest request) {
+            if (gridOverride != null)
+                return new PassSnapshot(request.getTaskId(), request.getActionEpoch(), area, gridOverride);
+            java.util.List<TreeObservation> sites = scanTrees == null ? Collections.singletonList(clear())
+                : Arrays.asList(clear(), secondTree(clear()));
+            return new PassSnapshot(request.getTaskId(), request.getActionEpoch(), area, sites);
         }
 
         @Override

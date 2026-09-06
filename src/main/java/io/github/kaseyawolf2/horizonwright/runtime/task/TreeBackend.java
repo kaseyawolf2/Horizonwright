@@ -19,6 +19,10 @@ public interface TreeBackend {
 
     PassSnapshot scan(ScanRequest request);
 
+    default PassSnapshot plantingGrid(ScanRequest request) {
+        throw new UnsupportedOperationException("Configured tree planting grid is unavailable");
+    }
+
     TargetSnapshot observe(TargetRequest request);
 
     ActionHandle execute(ActionRequest request, ActionLease lease);

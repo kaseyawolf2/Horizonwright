@@ -116,6 +116,17 @@ public final class LiveVanillaTreeBackend implements TreeBackend {
     }
 
     @Override
+    public PassSnapshot plantingGrid(ScanRequest request) {
+        requireClient(request);
+        NamedArea area = observer.resolveArea(request.getAreaId());
+        return new PassSnapshot(
+            request.getTaskId(),
+            request.getActionEpoch(),
+            area,
+            observer.plantingGrid(area, request.getPlantSpecies(), request.getPlantSpacing()));
+    }
+
+    @Override
     public TargetSnapshot observe(TargetRequest request) {
         requireClient(request);
         TreeObservation tree = observer.observe(request.getWork());
@@ -643,11 +654,10 @@ public final class LiveVanillaTreeBackend implements TreeBackend {
                     detail = "Waiting for " + expected;
                     return;
                 }
-                // Client air is not proof that a server-side lumber-axe operation has finished.
-                // Keep observing with no dig session before handing the root to planting.
+                // Felling has no artificial pause; collection now separates it from planting.
                 int tick = minecraft.thePlayer.ticksExisted;
                 if (stableSinceTick < 0) stableSinceTick = tick;
-                int requiredTicks = expected == TreeObservationState.FELLED_CLEAR ? 40 : 20;
+                int requiredTicks = expected == TreeObservationState.FELLED_CLEAR ? 0 : 20;
                 if (tick - stableSinceTick < requiredTicks) {
                     detail = "Waiting for stable tree postcondition: " + expected;
                     trace(
@@ -676,7 +686,15 @@ public final class LiveVanillaTreeBackend implements TreeBackend {
                 .block(minecraft.theWorld, position.getX(), position.getY(), position.getZ());
             int previous = minecraft.thePlayer.inventory.currentItem;
             int bestSlot = previous;
-            float bestProgress = -1.0F;
+            double bestCost = Double.POSITIVE_INFINITY;
+            int logs = 0, cubeLogs = 0, highLogs = 0;
+            for (BasePosition log : work.getCapturedBlocks()) {
+                if (!observer.hasExpectedLog(log, work.getRequiredSaplingFingerprint())) continue;
+                logs++;
+                if (Math.abs(log.getX() - position.getX()) <= 1 && Math.abs(log.getY() - position.getY()) <= 1
+                    && Math.abs(log.getZ() - position.getZ()) <= 1) cubeLogs++;
+                if (log.getY() > minecraft.thePlayer.boundingBox.minY + 3D) highLogs++;
+            }
             try {
                 for (int slot = 0; slot < 9; slot++) {
                     minecraft.thePlayer.inventory.currentItem = slot;
@@ -686,8 +704,55 @@ public final class LiveVanillaTreeBackend implements TreeBackend {
                         position.getX(),
                         position.getY(),
                         position.getZ());
-                    if (!Float.isNaN(progress) && progress > bestProgress) {
-                        bestProgress = progress;
+                    net.minecraft.item.ItemStack stack = minecraft.thePlayer.getHeldItem();
+                    if (stack != null && stack.hasTagCompound()
+                        && stack.getTagCompound()
+                            .getCompoundTag("InfiTool")
+                            .getBoolean("Broken"))
+                        continue;
+                    boolean lumber = stack != null && !minecraft.thePlayer.isSneaking()
+                        && stack.getItem()
+                            .getClass()
+                            .getName()
+                            .equals("tconstruct.items.tools.LumberAxe");
+                    boolean wholeTree = false;
+                    if (lumber) {
+                        try {
+                            wholeTree = (Boolean) stack.getItem()
+                                .getClass()
+                                .getMethod(
+                                    "detectTree",
+                                    net.minecraft.world.World.class,
+                                    int.class,
+                                    int.class,
+                                    int.class)
+                                .invoke(null, minecraft.theWorld, position.getX(), position.getY(), position.getZ());
+                        } catch (ReflectiveOperationException unavailable) {
+                            trace("lumber-detection-unavailable", "reason", unavailable.toString());
+                        }
+                    }
+                    double cost = TreeToolCost
+                        .estimate(progress, Math.max(1, logs), cubeLogs, highLogs, lumber, wholeTree);
+                    trace(
+                        "tool-cost",
+                        "slot",
+                        slot,
+                        "progress",
+                        progress,
+                        "logs",
+                        logs,
+                        "cubeLogs",
+                        cubeLogs,
+                        "highLogs",
+                        highLogs,
+                        "lumber",
+                        lumber,
+                        "wholeTree",
+                        wholeTree,
+                        "estimatedTicks",
+                        cost);
+                    if (cost < bestCost) {
+                        bestCost = cost;
                         bestSlot = slot;
                     }
                 }
