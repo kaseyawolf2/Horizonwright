@@ -31,6 +31,21 @@ public class VanillaChestQuickMovePredictorTest {
     private static final NamedLoadout EMPTY = new NamedLoadout("empty", "Empty", Collections.emptyList());
 
     @Test
+    public void serverStyleClientInventoryIsNotTheWorldChestObject() {
+        net.minecraft.tileentity.TileEntityChest worldTile = new net.minecraft.tileentity.TileEntityChest();
+        InventoryBasic clientInventory = new InventoryBasic("container.chest", false, 27);
+        ContainerChest window = new ContainerChest(
+            new net.minecraft.entity.player.InventoryPlayer(null),
+            clientInventory);
+        assertSame(clientInventory, SupportedChestLayout.inventory(window));
+        org.junit.Assert.assertNotSame(worldTile, SupportedChestLayout.inventory(window));
+        assertEquals(
+            worldTile.getSizeInventory(),
+            SupportedChestLayout.inventory(window)
+                .getSizeInventory());
+    }
+
+    @Test
     public void rejectsReorderedPlayerSlotsBeforePredictingTransfers() {
         net.minecraft.entity.player.InventoryPlayer player = new net.minecraft.entity.player.InventoryPlayer(null);
         ContainerChest chest = new ContainerChest(player, new InventoryBasic("storage", false, 27));

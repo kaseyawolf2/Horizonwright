@@ -34,6 +34,10 @@ public final class LiveVanillaChestUnloadBackend implements UnloadBackend {
         default boolean matches(String storageId, Container container) {
             return false;
         }
+
+        default boolean bindOpened(String storageId, Container container) {
+            return false;
+        }
     }
 
     public static final class Configuration {

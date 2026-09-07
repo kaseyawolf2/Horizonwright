@@ -21,6 +21,9 @@ public final class ProfileVanillaChestUnloadConfiguration implements LiveVanilla
     private final Minecraft minecraft;
     private final HorizonwrightPersistenceStore store;
     private final WorldProfileIdentity identity;
+    private Container boundWindow;
+    private Object boundTile, boundWorld;
+    private String boundStorage;
 
     public ProfileVanillaChestUnloadConfiguration(Minecraft minecraft, HorizonwrightPersistenceStore store,
         WorldProfileIdentity identity) {
@@ -63,10 +66,7 @@ public final class ProfileVanillaChestUnloadConfiguration implements LiveVanilla
         if (!(tile instanceof IInventory)) {
             throw mismatch(storageId);
         }
-        IInventory configured = (IInventory) tile;
-        IInventory open = SupportedChestLayout.inventory(chest);
-        if (open != configured && (!(open instanceof InventoryLargeChest)
-            || !((InventoryLargeChest) open).isPartOfLargeChest(configured))) {
+        if (!matches(storageId, chest)) {
             throw mismatch(storageId);
         }
         return new LiveVanillaChestUnloadBackend.Configuration(resolvedLoadout, endpoint.getDestinationFilter());
@@ -96,8 +96,56 @@ public final class ProfileVanillaChestUnloadConfiguration implements LiveVanilla
         Object tile = MinecraftRuntimeAccess
             .tileEntity(minecraft.theWorld, target.getX(), target.getY(), target.getZ());
         IInventory open = SupportedChestLayout.inventory(container);
-        return tile == open || tile instanceof IInventory && open instanceof InventoryLargeChest
-            && ((InventoryLargeChest) open).isPartOfLargeChest((IInventory) tile);
+        return container == boundWindow && tile == boundTile
+            && minecraft.theWorld == boundWorld
+            && storageId.equals(boundStorage) || tile == open
+            || tile instanceof IInventory && open instanceof InventoryLargeChest
+                && ((InventoryLargeChest) open).isPartOfLargeChest((IInventory) tile);
+    }
+
+    @Override
+    public boolean bindOpened(String storageId, Container container) {
+        // Called only after this backend issued the outstanding exact chest interaction.
+        // Vanilla S2D constructs an InventoryBasic, not the world TileEntityChest.
+        if (container == null || container.getClass() != net.minecraft.inventory.ContainerChest.class
+            || container != minecraft.thePlayer.openContainer) return false;
+        NamedLocation target = location(storageId);
+        if (minecraft.theWorld.provider.dimensionId != target.getDimensionId()) return false;
+        Object tile = MinecraftRuntimeAccess
+            .tileEntity(minecraft.theWorld, target.getX(), target.getY(), target.getZ());
+        if (tile == null || tile.getClass() != net.minecraft.tileentity.TileEntityChest.class) return false;
+        int expected = ((IInventory) tile).getSizeInventory();
+        int neighbors = 0;
+        for (int[] offset : new int[][] { { 1, 0 }, { -1, 0 }, { 0, 1 }, { 0, -1 } }) {
+            Object next = MinecraftRuntimeAccess
+                .tileEntity(minecraft.theWorld, target.getX() + offset[0], target.getY(), target.getZ() + offset[1]);
+            if (next != null && next.getClass() == net.minecraft.tileentity.TileEntityChest.class
+                && MinecraftRuntimeAccess.block(minecraft.theWorld, target.getX(), target.getY(), target.getZ())
+                    == MinecraftRuntimeAccess.block(
+                        minecraft.theWorld,
+                        target.getX() + offset[0],
+                        target.getY(),
+                        target.getZ() + offset[1])) {
+                expected += ((IInventory) next).getSizeInventory();
+                neighbors++;
+            }
+        }
+        if (neighbors > 1 || SupportedChestLayout.inventory(container)
+            .getSizeInventory() != expected) return false;
+        boundWindow = container;
+        boundTile = tile;
+        boundWorld = minecraft.theWorld;
+        boundStorage = storageId;
+        io.github.kaseyawolf2.horizonwright.DevelopmentTrace.event(
+            "storage-access",
+            "window-bound",
+            "storage",
+            storageId,
+            "window",
+            container.windowId,
+            "slots",
+            expected);
+        return true;
     }
 
     private static NamedLocation requireLocation(ProfileEnvelope profile, String locationId) {

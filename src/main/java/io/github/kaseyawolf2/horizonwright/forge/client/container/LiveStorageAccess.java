@@ -36,6 +36,7 @@ final class LiveStorageAccess implements UnloadActionHandle {
     private NavigationHandle moving;
     private boolean approached, clicked, ownsSession;
     private volatile boolean cancelled;
+    private int clickedTick;
     private UnloadActionState state = UnloadActionState.EXECUTING;
     private String detail = "Preparing saved-storage approach";
 
@@ -78,7 +79,9 @@ final class LiveStorageAccess implements UnloadActionHandle {
                 throw new IllegalStateException("Storage is in another dimension");
             if (System.nanoTime() - started > TimeUnit.MINUTES.toNanos(2))
                 throw new IllegalStateException("Storage access timed out");
-            if (config.matches(storage, mc.thePlayer.openContainer)) {
+            if (config.matches(storage, mc.thePlayer.openContainer)
+                || clicked && mc.thePlayer.ticksExisted - clickedTick <= 100
+                    && config.bindOpened(storage, mc.thePlayer.openContainer)) {
                 stop();
                 if (guard.isReadyForSession()) {
                     state = UnloadActionState.CONFIRMED;
@@ -151,6 +154,7 @@ final class LiveStorageAccess implements UnloadActionHandle {
                 hit.sideHit,
                 hit.hitVec)) throw new IllegalStateException("Storage interaction was rejected");
             clicked = true;
+            clickedTick = mc.thePlayer.ticksExisted;
             detail = "Storage interaction sent; waiting for matching container";
             io.github.kaseyawolf2.horizonwright.forge.client.network.ActionPacketDispatch
                 .afterPendingWrites(mc, this::stop);
