@@ -12,6 +12,11 @@ public interface UnloadBackend {
         return null;
     }
 
+    /** Optional synchronized close after exact observation proves no eligible stacks remain. */
+    default UnloadActionHandle closeStorage(String requestId, String storageId, long epoch, ActionLease lease) {
+        return null;
+    }
+
     UnloadObservationResult observe(UnloadObservationRequest request);
 
     UnloadActionHandle execute(UnloadActionRequest request, ActionLease lease);

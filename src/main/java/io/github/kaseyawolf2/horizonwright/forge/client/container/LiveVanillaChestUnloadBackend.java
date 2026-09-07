@@ -80,6 +80,12 @@ public final class LiveVanillaChestUnloadBackend implements UnloadBackend {
             lease);
     }
 
+    @Override
+    public UnloadActionHandle closeStorage(String id, String storageId, long epoch, ActionLease lease) {
+        if (accessGuard == null) return null;
+        return new LiveStorageClose(minecraft, accessGuard, configuration, id, storageId, epoch, lease);
+    }
+
     public LiveVanillaChestUnloadBackend(Minecraft minecraft, ConfigurationSource configuration,
         ConfirmedContainerTransactionExecutor executor) {
         if (minecraft == null || configuration == null || executor == null) {

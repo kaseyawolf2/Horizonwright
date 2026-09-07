@@ -36,6 +36,22 @@ public class UnloadTaskRunnerTest {
     private static final ItemFingerprint ORE = new ItemFingerprint("gregtech:ore", 4, "ore", 16);
     private Harness harness;
 
+    @Test
+    public void waitsForStorageCloseBeforeCompletingUnloadedTask() {
+        harness = new Harness();
+        harness.backend.unloaded = true;
+        harness.backend.needsClose = true;
+        TaskSpec spec = UnloadTask.create("close-storage", "mining", "ore-chest");
+        harness.controller.submit(spec);
+        assertEquals(TaskState.RUNNING, task(harness.controller.tick(), spec.getId()).getState());
+        assertEquals(TaskState.RUNNING, task(harness.controller.tick(), spec.getId()).getState());
+        assertTrue(harness.backend.closeLease.isValid());
+        harness.backend.closeConfirmed = true;
+        assertEquals(TaskState.COMPLETED, task(harness.controller.tick(), spec.getId()).getState());
+        assertTrue(!harness.backend.closeLease.isValid());
+        assertEquals(0, harness.backend.submissions);
+    }
+
     @After
     public void closeHarness() {
         if (harness != null) harness.close();
@@ -263,6 +279,30 @@ public class UnloadTaskRunnerTest {
         private int submissions;
         private ActionLease lastLease;
         private Handle active;
+        private boolean needsClose, closeConfirmed;
+        private ActionLease closeLease;
+
+        @Override
+        public UnloadActionHandle closeStorage(String id, String storage, long epoch, ActionLease lease) {
+            if (!needsClose) return null;
+            closeLease = lease;
+            return new UnloadActionHandle() {
+
+                public String getRequestId() {
+                    return id;
+                }
+
+                public UnloadActionProgress progress() {
+                    return new UnloadActionProgress(
+                        id,
+                        closeConfirmed ? UnloadActionState.CONFIRMED : UnloadActionState.EXECUTING,
+                        "closing");
+                }
+
+                public void cancel() {}
+            };
+        }
+
         private boolean needsAccess;
         private boolean accessCancelled;
         private ActionLease accessLease;

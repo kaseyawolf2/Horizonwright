@@ -40,6 +40,8 @@ final class UnloadTaskRunner implements TaskRunner {
     private ActionLease accessLease;
     private UnloadBackend accessBackend;
     private String accessRequestId;
+    private boolean finishingStorage;
+    private String completionDetail;
 
     UnloadTaskRunner(TaskSpec spec, TaskCheckpoint checkpoint, UnloadRuntimeAccess runtime) {
         if (spec == null || checkpoint == null || runtime == null) {
@@ -163,6 +165,10 @@ final class UnloadTaskRunner implements TaskRunner {
                 case CONFIRMED:
                     RuntimeException cleanup = stopStorageAccess(false);
                     if (cleanup != null) throw cleanup;
+                    if (finishingStorage) {
+                        finishingStorage = false;
+                        return StepResult.completed(context.getActionEpoch(), taskCheckpoint, completionDetail);
+                    }
                     return StepResult.progress(
                         context.getActionEpoch(),
                         taskCheckpoint,
@@ -205,11 +211,9 @@ final class UnloadTaskRunner implements TaskRunner {
         }
         if (built.plan.getUnloadableSlots()
             .isEmpty()) {
-            return StepResult.completed(
-                context.getActionEpoch(),
-                taskCheckpoint,
-                "Unload complete; " + built.plan.getDeferredSlots()
-                    .size() + " destination-filtered stacks retained");
+            completionDetail = "Unload complete; " + built.plan.getDeferredSlots()
+                .size() + " destination-filtered stacks retained";
+            return closeStorage(context, backend);
         }
         String fingerprint = ContainerTransactionFingerprint.fingerprint(built.transaction);
         state = new UnloadTaskCheckpoint(
@@ -459,6 +463,7 @@ final class UnloadTaskRunner implements TaskRunner {
     }
 
     private RuntimeException stopActive() {
+        finishingStorage = false;
         RuntimeException accessFailure = stopStorageAccess(true);
         UnloadActionHandle handle = activeHandle;
         ActionLease lease = activeLease;
@@ -467,6 +472,33 @@ final class UnloadTaskRunner implements TaskRunner {
         if (accessFailure == null) return transactionFailure;
         if (transactionFailure != null) accessFailure.addSuppressed(transactionFailure);
         return accessFailure;
+    }
+
+    private StepResult closeStorage(TaskStepContext context, UnloadBackend backend) {
+        Optional<ActionLease> acquired = context.getActions()
+            .tryAcquire(REQUIRED_CAPABILITIES);
+        if (!acquired.isPresent()) return StepResult
+            .waitFor(context.getActionEpoch(), taskCheckpoint, 0L, "Waiting for storage-close authority");
+        ActionLease lease = acquired.get();
+        String id = spec.getId() + "-storage-close-" + context.getActionEpoch();
+        UnloadActionHandle handle = null;
+        try {
+            handle = backend.closeStorage(id, UnloadTask.storageId(spec), context.getActionEpoch(), lease);
+            if (handle == null) {
+                lease.close();
+                return StepResult.completed(context.getActionEpoch(), taskCheckpoint, completionDetail);
+            }
+            if (!id.equals(handle.getRequestId())) throw new IllegalStateException("Mismatched storage-close handle");
+            accessHandle = handle;
+            accessLease = lease;
+            accessBackend = backend;
+            accessRequestId = id;
+            finishingStorage = true;
+            return StepResult
+                .progress(context.getActionEpoch(), taskCheckpoint, "Transfers verified; closing saved storage");
+        } catch (RuntimeException failure) {
+            return failed(context, "Storage close failed: " + describe(failure), cancelAndClose(handle, lease), true);
+        }
     }
 
     private void clearActive() {
