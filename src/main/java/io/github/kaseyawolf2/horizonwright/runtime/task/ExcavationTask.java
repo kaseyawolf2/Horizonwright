@@ -112,6 +112,15 @@ public final class ExcavationTask {
     }
 
     static CylinderExcavationSpec parse(TaskSpec spec) {
+        CylinderExcavationSpec geometry = parseGeometry(spec);
+        String order = spec.getParameters()
+            .get("traversal");
+        if (order == null || "chunk-v1".equals(order)) return geometry;
+        if ("spiral-v1".equals(order)) return geometry.withSpiral();
+        throw new IllegalArgumentException("Unsupported excavation traversal: " + order);
+    }
+
+    private static CylinderExcavationSpec parseGeometry(TaskSpec spec) {
         if (spec == null) {
             throw new IllegalArgumentException("spec must not be null");
         }
@@ -157,6 +166,14 @@ public final class ExcavationTask {
     }
 
     public static TaskSpec forArea(TaskSpec template, io.github.kaseyawolf2.horizonwright.core.base.NamedArea area) {
+        Map<String, String> ordered = new LinkedHashMap<>(template.getParameters());
+        ordered.put("traversal", "spiral-v1");
+        template = new TaskSpec(
+            template.getId(),
+            template.getType(),
+            template.getDisplayName(),
+            template.getLane(),
+            ordered);
         if (area.isCircular()) return template;
         Map<String, String> parameters = new LinkedHashMap<>(template.getParameters());
         parameters.put(SHAPE, "rectangle");

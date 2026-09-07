@@ -147,7 +147,7 @@ public final class GuiManagedQuarrySetup extends GuiReadableScreen {
             topY.setEnabled(false);
             storageId.setEnabled(false);
             status = "Uses the saved " + (boundArea.isCircular() ? "circle" : "rectangle")
-                + " exactly; edit bounds from Areas.";
+                + " exactly, in an inward spiral; edit bounds from Areas.";
         }
     }
 

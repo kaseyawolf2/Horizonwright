@@ -20,6 +20,21 @@ public final class CylinderExcavationSpec {
     private long columnCount;
     private long volume;
     private String geometryKey;
+    private boolean spiral;
+
+    public boolean isSpiral() {
+        return spiral;
+    }
+
+    public CylinderExcavationSpec withSpiral() {
+        CylinderExcavationSpec result = isRectangle()
+            ? rectangle(dimensionId, minX, maxX, minZ, maxZ, bottomY, topY, mode)
+            : new CylinderExcavationSpec(dimensionId, centerX, centerZ, radius, bottomY, topY, mode);
+        result.spiral = true;
+        result.geometryKey += ":spiral-v1";
+        return result;
+    }
+
     private boolean rectangle;
     private int minX, maxX, minZ, maxZ;
 

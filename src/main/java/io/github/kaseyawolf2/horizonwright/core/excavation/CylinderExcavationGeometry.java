@@ -119,6 +119,12 @@ public final class CylinderExcavationGeometry {
             return frontier;
         }
         int layerY = frontier.getLayerY();
+        if (spec.isSpiral()) {
+            BlockPosition next = InwardSpiral.next(spec, frontier.getPosition());
+            if (next == null) return layerY == spec.getBottomY() ? ExcavationFrontier.complete(spec.getGeometryKey())
+                : rawLayerStart(spec, layerY - 1);
+            return rawPosition(spec, next);
+        }
         int chunkX = frontier.getChunkX();
         int chunkZ = frontier.getChunkZ();
         int band = frontier.getBand();
@@ -145,6 +151,8 @@ public final class CylinderExcavationGeometry {
     }
 
     private static ExcavationFrontier rawLayerStart(CylinderExcavationSpec spec, int layerY) {
+        if (spec.isSpiral())
+            return rawPosition(spec, new BlockPosition(spec.getMinimumX(), layerY, spec.getMinimumZ()));
         return new ExcavationFrontier(
             spec.getGeometryKey(),
             layerY,
@@ -152,6 +160,17 @@ public final class CylinderExcavationGeometry {
             minimumChunkZ(spec),
             0,
             0,
+            false);
+    }
+
+    private static ExcavationFrontier rawPosition(CylinderExcavationSpec spec, BlockPosition p) {
+        return new ExcavationFrontier(
+            spec.getGeometryKey(),
+            p.getY(),
+            Math.floorDiv(p.getX(), 16),
+            Math.floorDiv(p.getZ(), 16),
+            Math.floorMod(p.getX(), 16),
+            Math.floorMod(p.getZ(), 16),
             false);
     }
 
