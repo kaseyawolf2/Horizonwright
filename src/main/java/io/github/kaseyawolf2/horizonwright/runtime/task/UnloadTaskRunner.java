@@ -123,7 +123,12 @@ final class UnloadTaskRunner implements TaskRunner {
 
     private StepResult beginStorageAccess(TaskStepContext context, UnloadBackend backend) {
         Optional<ActionLease> acquired = context.getActions()
-            .tryAcquire(EnumSet.of(ActionCapability.MOVEMENT, ActionCapability.LOOK, ActionCapability.USE));
+            .tryAcquire(
+                EnumSet.of(
+                    ActionCapability.MOVEMENT,
+                    ActionCapability.LOOK,
+                    ActionCapability.USE,
+                    ActionCapability.PLACE));
         if (!acquired.isPresent()) return StepResult
             .waitFor(context.getActionEpoch(), taskCheckpoint, 0L, "Waiting for storage approach/open authority");
         ActionLease lease = acquired.get();

@@ -67,6 +67,9 @@ public class UnloadTaskRunnerTest {
         assertTrue(harness.backend.accessLease.isValid());
         assertTrue(
             harness.backend.accessLease.getCapabilities()
+                .contains(ActionCapability.PLACE));
+        assertTrue(
+            harness.backend.accessLease.getCapabilities()
                 .contains(ActionCapability.MOVEMENT));
         assertEquals(0, harness.backend.submissions);
         harness.controller.tick();

@@ -47,7 +47,11 @@ final class LiveStorageAccess implements UnloadActionHandle {
             || lease.getEpoch() != epoch
             || !lease.getCapabilities()
                 .containsAll(
-                    java.util.EnumSet.of(ActionCapability.MOVEMENT, ActionCapability.LOOK, ActionCapability.USE)))
+                    java.util.EnumSet.of(
+                        ActionCapability.MOVEMENT,
+                        ActionCapability.LOOK,
+                        ActionCapability.USE,
+                        ActionCapability.PLACE)))
             throw new IllegalStateException("Storage access needs navigation and movement/look/use authority");
         this.mc = mc;
         this.guard = guard;
@@ -125,6 +129,18 @@ final class LiveStorageAccess implements UnloadActionHandle {
             if (mc.thePlayer.isSneaking()) throw new IllegalStateException("Release sneak before opening storage");
             guard.begin(lease);
             ownsSession = true;
+            // C08 represents chest activation too; an ItemBlock makes the classifier require PLACE.
+            DevelopmentTrace.event(
+                "storage-access",
+                "interact",
+                "request",
+                id,
+                "target",
+                location,
+                "held",
+                mc.thePlayer.getHeldItem(),
+                "capabilities",
+                lease.getCapabilities());
             if (!mc.playerController.onPlayerRightClick(
                 mc.thePlayer,
                 mc.theWorld,
