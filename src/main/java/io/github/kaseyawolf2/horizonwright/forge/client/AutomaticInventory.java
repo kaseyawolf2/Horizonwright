@@ -4,8 +4,13 @@ import java.util.ArrayList;
 import java.util.List;
 
 import net.minecraft.client.Minecraft;
+import net.minecraft.init.Blocks;
+import net.minecraft.init.Items;
+import net.minecraft.item.Item;
 import net.minecraft.item.ItemArmor;
 import net.minecraft.item.ItemFood;
+import net.minecraft.item.ItemSeedFood;
+import net.minecraft.item.ItemSeeds;
 import net.minecraft.item.ItemStack;
 
 import io.github.kaseyawolf2.horizonwright.core.container.ItemFingerprint;
@@ -19,6 +24,7 @@ import io.github.kaseyawolf2.horizonwright.forge.client.container.MinecraftConta
 public final class AutomaticInventory {
 
     public static final String ID = "automatic-inventory";
+    public static final int CONSUMABLE_RESERVE = 16;
 
     private AutomaticInventory() {}
 
@@ -31,27 +37,34 @@ public final class AutomaticInventory {
             }
         }
         MinecraftContainerSnapshotter snapshots = new MinecraftContainerSnapshotter();
+        io.github.kaseyawolf2.horizonwright.forge.client.inventory.PortableInventoryAdapters extensions = new io.github.kaseyawolf2.horizonwright.forge.client.inventory.PortableInventoryAdapters();
         for (int slot = 0; slot < mc.thePlayer.inventory.mainInventory.length; slot++) {
             ItemStack stack = mc.thePlayer.inventory.mainInventory[slot];
             if (stack == null) continue;
-            boolean tool = stack.getMaxStackSize() == 1 || !stack.getItem()
-                .getToolClasses(stack)
-                .isEmpty();
+            boolean carrier = extensions.find(stack) != null;
+            boolean tool = carrier || stack.getMaxStackSize() == 1
+                || !stack.getItem()
+                    .getToolClasses(stack)
+                    .isEmpty();
             boolean food = stack.getItem() instanceof ItemFood;
-            if (!tool && !food) continue;
+            boolean planting = plantingSupply(stack);
+            if (!tool && !food && !planting) continue;
             ItemFingerprint item = snapshots.fingerprint(stack);
             reserve(
                 reservations,
                 item,
                 slot,
                 tool,
-                food ? LoadoutRole.FOOD : stack.getItem() instanceof ItemArmor ? LoadoutRole.ARMOR : LoadoutRole.TOOL);
+                food ? LoadoutRole.FOOD
+                    : planting ? LoadoutRole.OTHER_RESERVED
+                        : stack.getItem() instanceof ItemArmor ? LoadoutRole.ARMOR : LoadoutRole.TOOL);
         }
         return new NamedLoadout(ID, "Automatic inventory", reservations);
     }
 
     static void reserve(List<LoadoutReservation> reservations, ItemFingerprint item, int slot, boolean tool,
         LoadoutRole role) {
+        boolean bounded = role == LoadoutRole.FOOD || role == LoadoutRole.OTHER_RESERVED && !tool;
         LoadoutReservation existing = null;
         for (LoadoutReservation value : reservations) if (value.matches(item)) {
             existing = value;
@@ -66,17 +79,30 @@ public final class AutomaticInventory {
                         existing.getRole(),
                         existing.getItemId(),
                         existing.getMetadata(),
-                        null,
-                        Math.addExact(existing.getMinimumCount(), item.getCount())));
+                        existing.getDataHash(),
+                        bounded
+                            ? Math.min(CONSUMABLE_RESERVE, Math.addExact(existing.getMinimumCount(), item.getCount()))
+                            : Math.addExact(existing.getMinimumCount(), item.getCount())));
             }
         } else reservations.add(
             new LoadoutReservation(
                 "inventory-" + slot,
                 role,
                 item.getItemId(),
-                tool ? -1 : item.getMetadata(),
-                null,
-                item.getCount()));
+                tool && !bounded ? -1 : item.getMetadata(),
+                bounded ? item.getDataHash() : null,
+                bounded ? Math.min(CONSUMABLE_RESERVE, item.getCount()) : item.getCount()));
+    }
+
+    /** Small working reserves keep ordinary harvest output eligible for packing and final unloading. */
+    public static int automaticReserveCount(ItemStack stack) {
+        return stack != null && (stack.getItem() instanceof ItemFood || plantingSupply(stack)) ? CONSUMABLE_RESERVE : 0;
+    }
+
+    private static boolean plantingSupply(ItemStack stack) {
+        return stack != null && (stack.getItem() instanceof ItemSeeds || stack.getItem() instanceof ItemSeedFood
+            || stack.getItem() == Item.getItemFromBlock(Blocks.sapling)
+            || stack.getItem() == Items.dye && stack.getItemDamage() == 3);
     }
 
 }

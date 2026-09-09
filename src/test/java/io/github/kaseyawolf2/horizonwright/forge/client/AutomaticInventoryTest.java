@@ -28,15 +28,64 @@ public class AutomaticInventoryTest {
     }
 
     @Test
-    public void multipleFoodStacksAreReservedWithoutOverlappingRules() {
+    public void multipleFoodStacksKeepBoundedReserveAndLeaveHarvestSurplusUnloadable() {
         List<LoadoutReservation> items = new ArrayList<>();
         AutomaticInventory.reserve(items, new ItemFingerprint("test:food", 0, "a", 12), 0, false, LoadoutRole.FOOD);
         AutomaticInventory.reserve(items, new ItemFingerprint("test:food", 0, "a", 20), 1, false, LoadoutRole.FOOD);
         assertEquals(
-            32,
+            16,
             items.get(0)
                 .getMinimumCount());
         new NamedLoadout("test", "test", items).validate();
+    }
+
+    @Test
+    public void automaticFoodReservesDistinguishExactNbtIdentity() {
+        List<LoadoutReservation> items = new ArrayList<>();
+        AutomaticInventory.reserve(items, new ItemFingerprint("test:food", 0, "a", 64), 0, false, LoadoutRole.FOOD);
+        AutomaticInventory.reserve(items, new ItemFingerprint("test:food", 0, "b", 32), 1, false, LoadoutRole.FOOD);
+        assertEquals(2, items.size());
+        assertEquals(
+            "a",
+            items.get(0)
+                .getDataHash());
+        assertEquals(
+            "b",
+            items.get(1)
+                .getDataHash());
+        assertEquals(
+            16,
+            items.get(0)
+                .getMinimumCount());
+        assertEquals(
+            16,
+            items.get(1)
+                .getMinimumCount());
+        new NamedLoadout("test", "test", items).validate();
+    }
+
+    @Test
+    public void seedsKeepBoundedReplantingReserveInsteadOfAllHarvestedSeeds() {
+        List<LoadoutReservation> items = new ArrayList<>();
+        AutomaticInventory
+            .reserve(items, new ItemFingerprint("test:seed", 0, "a", 64), 0, false, LoadoutRole.OTHER_RESERVED);
+        AutomaticInventory
+            .reserve(items, new ItemFingerprint("test:seed", 0, "a", 64), 1, false, LoadoutRole.OTHER_RESERVED);
+        assertEquals(1, items.size());
+        assertEquals(
+            16,
+            items.get(0)
+                .getMinimumCount());
+    }
+
+    @Test
+    public void smallFoodStockDoesNotCreateAnImpossibleMinimum() {
+        List<LoadoutReservation> items = new ArrayList<>();
+        AutomaticInventory.reserve(items, new ItemFingerprint("test:food", 0, "a", 4), 0, false, LoadoutRole.FOOD);
+        assertEquals(
+            4,
+            items.get(0)
+                .getMinimumCount());
     }
 
     @Test

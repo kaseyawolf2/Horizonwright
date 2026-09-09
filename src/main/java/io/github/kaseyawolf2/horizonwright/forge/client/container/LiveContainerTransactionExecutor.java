@@ -6,6 +6,7 @@ import net.minecraft.client.Minecraft;
 
 import io.github.kaseyawolf2.horizonwright.DevelopmentTrace;
 import io.github.kaseyawolf2.horizonwright.core.action.ActionSessionGuard;
+import io.github.kaseyawolf2.horizonwright.core.container.ContainerActionPacing;
 import io.github.kaseyawolf2.horizonwright.core.container.ContainerClickCorrelation;
 import io.github.kaseyawolf2.horizonwright.core.container.ContainerSnapshot;
 import io.github.kaseyawolf2.horizonwright.core.container.ContainerTransaction;
@@ -45,7 +46,10 @@ public final class LiveContainerTransactionExecutor implements ConfirmedContaine
     private final ContainerTransactionPacketCoordinator packets;
     private final NanoClock clock;
     private final long timeoutNanos;
+    private final ContainerActionPacing pacing;
+    private final Runnable requireInteractionScreen;
     private ContainerClickCorrelation active;
+    private String lastReportedDifference;
 
     public LiveContainerTransactionExecutor(Minecraft minecraft, ActionSessionGuard guard,
         ContainerTransactionPacketCoordinator packets) {
@@ -57,8 +61,49 @@ public final class LiveContainerTransactionExecutor implements ConfirmedContaine
             DEFAULT_TIMEOUT_NANOS);
     }
 
+    public LiveContainerTransactionExecutor(Minecraft minecraft, ActionSessionGuard guard,
+        ContainerTransactionPacketCoordinator packets, MinecraftContainerSnapshotter snapshots) {
+        this(
+            new MinecraftClientAccess(minecraft, snapshots),
+            guard::activeEpochOrZero,
+            packets,
+            System::nanoTime,
+            DEFAULT_TIMEOUT_NANOS);
+    }
+
     LiveContainerTransactionExecutor(ClientAccess client, EpochSource epochs,
         ContainerTransactionPacketCoordinator packets, NanoClock clock, long timeoutNanos) {
+        this(client, epochs, packets, clock, timeoutNanos, new ContainerActionPacing(0));
+    }
+
+    public LiveContainerTransactionExecutor(Minecraft minecraft, ActionSessionGuard guard,
+        ContainerTransactionPacketCoordinator packets, MinecraftContainerSnapshotter snapshots,
+        ContainerActionPacing pacing) {
+        this(minecraft, guard, packets, snapshots, pacing, () -> {});
+    }
+
+    public LiveContainerTransactionExecutor(Minecraft minecraft, ActionSessionGuard guard,
+        ContainerTransactionPacketCoordinator packets, MinecraftContainerSnapshotter snapshots,
+        ContainerActionPacing pacing, Runnable requireInteractionScreen) {
+        this(
+            new MinecraftClientAccess(minecraft, snapshots),
+            guard::activeEpochOrZero,
+            packets,
+            System::nanoTime,
+            DEFAULT_TIMEOUT_NANOS,
+            pacing,
+            requireInteractionScreen);
+    }
+
+    LiveContainerTransactionExecutor(ClientAccess client, EpochSource epochs,
+        ContainerTransactionPacketCoordinator packets, NanoClock clock, long timeoutNanos,
+        ContainerActionPacing pacing) {
+        this(client, epochs, packets, clock, timeoutNanos, pacing, () -> {});
+    }
+
+    LiveContainerTransactionExecutor(ClientAccess client, EpochSource epochs,
+        ContainerTransactionPacketCoordinator packets, NanoClock clock, long timeoutNanos, ContainerActionPacing pacing,
+        Runnable requireInteractionScreen) {
         if (client == null || epochs == null || packets == null || clock == null || timeoutNanos <= 0L) {
             throw new IllegalArgumentException("executor dependencies and a positive timeout are required");
         }
@@ -67,6 +112,11 @@ public final class LiveContainerTransactionExecutor implements ConfirmedContaine
         this.packets = packets;
         this.clock = clock;
         this.timeoutNanos = timeoutNanos;
+        if (pacing == null) throw new IllegalArgumentException("action pacing is required");
+        this.pacing = pacing;
+        if (requireInteractionScreen == null)
+            throw new IllegalArgumentException("interaction screen guard is required");
+        this.requireInteractionScreen = requireInteractionScreen;
     }
 
     @Override
@@ -86,6 +136,7 @@ public final class LiveContainerTransactionExecutor implements ConfirmedContaine
         }
         trace("begin", transaction, "boundaryReady", packets.isBoundaryReady());
         active = new ContainerClickCorrelation(transaction);
+        lastReportedDifference = null;
         packets.activate(active);
         try {
             dispatchNext();
@@ -100,6 +151,7 @@ public final class LiveContainerTransactionExecutor implements ConfirmedContaine
 
     public synchronized void tick() {
         client.requireClientThread();
+        pacing.tick();
         if (active == null) {
             DevelopmentTrace.event("container-live", "tick-idle", "activeEpoch", epochs.activeEpochOrZero());
             return;
@@ -123,6 +175,20 @@ public final class LiveContainerTransactionExecutor implements ConfirmedContaine
                 ContainerSnapshot observed = client.capture(
                     click.getExpectedAfter()
                         .getRevision());
+                String difference = click.getExpectedAfter()
+                    .describeDifference(observed);
+                if (!"none".equals(difference) && !difference.equals(lastReportedDifference)) {
+                    trace(
+                        "snapshot-mismatch",
+                        active.getTransaction(),
+                        "click",
+                        click.getClickId(),
+                        "correlationState",
+                        active.getState(),
+                        "difference",
+                        difference);
+                    lastReportedDifference = difference;
+                }
                 active.observeSynchronizedSnapshot(observed, epoch, now);
             }
             if (active.getState() == ContainerClickCorrelation.State.READY) {
@@ -174,6 +240,8 @@ public final class LiveContainerTransactionExecutor implements ConfirmedContaine
     }
 
     private void dispatchNext() {
+        if (!pacing.isReady()) return;
+        requireInteractionScreen.run();
         ContainerTransaction transaction = active.getTransaction();
         int nextIndex = transaction.getCompletedClickCount();
         if (nextIndex >= transaction.getClicks()
@@ -208,6 +276,31 @@ public final class LiveContainerTransactionExecutor implements ConfirmedContaine
                 prepared.get()
                     .getClickMode());
             client.click(prepared.get());
+            pacing.actionPerformed();
+            if (DevelopmentTrace.isEnabled()) {
+                try {
+                    ContainerSnapshot predicted = client.capture(
+                        prepared.get()
+                            .getExpectedAfter()
+                            .getRevision());
+                    trace(
+                        "client-prediction",
+                        transaction,
+                        "click",
+                        prepared.get()
+                            .getClickId(),
+                        "difference",
+                        prepared.get()
+                            .getExpectedAfter()
+                            .describeDifference(predicted));
+                } catch (RuntimeException diagnosticFailure) {
+                    trace(
+                        "client-prediction-unavailable",
+                        transaction,
+                        "failure",
+                        DevelopmentTrace.error(diagnosticFailure));
+                }
+            }
         } catch (RuntimeException failure) {
             trace("dispatch-failed", transaction, "failure", DevelopmentTrace.error(failure));
             active.cancel(
@@ -251,13 +344,18 @@ public final class LiveContainerTransactionExecutor implements ConfirmedContaine
     private static final class MinecraftClientAccess implements ClientAccess {
 
         private final Minecraft minecraft;
-        private final MinecraftContainerSnapshotter snapshots = new MinecraftContainerSnapshotter();
+        private final MinecraftContainerSnapshotter snapshots;
 
         private MinecraftClientAccess(Minecraft minecraft) {
+            this(minecraft, new MinecraftContainerSnapshotter());
+        }
+
+        private MinecraftClientAccess(Minecraft minecraft, MinecraftContainerSnapshotter snapshots) {
             if (minecraft == null) {
                 throw new IllegalArgumentException("minecraft must not be null");
             }
             this.minecraft = minecraft;
+            this.snapshots = snapshots;
         }
 
         @Override

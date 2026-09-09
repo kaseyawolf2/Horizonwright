@@ -29,6 +29,8 @@ public final class MinecraftContainerSnapshotter {
     }
 
     private final ItemIdentityResolver itemIdentities;
+    private final java.util.function.BiFunction<Slot, ItemStack, ItemStack> slotProjection;
+    private final java.util.function.Function<ItemStack, ItemStack> transportProjection;
 
     public MinecraftContainerSnapshotter() {
         this(item -> {
@@ -38,10 +40,27 @@ public final class MinecraftContainerSnapshotter {
     }
 
     public MinecraftContainerSnapshotter(ItemIdentityResolver itemIdentities) {
+        this(itemIdentities, (slot, stack) -> stack);
+    }
+
+    /** A session-bound projection can remove a carrier's duplicate encoding of visible bag slots. */
+    public MinecraftContainerSnapshotter(ItemIdentityResolver itemIdentities,
+        java.util.function.BiFunction<Slot, ItemStack, ItemStack> slotProjection) {
+        this(itemIdentities, slotProjection, stack -> stack);
+    }
+
+    /** Equivalent transport encodings must be compared consistently in slots and on the cursor. */
+    public MinecraftContainerSnapshotter(ItemIdentityResolver itemIdentities,
+        java.util.function.BiFunction<Slot, ItemStack, ItemStack> slotProjection,
+        java.util.function.Function<ItemStack, ItemStack> transportProjection) {
         if (itemIdentities == null) {
             throw new IllegalArgumentException("itemIdentities must not be null");
         }
         this.itemIdentities = itemIdentities;
+        if (slotProjection == null) throw new IllegalArgumentException("slotProjection is required");
+        this.slotProjection = slotProjection;
+        if (transportProjection == null) throw new IllegalArgumentException("transportProjection is required");
+        this.transportProjection = transportProjection;
     }
 
     public ContainerSnapshot captureCurrent(Minecraft minecraft, long revision) {
@@ -84,7 +103,7 @@ public final class MinecraftContainerSnapshotter {
                 .append(':')
                 .append(slot.yDisplayPosition)
                 .append(';');
-            slots.add(fingerprint(slot.getStack()));
+            slots.add(fingerprint(transportProjection.apply(slotProjection.apply(slot, slot.getStack()))));
         }
         return new ContainerSnapshot(
             container.windowId,
@@ -93,7 +112,7 @@ public final class MinecraftContainerSnapshotter {
             "slots-" + container.inventorySlots.size() + "-sha256-" + sha256(layout.toString()),
             revision,
             slots,
-            fingerprint(cursor));
+            fingerprint(transportProjection.apply(cursor)));
     }
 
     public ItemFingerprint fingerprint(ItemStack stack) {

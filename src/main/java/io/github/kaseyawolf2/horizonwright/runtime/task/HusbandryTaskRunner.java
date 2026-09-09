@@ -64,6 +64,11 @@ final class HusbandryTaskRunner implements TaskRunner {
     }
 
     @Override
+    public synchronized boolean isInventoryPreparationSafe() {
+        return activeHandle == null && activeLease == null;
+    }
+
+    @Override
     public synchronized StepResult step(TaskStepContext context) {
         requireContext(context);
         if (context.isSuspensionRequested()) return suspend(context);

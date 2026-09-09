@@ -99,8 +99,13 @@ public final class MinecraftVanillaFarmObserver {
     }
 
     int findHotbarSeed(String requiredSeedFingerprint) {
+        return findSeedSlot(requiredSeedFingerprint, 0, 9);
+    }
+
+    int findSeedSlot(String requiredSeedFingerprint, int start, int end) {
         requireClient();
-        for (int slot = 0; slot < 9; slot++) {
+        if (start < 0 || end > 36 || start > end) throw new IllegalArgumentException("invalid seed inventory bounds");
+        for (int slot = start; slot < end; slot++) {
             ItemFingerprint fingerprint = items.fingerprint(minecraft.thePlayer.inventory.mainInventory[slot]);
             if (fingerprint != null && requiredSeedFingerprint.equals(materialIdentity(fingerprint))) return slot;
         }

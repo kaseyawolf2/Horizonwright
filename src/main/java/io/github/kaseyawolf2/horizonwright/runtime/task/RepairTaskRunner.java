@@ -65,6 +65,15 @@ final class RepairTaskRunner implements TaskRunner {
     }
 
     @Override
+    public synchronized boolean isInventoryPreparationSafe() {
+        return activeHandle == null && activeLease == null
+            && stationAccessHandle == null
+            && inputStagingHandle == null
+            && !restoredUncertainPhase
+            && state.getPhase() == RepairTaskCheckpoint.Phase.READY;
+    }
+
+    @Override
     public synchronized StepResult step(TaskStepContext context) {
         requireContext(context);
         if (context.isSuspensionRequested()) return suspend(context);

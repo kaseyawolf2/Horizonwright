@@ -57,6 +57,16 @@ final class UnloadTaskRunner implements TaskRunner {
     }
 
     @Override
+    public synchronized boolean isInventoryPreparationSafe() {
+        return activeHandle == null && activeLease == null
+            && accessHandle == null
+            && accessLease == null
+            && !restoredUncertainPhase
+            && !finishingStorage
+            && state.getPhase() == UnloadTaskCheckpoint.Phase.READY;
+    }
+
+    @Override
     public synchronized StepResult step(TaskStepContext context) {
         requireContext(context);
         if (context.isSuspensionRequested()) {

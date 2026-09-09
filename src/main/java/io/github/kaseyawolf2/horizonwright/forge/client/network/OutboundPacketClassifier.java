@@ -27,6 +27,7 @@ import net.minecraft.network.play.client.C17PacketCustomPayload;
 
 import cpw.mods.fml.common.network.internal.FMLProxyPacket;
 import io.github.kaseyawolf2.horizonwright.core.action.ActionCapability;
+import io.netty.buffer.ByteBuf;
 
 public final class OutboundPacketClassifier {
 
@@ -115,7 +116,15 @@ public final class OutboundPacketClassifier {
             return PacketActionRequirement.allOf("sign update", ActionCapability.PLACE);
         }
         if (message instanceof C17PacketCustomPayload) {
-            String channel = ((C17PacketCustomPayload) message).func_149559_c();
+            C17PacketCustomPayload packet = (C17PacketCustomPayload) message;
+            String channel = packet.func_149559_c();
+            byte[] data = packet.func_149558_e();
+            int length = data == null ? 0 : data.length;
+            int first = length == 0 ? -1 : data[0] & 255;
+            int discriminator = length < 4 ? -1
+                : (data[0] & 255) << 24 | (data[1] & 255) << 16 | (data[2] & 255) << 8 | data[3] & 255;
+            PacketActionRequirement known = classifyInventoryProtocol(channel, first, discriminator);
+            if (known != null) return known;
             return PacketActionRequirement.observeOnly("custom payload " + String.valueOf(channel));
         }
         return PacketActionRequirement.observeOnly(
@@ -125,6 +134,14 @@ public final class OutboundPacketClassifier {
 
     private static PacketActionRequirement classifyFmlProxyPacket(FMLProxyPacket packet) {
         String channel = packet.channel();
+        ByteBuf payload = packet.payload();
+        int readable = payload == null ? 0 : payload.readableBytes();
+        int start = readable == 0 ? 0 : payload.readerIndex();
+        // Absolute reads leave the buffer's reader index, writer index and reference count untouched.
+        int first = readable == 0 ? -1 : payload.getUnsignedByte(start);
+        int discriminator = readable < 4 ? -1 : payload.getInt(start);
+        PacketActionRequirement known = classifyInventoryProtocol(channel, first, discriminator);
+        if (known != null) return known;
         // Waila's 1.7.10 client channel only requests read-only block/entity metadata for the overlay. The three FML
         // channels below are Forge's own registration and handshake control plane. Every other mod channel remains
         // observe-only until an explicit, tested integration classifies its semantics.
@@ -134,6 +151,28 @@ public final class OutboundPacketClassifier {
             return PacketActionRequirement.unrestricted();
         }
         return PacketActionRequirement.observeOnly("FML proxy channel '" + printableChannel(channel) + "'");
+    }
+
+    private static PacketActionRequirement classifyInventoryProtocol(String channel, int first, int discriminator) {
+        // Adventure Backpack 1.4.22-GTNH: SimpleNetworkWrapper discriminator 5 is GUImessage.
+        // Its payload is GUI type + source (backpack=1, wearing=0, holding=1). Gate the known
+        // message even if its body is malformed; other message IDs keep their existing semantics.
+        if ("advBackpackChan".equals(channel) && first == 5) {
+            return PacketActionRequirement.allOf(
+                "Adventure Backpack GUI request",
+                ActionCapability.USE,
+                ActionCapability.HELD_USE,
+                ActionCapability.CONTAINER);
+        }
+        // AE2 rv3-beta-1000-GTNH uses a big-endian int discriminator. PacketPartialItem (21)
+        // synchronizes the requested target; PacketMonitorableAction (42) changes network inventory.
+        // Classify both before they can outlive the action lease; unrelated AE2 traffic is unchanged.
+        if ("AE2".equals(channel) && (discriminator == 21 || discriminator == 42)) {
+            return PacketActionRequirement.allOf(
+                discriminator == 21 ? "AE2 terminal target synchronization" : "AE2 terminal inventory action",
+                ActionCapability.CONTAINER);
+        }
+        return null;
     }
 
     private static String printableChannel(String channel) {

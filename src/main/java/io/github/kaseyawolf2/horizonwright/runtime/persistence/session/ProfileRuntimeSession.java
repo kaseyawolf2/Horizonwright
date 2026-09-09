@@ -1,9 +1,18 @@
 package io.github.kaseyawolf2.horizonwright.runtime.persistence.session;
 
+import java.util.Arrays;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 
 import io.github.kaseyawolf2.horizonwright.core.persistence.RuntimeEnvelope;
+import io.github.kaseyawolf2.horizonwright.core.persistence.UnresolvedDeathState;
 import io.github.kaseyawolf2.horizonwright.core.persistence.WorldProfileIdentity;
+import io.github.kaseyawolf2.horizonwright.core.task.RestoredTaskSnapshot;
+import io.github.kaseyawolf2.horizonwright.core.task.ScheduleSnapshot;
+import io.github.kaseyawolf2.horizonwright.core.task.TaskControllerState;
 
 /**
  * Serialized lifecycle owner for one explicitly selected profile/world binding.
@@ -11,6 +20,7 @@ import io.github.kaseyawolf2.horizonwright.core.persistence.WorldProfileIdentity
  * <p>
  * A connection is admitted only after its durable envelope has loaded successfully and matches the bound profile,
  * server, and world fingerprint. The runtime is then created fresh and restored exactly once before becoming active.
+ * Changed task checkpoints and control state are saved synchronously before another client tick can act.
  * Retiring an active connection attempts exactly one final save before closing it. Duplicate and stale connection
  * callbacks cannot create, tick, save, or close a runtime twice.
  * </p>
@@ -27,6 +37,8 @@ public final class ProfileRuntimeSession implements AutoCloseable {
     private RuntimeSessionConnection lastConnection;
     private RuntimeSessionRuntime runtime;
     private RuntimeSessionException failure;
+    private Map<String, List<?>> lastSavedProgress;
+    private UnresolvedDeathState lastSavedDeathState;
 
     public ProfileRuntimeSession(RuntimeSessionRuntimeFactory runtimeFactory, RuntimeSessionClock clock) {
         if (runtimeFactory == null || clock == null) {
@@ -95,6 +107,10 @@ public final class ProfileRuntimeSession implements AutoCloseable {
                 throw new IllegalStateException("runtime factory returned null");
             }
             freshRuntime.restore(loaded);
+            lastSavedProgress = durableProgress(
+                freshRuntime.getController()
+                    .exportState());
+            lastSavedDeathState = freshRuntime.snapshotUnresolvedDeathState();
         } catch (RuntimeException restoreFailure) {
             throw failBeforeActivation("could not create and restore a fresh runtime", restoreFailure, freshRuntime);
         }
@@ -130,11 +146,71 @@ public final class ProfileRuntimeSession implements AutoCloseable {
         }
         try {
             runtime.clientTick();
+            saveChangedProgress();
             return true;
-        } catch (RuntimeException tickFailure) {
-            finishActive(true, tickFailure);
+        } catch (Exception tickFailure) {
+            RuntimeException cause = tickFailure instanceof RuntimeException ? (RuntimeException) tickFailure
+                : new RuntimeSessionException("Could not save task progress before the next action", tickFailure);
+            finishActive(true, cause);
             throw failure;
         }
+    }
+
+    /** Synchronous commit: a later runner transition cannot execute until this checkpoint reaches durable storage. */
+    private void saveChangedProgress()
+        throws io.github.kaseyawolf2.horizonwright.runtime.persistence.TaskControllerPersistenceException {
+        TaskControllerState current = runtime.getController()
+            .exportState();
+        Map<String, List<?>> progress = durableProgress(current);
+        UnresolvedDeathState death = runtime.snapshotUnresolvedDeathState();
+        if (progress.equals(lastSavedProgress) && Objects.equals(death, lastSavedDeathState)) return;
+        long now = clock.nowEpochMillis();
+        if (now < 0L) throw new IllegalStateException("runtime session clock returned a negative timestamp");
+        RuntimeEnvelope saved = persistence.save(now, activeConnection, runtime);
+        if (saved == null || !hasSameDurableBinding(identity, saved))
+            throw new IllegalStateException("saved task progress does not match the selected profile/world");
+        Map<String, List<?>> savedProgress = durableProgress(saved.getTaskControllerState());
+        if (!savedProgress.equals(progress))
+            throw new IllegalStateException("saved task progress did not include the exact prepared checkpoint");
+        lastSavedProgress = savedProgress;
+        lastSavedDeathState = saved.getUnresolvedDeathState();
+    }
+
+    /** Excludes ticking clocks, remaining wait countdowns and progress prose; includes every gameplay checkpoint. */
+    private static Map<String, List<?>> durableProgress(TaskControllerState state) {
+        Map<String, List<?>> progress = new LinkedHashMap<>();
+        progress.put("epoch", Arrays.asList(state.getLastActionEpoch()));
+        for (RestoredTaskSnapshot task : state.getTasks()) {
+            progress.put(
+                "task:" + task.getSpec()
+                    .getId(),
+                Arrays.asList(
+                    task.getSpec(),
+                    task.getCheckpoint(),
+                    task.getState(),
+                    task.getRetryCount(),
+                    task.getSuspensionReason(),
+                    task.getBlockedReason(),
+                    task.getQueuePosition(),
+                    task.getSourceScheduleId()));
+        }
+        for (ScheduleSnapshot schedule : state.getScheduler()
+            .getSchedules()) {
+            progress.put(
+                "schedule:" + schedule.getRule()
+                    .getId(),
+                Arrays.asList(
+                    schedule.getRule(),
+                    schedule.getState(),
+                    schedule.getSequence(),
+                    schedule.getNextConnectedDueMillis(),
+                    schedule.getLastWorldOccurrence(),
+                    schedule.isIdleLatched(),
+                    schedule.getLastTaskId(),
+                    schedule.getTotalRuns(),
+                    schedule.getCatchUpRuns()));
+        }
+        return progress;
     }
 
     @Override

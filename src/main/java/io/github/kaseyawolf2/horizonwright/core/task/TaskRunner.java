@@ -12,6 +12,11 @@ public interface TaskRunner {
 
     StepResult step(TaskStepContext context);
 
+    /** True only between actions, when inventory changes cannot invalidate pending confirmation. */
+    default boolean isInventoryPreparationSafe() {
+        return false;
+    }
+
     /** Called synchronously only when normal safe suspension is intentionally bypassed. */
     default void interrupt(TaskInterruption interruption) {}
 }

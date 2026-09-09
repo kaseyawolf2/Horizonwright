@@ -117,6 +117,16 @@ final class ExcavationTaskRunner implements TaskRunner {
     }
 
     @Override
+    public synchronized boolean isInventoryPreparationSafe() {
+        return activeHandle == null && activeLease == null
+            && activeManagedHandle == null
+            && activeManagedLease == null
+            && pendingManagedPlan == null
+            && pendingActionableObservation == null
+            && pendingPassiveObservations == null;
+    }
+
+    @Override
     public synchronized StepResult step(TaskStepContext context) {
         requireContext(context);
         if (context.isSuspensionRequested()) {

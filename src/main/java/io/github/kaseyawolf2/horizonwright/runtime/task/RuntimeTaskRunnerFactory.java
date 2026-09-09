@@ -15,6 +15,7 @@ public final class RuntimeTaskRunnerFactory implements TaskRunnerFactory {
     private final FarmRuntimeAccess farm;
     private final SleepRuntimeAccess sleep;
     private final HusbandryRuntimeAccess husbandry;
+    private final InventoryRuntimeAccess inventory;
 
     public RuntimeTaskRunnerFactory(NavigationRuntimeAccess navigation) {
         this(
@@ -121,6 +122,14 @@ public final class RuntimeTaskRunnerFactory implements TaskRunnerFactory {
         this.sleep = sleep;
         this.husbandry = sleep instanceof HusbandryRuntimeAccess ? (HusbandryRuntimeAccess) sleep
             : DisabledHusbandryRuntimeAccess.INSTANCE;
+        InventoryRuntimeAccess found = null;
+        for (Object access : new Object[] { sleep, farm, repair, unload, excavation, navigation }) {
+            if (access instanceof InventoryRuntimeAccess) {
+                found = (InventoryRuntimeAccess) access;
+                break;
+            }
+        }
+        this.inventory = found;
     }
 
     @Override
@@ -128,6 +137,13 @@ public final class RuntimeTaskRunnerFactory implements TaskRunnerFactory {
         if (spec == null || checkpoint == null) {
             throw new IllegalArgumentException("spec and checkpoint must not be null");
         }
+        if (inventory != null || InventoryPreparingTaskRunner.isWrapped(checkpoint)) {
+            return new InventoryPreparingTaskRunner(spec, checkpoint, inventory, navigation::isDryRun, this::createRaw);
+        }
+        return createRaw(spec, checkpoint);
+    }
+
+    private TaskRunner createRaw(TaskSpec spec, TaskCheckpoint checkpoint) {
         if (GoToTask.TYPE.equals(spec.getType())) {
             return new GoToTaskRunner(spec, checkpoint, navigation);
         }

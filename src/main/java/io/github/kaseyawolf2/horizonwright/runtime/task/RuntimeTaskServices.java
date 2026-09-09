@@ -10,7 +10,7 @@ package io.github.kaseyawolf2.horizonwright.runtime.task;
  * </p>
  */
 public final class RuntimeTaskServices implements ExcavationRuntimeAccess, UnloadRuntimeAccess, RepairRuntimeAccess,
-    FarmRuntimeAccess, SleepRuntimeAccess, HusbandryRuntimeAccess {
+    FarmRuntimeAccess, SleepRuntimeAccess, HusbandryRuntimeAccess, InventoryRuntimeAccess {
 
     public interface DryRunSource {
 
@@ -25,6 +25,7 @@ public final class RuntimeTaskServices implements ExcavationRuntimeAccess, Unloa
     private volatile TreeBackend treeBackend;
     private volatile SleepBackend sleepBackend;
     private volatile HusbandryBackend husbandryBackend;
+    private volatile InventoryService inventoryService;
 
     public RuntimeTaskServices(DryRunSource dryRun) {
         if (dryRun == null) {
@@ -151,6 +152,25 @@ public final class RuntimeTaskServices implements ExcavationRuntimeAccess, Unloa
         treeBackend = null;
         sleepBackend = null;
         husbandryBackend = null;
+        inventoryService = null;
+    }
+
+    public synchronized void bindInventoryService(InventoryService service) {
+        if (service == null) throw new IllegalArgumentException("inventory service must not be null");
+        if (inventoryService != null && inventoryService != service)
+            throw new IllegalStateException("another inventory service is already bound to this runtime session");
+        inventoryService = service;
+    }
+
+    public synchronized boolean unbindInventoryService(InventoryService expected) {
+        if (expected == null || inventoryService != expected) return false;
+        inventoryService = null;
+        return true;
+    }
+
+    @Override
+    public InventoryService getInventoryService() {
+        return inventoryService;
     }
 
     @Override

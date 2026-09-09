@@ -58,6 +58,11 @@ final class TreeTaskRunner implements TaskRunner {
     }
 
     @Override
+    public synchronized boolean isInventoryPreparationSafe() {
+        return activeHandle == null && activeLease == null && collection == null;
+    }
+
+    @Override
     public synchronized StepResult step(TaskStepContext context) {
         requireContext(context);
         if (context.isSuspensionRequested()) return suspend(context);
@@ -410,7 +415,8 @@ final class TreeTaskRunner implements TaskRunner {
                     ActionCapability.LOOK,
                     ActionCapability.DIG,
                     ActionCapability.PLACE,
-                    ActionCapability.HELD_USE));
+                    ActionCapability.HELD_USE,
+                    ActionCapability.CONTAINER));
         }
         if (action == TreeActionKind.PLANT_SAPLING) {
             return Collections.unmodifiableSet(

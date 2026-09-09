@@ -14,6 +14,7 @@ import net.minecraft.network.play.server.S32PacketConfirmTransaction;
 
 import org.junit.Test;
 
+import io.github.kaseyawolf2.horizonwright.core.container.ContainerActionPacing;
 import io.github.kaseyawolf2.horizonwright.core.container.ContainerSnapshot;
 import io.github.kaseyawolf2.horizonwright.core.container.ContainerTransaction;
 import io.github.kaseyawolf2.horizonwright.core.container.ContainerTransactionState;
@@ -28,6 +29,125 @@ public class LiveContainerTransactionExecutorTest {
 
     private static final ItemFingerprint ORE = new ItemFingerprint("gregtech:ore", 4, "ore-data", 16);
     private static final ItemFingerprint DUST = new ItemFingerprint("gregtech:dust", 2, "dust-data", 8);
+
+    @Test
+    public void closedInventoryScreenPreventsTheFirstClick() {
+        ContainerSnapshot before = snapshot(10L, ORE, null);
+        ContainerSnapshot after = snapshot(11L, null, ORE);
+        Harness harness = new Harness(
+            before,
+            new ContainerActionPacing(5),
+            () -> { throw new IllegalStateException("player inventory screen is closed"); });
+        ContainerTransaction transaction = transaction(before, after);
+        try {
+            harness.executor.begin(transaction);
+            org.junit.Assert.fail("closed inventory must reject the click");
+        } catch (IllegalStateException expected) {
+            assertTrue(
+                expected.getMessage()
+                    .contains("screen is closed"));
+        }
+        assertEquals(0, harness.client.clickCount);
+        assertEquals(ContainerTransactionState.ABORTED, transaction.getState());
+        assertFalse(harness.executor.isActive());
+    }
+
+    @Test
+    public void closingInventoryDuringPacingCancelsTheNextClickEvenAfterConfirmation() {
+        ContainerSnapshot before = snapshot(10L, ORE, DUST, null, null);
+        ContainerSnapshot middle = snapshot(11L, null, DUST, ORE, null);
+        ContainerSnapshot after = snapshot(12L, null, null, ORE, DUST);
+        boolean[] screenOpen = { true };
+        Harness harness = new Harness(
+            before,
+            new ContainerActionPacing(5),
+            () -> { if (!screenOpen[0]) throw new IllegalStateException("inventory screen changed"); });
+        ContainerTransaction transaction = new ContainerTransaction(
+            "screen-bound",
+            41L,
+            Arrays.asList(click("pick", 0, before, middle), click("place", 1, middle, after)));
+        harness.executor.begin(transaction);
+        harness.bridge.beforeConfirmationRead(new S32PacketConfirmTransaction(7, (short) 1, true));
+        harness.client.observed = middle;
+        screenOpen[0] = false;
+        for (int tick = 1; tick < 5; tick++) harness.executor.tick();
+        try {
+            harness.executor.tick();
+            org.junit.Assert.fail("closed inventory must prevent the second click");
+        } catch (IllegalStateException expected) {
+            assertTrue(
+                expected.getMessage()
+                    .contains("screen changed"));
+        }
+        assertEquals(1, harness.client.clickCount);
+        assertEquals(ContainerTransactionState.ABORTED, transaction.getState());
+        assertFalse(harness.executor.isActive());
+    }
+
+    @Test
+    public void fastConfirmationStillWaitsFiveTicksBetweenClicks() {
+        ContainerSnapshot before = snapshot(10L, ORE, DUST, null, null);
+        ContainerSnapshot middle = snapshot(11L, null, DUST, ORE, null);
+        ContainerSnapshot after = snapshot(12L, null, null, ORE, DUST);
+        ContainerTransaction transaction = new ContainerTransaction(
+            "paced",
+            41L,
+            Arrays.asList(click("ore", 0, before, middle), click("dust", 1, middle, after)));
+        Harness harness = new Harness(before, new ContainerActionPacing(5));
+        harness.executor.begin(transaction);
+        harness.bridge.beforeConfirmationRead(new S32PacketConfirmTransaction(7, (short) 1, true));
+        harness.client.observed = middle;
+        for (int tick = 1; tick < 5; tick++) {
+            harness.executor.tick();
+            assertEquals(1, harness.client.clickCount);
+        }
+        harness.executor.tick();
+        assertEquals(2, harness.client.clickCount);
+    }
+
+    @Test
+    public void elapsedDelayDoesNotReplaceServerConfirmation() {
+        ContainerSnapshot before = snapshot(10L, ORE, DUST, null, null);
+        ContainerSnapshot middle = snapshot(11L, null, DUST, ORE, null);
+        ContainerSnapshot after = snapshot(12L, null, null, ORE, DUST);
+        ContainerTransaction transaction = new ContainerTransaction(
+            "paced",
+            41L,
+            Arrays.asList(click("ore", 0, before, middle), click("dust", 1, middle, after)));
+        Harness harness = new Harness(before, new ContainerActionPacing(5));
+        harness.executor.begin(transaction);
+        harness.client.observed = middle;
+        for (int tick = 0; tick < 8; tick++) harness.executor.tick();
+        assertEquals(1, harness.client.clickCount);
+        harness.bridge.beforeConfirmationRead(new S32PacketConfirmTransaction(7, (short) 1, true));
+        harness.executor.tick();
+        assertEquals(2, harness.client.clickCount);
+    }
+
+    @Test
+    public void precedingBagActionDelaysFirstClickAndCancellationStopsIt() {
+        ContainerSnapshot before = snapshot(10L, ORE, null);
+        ContainerSnapshot after = snapshot(11L, null, ORE);
+        ContainerActionPacing pacing = new ContainerActionPacing(5);
+        Harness harness = new Harness(before, pacing);
+        pacing.actionPerformed(); // A bag was just selected, opened or inspected.
+        harness.executor.begin(transaction(before, after));
+        assertEquals(0, harness.client.clickCount);
+        for (int tick = 1; tick < 5; tick++) {
+            harness.executor.tick();
+            assertEquals(0, harness.client.clickCount);
+        }
+        harness.executor.tick();
+        assertEquals(1, harness.client.clickCount);
+
+        harness.executor.cancel("stop testing");
+        ContainerTransaction cancelled = transaction(before, after);
+        harness.executor.begin(cancelled);
+        harness.executor.cancel("user paused during pacing");
+        for (int tick = 0; tick < 5; tick++) harness.executor.tick();
+        assertEquals(1, harness.client.clickCount);
+        assertEquals(ContainerTransactionState.ABORTED, cancelled.getState());
+    }
 
     @Test
     public void dispatchesNextClickOnlyAfterAcceptedResponseAndExactSnapshot() {
@@ -148,11 +268,26 @@ public class LiveContainerTransactionExecutorTest {
         private final LiveContainerTransactionExecutor executor;
 
         private Harness(ContainerSnapshot initial) {
+            this(initial, new ContainerActionPacing(0));
+        }
+
+        private Harness(ContainerSnapshot initial, ContainerActionPacing pacing) {
+            this(initial, pacing, () -> {});
+        }
+
+        private Harness(ContainerSnapshot initial, ContainerActionPacing pacing, Runnable requireInteractionScreen) {
             ContainerTransactionPacketCoordinator packets = new ContainerTransactionPacketCoordinator(clock);
             EmbeddedChannel channel = new EmbeddedChannel(new ChannelInboundHandlerAdapter());
             bridge = packets.open(new NetworkManager(true), channel);
             client = new FakeClient(initial, bridge);
-            executor = new LiveContainerTransactionExecutor(client, () -> 41L, packets, clock, 50L);
+            executor = new LiveContainerTransactionExecutor(
+                client,
+                () -> 41L,
+                packets,
+                clock,
+                50L,
+                pacing,
+                requireInteractionScreen);
         }
     }
 

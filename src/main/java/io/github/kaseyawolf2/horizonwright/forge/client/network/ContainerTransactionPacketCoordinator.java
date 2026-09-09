@@ -26,6 +26,19 @@ public final class ContainerTransactionPacketCoordinator implements ContainerTra
     private final NanoClock clock;
     private Boundary boundary;
     private ContainerClickCorrelation active;
+    private long inventorySyncRevision;
+    private final java.util.Map<Integer, Long> windowSyncRevisions = new java.util.HashMap<>();
+
+    public synchronized long inventorySyncRevision() {
+        return inventorySyncRevision;
+    }
+
+    /** Evidence of a fresh server inventory update, including when a mod uses its own action protocol. */
+    public synchronized long inventorySyncRevision(int windowId) {
+        return Math.max(
+            windowSyncRevisions.getOrDefault(windowId, 0L),
+            Math.max(windowSyncRevisions.getOrDefault(0, 0L), windowSyncRevisions.getOrDefault(-2, 0L)));
+    }
 
     public ContainerTransactionPacketCoordinator() {
         this(System::nanoTime);
@@ -47,6 +60,7 @@ public final class ContainerTransactionPacketCoordinator implements ContainerTra
             throw new IllegalStateException("a container packet boundary is already open");
         }
         boundary = new Boundary(manager, channel);
+        windowSyncRevisions.clear();
         return boundary;
     }
 
@@ -109,9 +123,9 @@ public final class ContainerTransactionPacketCoordinator implements ContainerTra
     }
 
     private synchronized void observeWindowItems(Boundary source, S30PacketWindowItems packet) {
-        if (boundary != source || source.retired || active == null) {
-            return;
-        }
+        if (boundary != source || source.retired) return;
+        rememberSync(packet.func_148911_c());
+        if (active == null) return;
         active.observeAuthoritativeResync(packet.func_148911_c(), clock.nanoTime());
         if (active.isTerminal()) {
             active = null;
@@ -119,15 +133,22 @@ public final class ContainerTransactionPacketCoordinator implements ContainerTra
     }
 
     private synchronized void observeSetSlot(Boundary source, S2FPacketSetSlot packet) {
-        if (boundary != source || source.retired || active == null) {
-            return;
-        }
+        if (boundary != source || source.retired) return;
+        rememberSync(packet.func_149175_c());
+        if (active == null) return;
         if (packet.func_149175_c() == -1 && packet.func_149173_d() == -1) {
             active.observeAuthoritativeCursorResync(clock.nanoTime());
         }
         if (active.isTerminal()) {
             active = null;
         }
+    }
+
+    private void rememberSync(int windowId) {
+        // Vanilla windows are bounded; retain only a small live-session observation cache.
+        if (!windowSyncRevisions.containsKey(windowId) && windowSyncRevisions.size() >= 128)
+            windowSyncRevisions.clear();
+        windowSyncRevisions.put(windowId, ++inventorySyncRevision);
     }
 
     private synchronized void retire(Boundary source, boolean transportClosed) {

@@ -43,6 +43,7 @@ public final class ContainerClickCorrelation {
     private short actionNumber;
     private boolean authoritativeWindowResyncObserved;
     private boolean authoritativeCursorResyncObserved;
+    private String lastSnapshotDifference;
 
     public ContainerClickCorrelation(ContainerTransaction transaction) {
         if (transaction == null) {
@@ -66,6 +67,7 @@ public final class ContainerClickCorrelation {
             return Optional.empty();
         }
         outstanding = next.get();
+        lastSnapshotDifference = null;
         deadlineNanos = saturatingAdd(nowNanos, timeoutNanos);
         state = State.AWAITING_WRITE;
         return next;
@@ -160,6 +162,7 @@ public final class ContainerClickCorrelation {
             return false;
         }
         if (!expected.equals(observed)) {
+            lastSnapshotDifference = expected.describeDifference(observed);
             return false;
         }
         boolean confirmed = transaction.confirm(outstanding.getClickId(), true, observed, currentEpoch);
@@ -172,7 +175,11 @@ public final class ContainerClickCorrelation {
         if ((state == State.AWAITING_WRITE || state == State.AWAITING_CONFIRMATION
             || state == State.SERVER_ACCEPTED
             || state == State.SERVER_REJECTED_AWAITING_SYNC) && nowNanos - deadlineNanos >= 0L) {
-            cancel("container click confirmation timed out; the click will not be resent");
+            String detail = state == State.SERVER_ACCEPTED ? "server accepted the click"
+                : state == State.SERVER_REJECTED_AWAITING_SYNC ? "server requested an inventory resync"
+                    : "no matching server acknowledgement";
+            if (lastSnapshotDifference != null) detail += "; " + lastSnapshotDifference;
+            cancel("container click confirmation timed out; the click will not be resent (" + detail + ")");
             return true;
         }
         return false;

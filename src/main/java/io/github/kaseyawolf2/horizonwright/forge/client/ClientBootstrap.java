@@ -95,6 +95,7 @@ public final class ClientBootstrap {
     private ClientPacketFirewallInstaller packetFirewall;
     private ContainerTransactionPacketCoordinator containerTransactions;
     private LiveContainerTransactionExecutor containerTransactionExecutor;
+    private io.github.kaseyawolf2.horizonwright.forge.client.inventory.LiveExtendedInventoryService extendedInventory;
     private LiveExcavationBackend liveExcavationBackend;
     private LiveVanillaFarmBackend liveFarmBackend;
     private LiveVanillaTreeBackend liveTreeBackend;
@@ -327,6 +328,11 @@ public final class ClientBootstrap {
             attachedRuntime.getActionBroker()
                 .addRevocationListener(inputArbiter);
             ClientNavigationBootstrap.initialize(attachedRuntime);
+            containerTransactions = new ContainerTransactionPacketCoordinator();
+            containerTransactionExecutor = new LiveContainerTransactionExecutor(
+                minecraft,
+                attachedRuntime.getActionSessionGuard(),
+                containerTransactions);
             liveExcavationBackend = new LiveExcavationBackend(
                 minecraft,
                 attachedRuntime.getActionSessionGuard(),
@@ -337,14 +343,16 @@ public final class ClientBootstrap {
                 minecraft,
                 attachedRuntime.getActionSessionGuard(),
                 attachedRuntime::getNavigationBackend,
-                new ProfileFarmConfiguration(profileEditorProvider()));
+                new ProfileFarmConfiguration(profileEditorProvider()),
+                containerTransactionExecutor);
             attachedRuntime.getTaskServices()
                 .bindFarmBackend(liveFarmBackend);
             liveTreeBackend = new LiveVanillaTreeBackend(
                 minecraft,
                 attachedRuntime.getActionSessionGuard(),
                 attachedRuntime::getNavigationBackend,
-                new ProfileFarmConfiguration(profileEditorProvider()));
+                new ProfileFarmConfiguration(profileEditorProvider()),
+                containerTransactionExecutor);
             attachedRuntime.getTaskServices()
                 .bindTreeBackend(liveTreeBackend);
             liveHusbandryBackend = new LiveVanillaHusbandryBackend(
@@ -361,11 +369,21 @@ public final class ClientBootstrap {
                 new ProfileSleepConfiguration(persistenceStore, identity));
             attachedRuntime.getTaskServices()
                 .bindSleepBackend(liveSleepBackend);
-            containerTransactions = new ContainerTransactionPacketCoordinator();
-            containerTransactionExecutor = new LiveContainerTransactionExecutor(
+            extendedInventory = new io.github.kaseyawolf2.horizonwright.forge.client.inventory.LiveExtendedInventoryService(
                 minecraft,
                 attachedRuntime.getActionSessionGuard(),
-                containerTransactions);
+                containerTransactions,
+                () -> {
+                    io.github.kaseyawolf2.horizonwright.core.persistence.PersistenceLoadResult<io.github.kaseyawolf2.horizonwright.core.persistence.ProfileEnvelope> loaded = persistenceStore
+                        .loadProfile(persistenceStore.pathsForProfile(identity.getProfileId()));
+                    if (!loaded.isLoaded() || !identity.equals(
+                        loaded.getValue()
+                            .getIdentity()))
+                        throw new IllegalStateException("Active inventory profile is unavailable or changed");
+                    return loaded.getValue();
+                });
+            attachedRuntime.getTaskServices()
+                .bindInventoryService(extendedInventory);
             liveUnloadBackend = new LiveVanillaChestUnloadBackend(
                 minecraft,
                 new ProfileVanillaChestUnloadConfiguration(minecraft, persistenceStore, identity),
@@ -398,6 +416,7 @@ public final class ClientBootstrap {
         if (packetFirewall.isInstalled()) {
             runtimeSessions.clientTick(activeIdentity, connectionToken);
             containerTransactionExecutor.tick();
+            extendedInventory.tick();
             announceNewBlockedTasks();
         }
     }
@@ -475,6 +494,12 @@ public final class ClientBootstrap {
         announcedBlockedTasks.clear();
         announcedRetryAttempts.clear();
         announcedFailedTasks.clear();
+        if (extendedInventory != null) {
+            if (attachedRuntime != null) attachedRuntime.getTaskServices()
+                .unbindInventoryService(extendedInventory);
+            extendedInventory.close();
+            extendedInventory = null;
+        }
         if (attachedRuntime != null && liveExcavationBackend != null) {
             attachedRuntime.getTaskServices()
                 .unbindExcavationBackend(liveExcavationBackend);

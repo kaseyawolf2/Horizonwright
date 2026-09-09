@@ -68,4 +68,9 @@ public final class TaskStepContext {
     public boolean isSuspensionRequested() {
         return suspensionRequest != TaskSuspensionReason.NONE;
     }
+
+    /** Retains authority and suspension while a runner decorator unwraps its own checkpoint. */
+    public TaskStepContext withCheckpoint(TaskCheckpoint replacement) {
+        return new TaskStepContext(spec, actionEpoch, nowMillis, replacement, suspensionRequest, actions);
+    }
 }

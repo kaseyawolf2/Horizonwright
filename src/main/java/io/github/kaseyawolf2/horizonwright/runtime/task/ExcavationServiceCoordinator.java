@@ -113,7 +113,8 @@ public final class ExcavationServiceCoordinator {
 
     private static ExcavationCheckpoint decode(TaskSnapshot parent) {
         CylinderExcavationSpec spec = ExcavationTask.parse(parent.getSpec());
-        ExcavationCheckpoint checkpoint = ExcavationTaskCheckpointCodec.decode(spec, parent.getCheckpoint());
+        ExcavationCheckpoint checkpoint = ExcavationTaskCheckpointCodec
+            .decode(spec, InventoryPreparingTaskRunner.unwrap(parent.getCheckpoint()));
         if (checkpoint == null) throw new IllegalArgumentException("blocked excavation has no checkpoint");
         return checkpoint;
     }
@@ -133,9 +134,10 @@ public final class ExcavationServiceCoordinator {
     }
 
     private static boolean isBlockedExcavation(TaskSnapshot task) {
-        return task.getState() == TaskState.BLOCKED && ExcavationTask.TYPE.equals(
-            task.getSpec()
-                .getType());
+        return task.getState() == TaskState.BLOCKED && !InventoryPreparingTaskRunner.isPreparing(task.getCheckpoint())
+            && ExcavationTask.TYPE.equals(
+                task.getSpec()
+                    .getType());
     }
 
     private static boolean isLegacyRepairStationWait(TaskSnapshot child) {

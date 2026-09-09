@@ -20,6 +20,9 @@ import io.github.kaseyawolf2.horizonwright.core.base.CropObservation;
 import io.github.kaseyawolf2.horizonwright.core.base.FarmActionKind;
 import io.github.kaseyawolf2.horizonwright.core.base.NamedArea;
 import io.github.kaseyawolf2.horizonwright.core.base.SeedReserveEvidence;
+import io.github.kaseyawolf2.horizonwright.core.container.ContainerSnapshot;
+import io.github.kaseyawolf2.horizonwright.core.container.ContainerTransaction;
+import io.github.kaseyawolf2.horizonwright.core.container.ContainerTransactionState;
 import io.github.kaseyawolf2.horizonwright.core.navigation.BackendAvailability;
 import io.github.kaseyawolf2.horizonwright.core.navigation.CropTravelSafety;
 import io.github.kaseyawolf2.horizonwright.core.navigation.NavigationBackend;
@@ -29,6 +32,8 @@ import io.github.kaseyawolf2.horizonwright.core.navigation.NavigationRequest;
 import io.github.kaseyawolf2.horizonwright.core.navigation.NavigationState;
 import io.github.kaseyawolf2.horizonwright.forge.client.ClientBootstrap;
 import io.github.kaseyawolf2.horizonwright.forge.client.MinecraftRuntimeAccess;
+import io.github.kaseyawolf2.horizonwright.forge.client.container.ConfirmedContainerTransactionExecutor;
+import io.github.kaseyawolf2.horizonwright.forge.client.container.MinecraftContainerSnapshotter;
 import io.github.kaseyawolf2.horizonwright.forge.client.network.ActionPacketDispatch;
 import io.github.kaseyawolf2.horizonwright.runtime.task.FarmBackend;
 
@@ -45,7 +50,8 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
         ActionCapability.LOOK,
         ActionCapability.DIG,
         ActionCapability.PLACE,
-        ActionCapability.HELD_USE);
+        ActionCapability.HELD_USE,
+        ActionCapability.CONTAINER);
     private static final EnumSet<ActionCapability> RIGHT_CLICK_HARVEST = EnumSet.of(
         ActionCapability.MOVEMENT,
         ActionCapability.LOOK,
@@ -62,10 +68,17 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
     private final NavigationSource navigationSource;
     private final MinecraftVanillaFarmObserver observer;
     private final VanillaFarmMutationVerifier verifier = new VanillaFarmMutationVerifier();
+    private final ConfirmedContainerTransactionExecutor transactions;
+    private final MinecraftContainerSnapshotter inventorySnapshots = new MinecraftContainerSnapshotter();
     private LiveHandle active;
 
     public LiveVanillaFarmBackend(Minecraft minecraft, ActionSessionGuard guard, NavigationSource navigationSource,
         ProfileFarmConfiguration configuration) {
+        this(minecraft, guard, navigationSource, configuration, null);
+    }
+
+    public LiveVanillaFarmBackend(Minecraft minecraft, ActionSessionGuard guard, NavigationSource navigationSource,
+        ProfileFarmConfiguration configuration, ConfirmedContainerTransactionExecutor transactions) {
         if (minecraft == null || guard == null || navigationSource == null || configuration == null) {
             throw new IllegalArgumentException("complete live vanilla farm dependencies are required");
         }
@@ -73,6 +86,7 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
         this.guard = guard;
         this.navigationSource = navigationSource;
         this.observer = new MinecraftVanillaFarmObserver(minecraft, configuration);
+        this.transactions = transactions;
     }
 
     @Override
@@ -222,12 +236,16 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
             .isSameSnapshot(reserve)) {
             throw new IllegalStateException("seed inventory changed after planning");
         }
-        int seedSlot = action == FarmActionKind.BREAK_AND_REPLANT ? observer.findHotbarSeed(
+        int seedSourceSlot = action == FarmActionKind.BREAK_AND_REPLANT ? observer.findSeedSlot(
             request.getDecision()
-                .getRequiredSeedFingerprint())
-            : -1;
-        if (action == FarmActionKind.BREAK_AND_REPLANT && seedSlot < 0)
-            throw new IllegalStateException("an exact approved replant seed must be present in the hotbar");
+                .getRequiredSeedFingerprint(),
+            0,
+            transactions == null ? 9 : 36) : -1;
+        if (action == FarmActionKind.BREAK_AND_REPLANT && seedSourceSlot < 0) throw new IllegalStateException(
+            "an exact approved replant seed must be present in usable player inventory");
+        int emptySeedHotbar = seedSourceSlot >= 9 ? findEmptyHotbarSlot() : -1;
+        int seedSlot = seedSourceSlot < 9 ? seedSourceSlot
+            : emptySeedHotbar >= 0 ? emptySeedHotbar : chooseEvacuationHotbarSlot();
         boolean cropsNhHarvest = action == FarmActionKind.RIGHT_CLICK_HARVEST
             && current.getFamily() == CropFamily.CROPS_NH;
         int spadeHotbarSlot = cropsNhHarvest ? findCropsNhSpade(0, 9) : -1;
@@ -258,6 +276,7 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
             lease,
             navigation,
             seedSlot,
+            seedSourceSlot,
             harvestHandSlot,
             emptyInventorySlot,
             stagedSpadeInventorySlot,
@@ -376,6 +395,8 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
         private final ActionLease lease;
         private final NavigationBackend navigation;
         private final int seedSlot;
+        private final int seedSourceSlot;
+        private ContainerTransaction seedTransaction;
         private int harvestHandSlot;
         private int emptyInventorySlot;
         private int emptyHandRecoveryAttempts;
@@ -405,12 +426,13 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
         private volatile boolean cancellationRequested;
 
         private LiveHandle(ActionRequest request, ActionLease lease, NavigationBackend navigation, int seedSlot,
-            int harvestHandSlot, int emptyInventorySlot, int stagedSpadeInventorySlot, boolean requiresEmptyHand,
-            CropObservation plannedBefore, long startedAtNanos) {
+            int seedSourceSlot, int harvestHandSlot, int emptyInventorySlot, int stagedSpadeInventorySlot,
+            boolean requiresEmptyHand, CropObservation plannedBefore, long startedAtNanos) {
             this.request = request;
             this.lease = lease;
             this.navigation = navigation;
             this.seedSlot = seedSlot;
+            this.seedSourceSlot = seedSourceSlot;
             this.harvestHandSlot = harvestHandSlot;
             this.emptyInventorySlot = emptyInventorySlot;
             this.stagedSpadeInventorySlot = stagedSpadeInventorySlot;
@@ -510,6 +532,7 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
             else if (phase == Phase.WAITING_FOR_REPOSITION) {
                 if (!tryFruitLogReposition()) skipInaccessibleFruit();
             } else if (phase == Phase.WAITING_FOR_ACTION_SESSION) beginActionWhenReady();
+            else if (phase == Phase.WAITING_FOR_SEED) awaitSeedStaging();
             else if (phase == Phase.BREAKING) breakOneTick();
             else if (phase == Phase.PLANTING) plantOnce();
             else if (phase == Phase.DISPATCHING_REPLANT) awaitReplantDispatch();
@@ -604,6 +627,20 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
                     .getMinimumReserve());
             FarmActionKind action = request.getDecision()
                 .getAction();
+            if (action == FarmActionKind.BREAK_AND_REPLANT && seedSourceSlot >= 9) {
+                try {
+                    verifier.requireCurrent(
+                        request.getDecision(),
+                        current,
+                        reserve,
+                        request.getDecision()
+                            .getRequiredSeedFingerprint());
+                    beginSeedStaging();
+                } catch (RuntimeException changed) {
+                    fail("Cannot prepare the replant seed: " + changed.getMessage());
+                }
+                return;
+            }
             if (action == FarmActionKind.BREAK_AND_REPLANT && observer.findHotbarSeed(
                 request.getDecision()
                     .getRequiredSeedFingerprint())
@@ -636,6 +673,10 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
                 else prepareEmptyHand();
                 return;
             }
+            beginBreakingCrop();
+        }
+
+        private void beginBreakingCrop() {
             ClientBootstrap.blockDamageShield()
                 .acquire(request.getRequestId());
             phase = Phase.BREAKING;
@@ -647,6 +688,67 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
                 .getTarget();
             minecraft.playerController.clickBlock(target.getX(), target.getY(), target.getZ(), targetSide());
             trace("break-start", "target", target);
+        }
+
+        private void beginSeedStaging() {
+            if (transactions == null || minecraft.thePlayer.openContainer != minecraft.thePlayer.inventoryContainer
+                || minecraft.thePlayer.inventory.getItemStack() != null
+                || observer.findSeedSlot(
+                    request.getDecision()
+                        .getRequiredSeedFingerprint(),
+                    9,
+                    36) != seedSourceSlot)
+                throw new IllegalStateException("The reserved seed moved or another inventory is open");
+            guard.begin(lease);
+            ownsActionSession = true;
+            ContainerSnapshot before = inventorySnapshots.captureCurrent(minecraft, 0L);
+            seedTransaction = PlayerInventoryHotbarSwap
+                .plan(request.getRequestId() + "-seed-stage", lease.getEpoch(), before, seedSourceSlot, seedSlot);
+            transactions.begin(seedTransaction);
+            phase = Phase.WAITING_FOR_SEED;
+            detail = "Waiting for the server to confirm the replant seed in the hotbar";
+        }
+
+        private void awaitSeedStaging() {
+            if (seedTransaction == null || !guard.isActiveLease(lease)) {
+                fail("Seed staging lost its inventory session");
+                return;
+            }
+            if (seedTransaction.getState() == ContainerTransactionState.ABORTED) {
+                fail("Seed staging was not confirmed: " + seedTransaction.getAbortReason());
+                return;
+            }
+            if (seedTransaction.getState() != ContainerTransactionState.COMPLETED) return;
+            try {
+                ContainerSnapshot expected = seedTransaction.getClicks()
+                    .get(0)
+                    .getExpectedAfter();
+                ContainerSnapshot currentInventory = inventorySnapshots
+                    .captureCurrent(minecraft, expected.getRevision());
+                CropObservation current = observer.observeRequired(
+                    request.getDecision()
+                        .getTarget());
+                SeedReserveEvidence reserve = observer.reserve(
+                    request.getPassRevision(),
+                    request.getDecision()
+                        .getRequiredSeedFingerprint(),
+                    request.getDecision()
+                        .getReserveEvidence()
+                        .getMinimumReserve());
+                verifier.requireCurrentAfterVerifiedSeedSwap(
+                    request.getDecision(),
+                    current,
+                    reserve,
+                    observer.hotbarMaterialIdentity(seedSlot),
+                    seedTransaction,
+                    currentInventory);
+                if (!canReachCrop()) throw new IllegalStateException("Crop left reach while preparing its seed");
+                seedTransaction = null;
+                // Keep the confirmed seed stack in the hotbar for subsequent crops in the same pass.
+                beginBreakingCrop();
+            } catch (RuntimeException changed) {
+                fail("Crop or inventory changed during seed preparation: " + changed.getMessage());
+            }
         }
 
         private boolean refreshEmptyHandPlan() {
@@ -1302,6 +1404,10 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
         }
 
         private void stopActionSession() {
+            if (seedTransaction != null) {
+                transactions.cancel(seedTransaction, "farm seed preparation ended");
+                seedTransaction = null;
+            }
             restoreSlot();
             if (spadeStaged) {
                 try {
@@ -1427,6 +1533,7 @@ public final class LiveVanillaFarmBackend implements FarmBackend {
     }
 
     private enum Phase {
+        WAITING_FOR_SEED,
         WAITING_FOR_REPOSITION,
         APPROACHING,
         WAITING_FOR_ACTION_SESSION,

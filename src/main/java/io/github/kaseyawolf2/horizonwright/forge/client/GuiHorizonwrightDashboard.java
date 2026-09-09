@@ -400,7 +400,7 @@ public final class GuiHorizonwrightDashboard extends GuiReadableScreen {
             0xFFB8C8DE);
         drawString(
             fontRendererObj,
-            truncate(operatorMessage, 58),
+            truncate(operatorMessage.isEmpty() ? inventoryStatus(runtime) : operatorMessage, 58),
             left + 16,
             top + 224,
             operatorMessage.toLowerCase()
@@ -423,6 +423,16 @@ public final class GuiHorizonwrightDashboard extends GuiReadableScreen {
                 mouseY,
                 fontRendererObj);
         }
+    }
+
+    private static String inventoryStatus(HorizonwrightRuntime runtime) {
+        io.github.kaseyawolf2.horizonwright.runtime.task.InventoryService service = runtime.getTaskServices()
+            .getInventoryService();
+        return service instanceof io.github.kaseyawolf2.horizonwright.forge.client.inventory.LiveExtendedInventoryService
+            ? "Inventory: "
+                + ((io.github.kaseyawolf2.horizonwright.forge.client.inventory.LiveExtendedInventoryService) service)
+                    .diagnostic()
+            : "";
     }
 
     private void drawUnavailableScreen(int mouseX, int mouseY, float partialTicks, String diagnostic) {

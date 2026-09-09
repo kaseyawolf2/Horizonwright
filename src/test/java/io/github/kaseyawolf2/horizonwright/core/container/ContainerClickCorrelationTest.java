@@ -14,6 +14,26 @@ public class ContainerClickCorrelationTest {
     private static final ItemFingerprint ORE = new ItemFingerprint("gregtech:ore", 4, "ore-data", 16);
 
     @Test
+    public void acceptedClickTimeoutIdentifiesTheInventoryMismatchWithoutReplay() {
+        ContainerSnapshot before = snapshot(10L, ORE, null);
+        ContainerSnapshot after = snapshot(11L, null, ORE);
+        ContainerClickCorrelation correlation = correlation(before, after);
+        correlation.prepare(before, 41L, 100L, 50L);
+        correlation.observeWrite(7, 0, 0, 1, (short) 23, 101L);
+        correlation.observeConfirmation(7, (short) 23, true, 102L);
+        assertFalse(correlation.observeSynchronizedSnapshot(snapshot(11L, ORE, null), 41L, 103L));
+        assertTrue(correlation.expire(151L));
+        String reason = correlation.getTransaction()
+            .getAbortReason();
+        assertTrue(reason.contains("server accepted the click"));
+        assertTrue(reason.contains("slot 0 expected empty observed gregtech:ore:4 x16"));
+        assertTrue(reason.contains("slot 1 expected gregtech:ore:4 x16"));
+        assertFalse(
+            correlation.prepare(before, 41L, 152L, 50L)
+                .isPresent());
+    }
+
+    @Test
     public void requiresExactWriteAcceptedConfirmationAndSynchronizedSnapshot() {
         ContainerSnapshot before = snapshot(10L, ORE, null);
         ContainerSnapshot after = snapshot(11L, null, ORE);

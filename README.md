@@ -5,6 +5,12 @@ is intended to own long-running task orchestration, safety, logistics,
 persistence, and its local dashboard while treating navigation as a private,
 replaceable capability.
 
+Shared extended-inventory preparation now integrates carried Adventure Backpacks,
+Forestry backpacks, ModdedNetwork/Eydamos backpacks and AE2 wireless terminals.
+Tasks retrieve working supplies, pack eligible surplus and drain bag cargo through
+the existing final-storage unload workflow. See [extended inventories](docs/extended-inventories.md)
+for supported versions, usage, transaction behavior and the current validation limits.
+
 The repository has completed the **Milestone 1 task-control vertical slice**
 and is integrating **Milestone 2 item-preservation safety**. It contains the
 independent Forge entry point, dashboard, resumable task controller, per-world

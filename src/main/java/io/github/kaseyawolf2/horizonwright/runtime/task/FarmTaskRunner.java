@@ -60,6 +60,11 @@ final class FarmTaskRunner implements TaskRunner {
     }
 
     @Override
+    public synchronized boolean isInventoryPreparationSafe() {
+        return activeHandle == null && activeLease == null;
+    }
+
+    @Override
     public synchronized StepResult step(TaskStepContext context) {
         requireContext(context);
         if (context.isSuspensionRequested()) return suspend(context);
@@ -370,7 +375,8 @@ final class FarmTaskRunner implements TaskRunner {
                     ActionCapability.LOOK,
                     ActionCapability.DIG,
                     ActionCapability.PLACE,
-                    ActionCapability.HELD_USE));
+                    ActionCapability.HELD_USE,
+                    ActionCapability.CONTAINER));
         }
         if (action == FarmActionKind.RIGHT_CLICK_HARVEST) {
             return Collections.unmodifiableSet(

@@ -5,6 +5,9 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertThrows;
 
+import java.util.LinkedHashMap;
+import java.util.Map;
+
 import org.junit.After;
 import org.junit.Test;
 
@@ -28,6 +31,81 @@ import io.github.kaseyawolf2.horizonwright.core.task.TaskState;
 public class ExcavationServiceCoordinatorTest {
 
     private TaskOrchestrator controller;
+
+    @Test
+    public void pendingInventoryRecoveryBeforeFirstExcavationObservationDoesNotCreateAServiceChild() {
+        TaskSpec spec = ExcavationTask.cleanVolumeCylinder(
+            "inventory-recovery",
+            0,
+            8,
+            8,
+            1,
+            12,
+            12,
+            ExcavationServicePolicy.unloadOnly("mining", "ore-chest"));
+        controller = new TaskOrchestrator(
+            new FixedClock(),
+            (task,
+                checkpoint) -> context -> StepResult.blocked(
+                    context.getActionEpoch(),
+                    checkpoint,
+                    BlockedReason
+                        .missingRequirement("inventory recovery", task.getId(), "inventory evidence", "resume")),
+            new InMemoryActionBroker());
+        controller.restore(spec, inventoryEnvelope(TaskCheckpoint.empty(), true));
+        ControllerSnapshot blocked = controller.tick();
+        assertEquals(TaskState.BLOCKED, task(blocked, spec.getId()).getState());
+        assertEquals(0, new ExcavationServiceCoordinator(controller).coordinate(blocked));
+        assertEquals(
+            1,
+            controller.snapshot()
+                .getTasks()
+                .size());
+    }
+
+    @Test
+    public void inventoryEnvelopeUsesTheInnerExcavationRevisionForLinkedServiceTasks() {
+        TaskSpec spec = ExcavationTask.cleanVolumeCylinder(
+            "inventory-envelope",
+            0,
+            8,
+            8,
+            1,
+            12,
+            12,
+            ExcavationServicePolicy.unloadOnly("mining", "ore-chest"));
+        controller = new TaskOrchestrator(new FixedClock(), (task, checkpoint) -> context -> {
+            CylinderExcavationSpec cylinder = ExcavationTask.parse(task);
+            ExcavationCheckpoint start = ExcavationCheckpoint.start(cylinder, 1L, context.getActionEpoch());
+            ExcavationCheckpoint suspended = ExcavationCheckpoint.restore(
+                cylinder,
+                start.getTaskRevision(),
+                start.getActionEpoch(),
+                start.getFrontier(),
+                start.getProgress(),
+                ExcavationSuspensionReason.UNLOADING_REQUIRED);
+            return StepResult.blocked(
+                context.getActionEpoch(),
+                inventoryEnvelope(ExcavationTaskCheckpointCodec.encode(cylinder, suspended), false),
+                BlockedReason.missingRequirement("unloading required", task.getId(), "storage", "wait"));
+        }, new InMemoryActionBroker());
+        controller.submit(spec);
+        ControllerSnapshot blocked = controller.tick();
+        assertEquals(1, new ExcavationServiceCoordinator(controller).coordinate(blocked));
+        String expected = ExcavationServiceCoordinator
+            .childId(spec.getId(), 1L, ExcavationSuspensionReason.UNLOADING_REQUIRED);
+        assertNotNull(task(controller.snapshot(), expected));
+    }
+
+    private static TaskCheckpoint inventoryEnvelope(TaskCheckpoint inner, boolean preparing) {
+        Map<String, String> values = new LinkedHashMap<>(inner.getValues());
+        values.put("horizonwright.inventory.version", "1");
+        values.put("horizonwright.inventory.delegateRevision", Long.toString(inner.getRevision()));
+        values.put("horizonwright.inventory.preparing", Boolean.toString(preparing));
+        values.put("horizonwright.inventory.completingUnload", "false");
+        values.put("horizonwright.inventory.completionDetail", "");
+        return new TaskCheckpoint(inner.getRevision() + 10L, values);
+    }
 
     @After
     public void closeController() {

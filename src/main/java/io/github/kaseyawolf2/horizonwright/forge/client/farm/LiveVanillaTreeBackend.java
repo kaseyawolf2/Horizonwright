@@ -4,11 +4,14 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.EnumSet;
 import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.TimeUnit;
 
 import net.minecraft.block.Block;
 import net.minecraft.client.Minecraft;
 import net.minecraft.entity.player.EntityPlayer;
+import net.minecraft.item.Item;
+import net.minecraft.item.ItemStack;
 import net.minecraft.util.MovingObjectPosition;
 import net.minecraft.util.Vec3;
 
@@ -23,6 +26,10 @@ import io.github.kaseyawolf2.horizonwright.core.base.TreeActionKind;
 import io.github.kaseyawolf2.horizonwright.core.base.TreeObservation;
 import io.github.kaseyawolf2.horizonwright.core.base.TreeObservationState;
 import io.github.kaseyawolf2.horizonwright.core.base.TreeWorkCheckpoint;
+import io.github.kaseyawolf2.horizonwright.core.container.ContainerSnapshot;
+import io.github.kaseyawolf2.horizonwright.core.container.ContainerTransaction;
+import io.github.kaseyawolf2.horizonwright.core.container.ContainerTransactionState;
+import io.github.kaseyawolf2.horizonwright.core.container.ItemFingerprint;
 import io.github.kaseyawolf2.horizonwright.core.navigation.BackendAvailability;
 import io.github.kaseyawolf2.horizonwright.core.navigation.NavigationBackend;
 import io.github.kaseyawolf2.horizonwright.core.navigation.NavigationHandle;
@@ -31,6 +38,8 @@ import io.github.kaseyawolf2.horizonwright.core.navigation.NavigationRequest;
 import io.github.kaseyawolf2.horizonwright.core.navigation.NavigationState;
 import io.github.kaseyawolf2.horizonwright.forge.client.ClientBootstrap;
 import io.github.kaseyawolf2.horizonwright.forge.client.MinecraftRuntimeAccess;
+import io.github.kaseyawolf2.horizonwright.forge.client.container.ConfirmedContainerTransactionExecutor;
+import io.github.kaseyawolf2.horizonwright.forge.client.container.MinecraftContainerSnapshotter;
 import io.github.kaseyawolf2.horizonwright.forge.client.excavation.ExcavationTargetOverlay;
 import io.github.kaseyawolf2.horizonwright.forge.client.network.ActionPacketDispatch;
 import io.github.kaseyawolf2.horizonwright.runtime.task.FarmBackend;
@@ -49,7 +58,8 @@ public final class LiveVanillaTreeBackend implements TreeBackend {
         ActionCapability.LOOK,
         ActionCapability.DIG,
         ActionCapability.PLACE,
-        ActionCapability.HELD_USE);
+        ActionCapability.HELD_USE,
+        ActionCapability.CONTAINER);
     private static final EnumSet<ActionCapability> PLANT = EnumSet.of(
         ActionCapability.MOVEMENT,
         ActionCapability.LOOK,
@@ -65,10 +75,17 @@ public final class LiveVanillaTreeBackend implements TreeBackend {
     private final ActionSessionGuard guard;
     private final NavigationSource navigationSource;
     private final MinecraftVanillaTreeObserver observer;
+    private final ConfirmedContainerTransactionExecutor transactions;
+    private final MinecraftContainerSnapshotter inventorySnapshots = new MinecraftContainerSnapshotter();
     private LiveHandle active;
 
     public LiveVanillaTreeBackend(Minecraft minecraft, ActionSessionGuard guard, NavigationSource navigationSource,
         ProfileFarmConfiguration configuration) {
+        this(minecraft, guard, navigationSource, configuration, null);
+    }
+
+    public LiveVanillaTreeBackend(Minecraft minecraft, ActionSessionGuard guard, NavigationSource navigationSource,
+        ProfileFarmConfiguration configuration, ConfirmedContainerTransactionExecutor transactions) {
         if (minecraft == null || guard == null || navigationSource == null || configuration == null) {
             throw new IllegalArgumentException("complete live vanilla-tree dependencies are required");
         }
@@ -76,6 +93,7 @@ public final class LiveVanillaTreeBackend implements TreeBackend {
         this.guard = guard;
         this.navigationSource = navigationSource;
         this.observer = new MinecraftVanillaTreeObserver(minecraft, configuration);
+        this.transactions = transactions;
     }
 
     @Override
@@ -248,6 +266,13 @@ public final class LiveVanillaTreeBackend implements TreeBackend {
         private int verifiedSide = 1;
         private int saplingSourceSlot = -1;
         private int saplingHotbarSlot = -1;
+        private ItemFingerprint saplingDisplaced;
+        private int stagedToolSource = -1;
+        private int stagedToolHotbar = -1;
+        private Item stagedToolItem;
+        private ItemFingerprint stagedToolDisplaced;
+        private ContainerTransaction toolTransaction;
+        private long inventoryRevision;
         private String pendingApproachReason;
         private int[][] standBackPositions;
         private TreeObservation confirmedAfter;
@@ -293,12 +318,16 @@ public final class LiveVanillaTreeBackend implements TreeBackend {
             if (phase == Phase.APPROACHING) pollApproach();
             else if (phase == Phase.WAITING_FOR_NAVIGATION) startPendingApproach();
             else if (phase == Phase.WAITING_FOR_SESSION) beginActionWhenReady();
+            else if (phase == Phase.WAITING_FOR_TOOL || phase == Phase.RETURNING_TOOL) pollToolTransfer();
             else if (phase == Phase.DIGGING) digOneTick();
             else if (phase == Phase.WAITING_FOR_DRAIN) continueAfterDrain();
             else if (phase == Phase.CONFIRMING) confirmMutation();
             else if (phase == Phase.FINAL_DRAIN && guard.isReadyForSession()) {
                 state = ActionState.CONFIRMED;
-                detail = "Exact replacement sapling is confirmed";
+                detail = request.getDecision()
+                    .getAction() == TreeActionKind.FELL_CAPTURED_BLOCKS
+                        ? "Captured tree logs and tool inventory are confirmed"
+                        : "Exact replacement sapling is confirmed";
                 clearActive(this);
             }
             return snapshot();
@@ -500,7 +529,26 @@ public final class LiveVanillaTreeBackend implements TreeBackend {
             ownsSession = true;
             ClientBootstrap.blockDamageShield()
                 .acquire(request.getRequestId());
-            selectBestTool(target);
+            if (selectBestTool(target)) return;
+            startDiggingWithSelectedTool();
+        }
+
+        private void startDiggingWithSelectedTool() {
+            if (minecraft.theWorld.isAirBlock(target.getX(), target.getY(), target.getZ())) {
+                stopSession();
+                nextLog++;
+                phase = Phase.WAITING_FOR_DRAIN;
+                return;
+            }
+            if (!observer.hasExpectedLog(target, work.getRequiredSaplingFingerprint())) {
+                fail("Tree log changed while staging its tool");
+                return;
+            }
+            if (!canReachBlock(target)) {
+                stopSession();
+                submitApproach("Reapproaching after tree tool staging");
+                return;
+            }
             aimAt(target);
             minecraft.playerController.clickBlock(target.getX(), target.getY(), target.getZ(), verifiedSide);
             phase = Phase.DIGGING;
@@ -580,6 +628,8 @@ public final class LiveVanillaTreeBackend implements TreeBackend {
                     return;
                 }
                 saplingHotbarSlot = chooseStagingHotbarSlot();
+                saplingDisplaced = inventorySnapshots
+                    .fingerprint(minecraft.thePlayer.inventory.mainInventory[saplingHotbarSlot]);
                 minecraft.playerController.windowClick(
                     minecraft.thePlayer.openContainer.windowId,
                     saplingSourceSlot,
@@ -712,6 +762,10 @@ public final class LiveVanillaTreeBackend implements TreeBackend {
                 }
                 trace("postcondition-confirmed", "expected", expected);
                 confirmedAfter = after;
+                if (expected == TreeObservationState.FELLED_CLEAR && stagedToolSource >= 9) {
+                    beginToolReturn();
+                    return;
+                }
                 if (expected == TreeObservationState.SAPLING_PLANTED) {
                     stopSession();
                     phase = Phase.FINAL_DRAIN;
@@ -727,10 +781,18 @@ public final class LiveVanillaTreeBackend implements TreeBackend {
             }
         }
 
-        private void selectBestTool(BasePosition position) {
+        private boolean selectBestTool(BasePosition position) {
+            if (stagedToolSource >= 9) {
+                ItemStack staged = minecraft.thePlayer.inventory.mainInventory[stagedToolHotbar];
+                if (staged == null || staged.getItem() != stagedToolItem || broken(staged))
+                    throw new IllegalStateException("The staged tree tool changed or became unusable");
+                selectHotbar(stagedToolHotbar);
+                return false;
+            }
             Block targetBlock = MinecraftRuntimeAccess
                 .block(minecraft.theWorld, position.getX(), position.getY(), position.getZ());
             int previous = minecraft.thePlayer.inventory.currentItem;
+            ItemStack previousStack = minecraft.thePlayer.inventory.mainInventory[previous];
             int bestSlot = previous;
             double bestCost = Double.POSITIVE_INFINITY;
             int logs = 0, cubeLogs = 0, highLogs = 0;
@@ -742,74 +804,176 @@ public final class LiveVanillaTreeBackend implements TreeBackend {
                 if (log.getY() > minecraft.thePlayer.boundingBox.minY + 3D) highLogs++;
             }
             try {
-                for (int slot = 0; slot < 9; slot++) {
-                    minecraft.thePlayer.inventory.currentItem = slot;
-                    float progress = targetBlock.getPlayerRelativeBlockHardness(
-                        minecraft.thePlayer,
-                        minecraft.theWorld,
-                        position.getX(),
-                        position.getY(),
-                        position.getZ());
-                    net.minecraft.item.ItemStack stack = minecraft.thePlayer.getHeldItem();
-                    if (stack != null && stack.hasTagCompound()
-                        && stack.getTagCompound()
-                            .getCompoundTag("InfiTool")
-                            .getBoolean("Broken"))
-                        continue;
-                    boolean lumber = stack != null && !minecraft.thePlayer.isSneaking()
-                        && stack.getItem()
-                            .getClass()
-                            .getName()
-                            .equals("tconstruct.items.tools.LumberAxe");
-                    boolean wholeTree = false;
-                    if (lumber) {
-                        try {
-                            wholeTree = (Boolean) stack.getItem()
+                for (int slot = 0; slot < (transactions == null ? 9 : 36); slot++) {
+                    ItemStack candidate = minecraft.thePlayer.inventory.mainInventory[slot];
+                    minecraft.thePlayer.inventory.currentItem = slot < 9 ? slot : previous;
+                    if (slot >= 9) minecraft.thePlayer.inventory.mainInventory[previous] = candidate;
+                    try {
+                        float progress = targetBlock.getPlayerRelativeBlockHardness(
+                            minecraft.thePlayer,
+                            minecraft.theWorld,
+                            position.getX(),
+                            position.getY(),
+                            position.getZ());
+                        net.minecraft.item.ItemStack stack = minecraft.thePlayer.getHeldItem();
+                        if (stack != null && stack.hasTagCompound()
+                            && stack.getTagCompound()
+                                .getCompoundTag("InfiTool")
+                                .getBoolean("Broken"))
+                            continue;
+                        boolean lumber = stack != null && !minecraft.thePlayer.isSneaking()
+                            && stack.getItem()
                                 .getClass()
-                                .getMethod(
-                                    "detectTree",
-                                    net.minecraft.world.World.class,
-                                    int.class,
-                                    int.class,
-                                    int.class)
-                                .invoke(null, minecraft.theWorld, position.getX(), position.getY(), position.getZ());
-                        } catch (ReflectiveOperationException unavailable) {
-                            trace("lumber-detection-unavailable", "reason", unavailable.toString());
+                                .getName()
+                                .equals("tconstruct.items.tools.LumberAxe");
+                        boolean wholeTree = false;
+                        if (lumber) {
+                            try {
+                                wholeTree = (Boolean) stack.getItem()
+                                    .getClass()
+                                    .getMethod(
+                                        "detectTree",
+                                        net.minecraft.world.World.class,
+                                        int.class,
+                                        int.class,
+                                        int.class)
+                                    .invoke(
+                                        null,
+                                        minecraft.theWorld,
+                                        position.getX(),
+                                        position.getY(),
+                                        position.getZ());
+                            } catch (ReflectiveOperationException unavailable) {
+                                trace("lumber-detection-unavailable", "reason", unavailable.toString());
+                            }
                         }
-                    }
-                    double cost = TreeToolCost
-                        .estimate(progress, Math.max(1, logs), cubeLogs, highLogs, lumber, wholeTree);
-                    trace(
-                        "tool-cost",
-                        "slot",
-                        slot,
-                        "progress",
-                        progress,
-                        "logs",
-                        logs,
-                        "cubeLogs",
-                        cubeLogs,
-                        "highLogs",
-                        highLogs,
-                        "lumber",
-                        lumber,
-                        "wholeTree",
-                        wholeTree,
-                        "estimatedTicks",
-                        cost);
-                    if (cost < bestCost) {
-                        bestCost = cost;
-                        bestSlot = slot;
+                        double cost = TreeToolCost
+                            .estimate(progress, Math.max(1, logs), cubeLogs, highLogs, lumber, wholeTree);
+                        trace(
+                            "tool-cost",
+                            "slot",
+                            slot,
+                            "progress",
+                            progress,
+                            "logs",
+                            logs,
+                            "cubeLogs",
+                            cubeLogs,
+                            "highLogs",
+                            highLogs,
+                            "lumber",
+                            lumber,
+                            "wholeTree",
+                            wholeTree,
+                            "estimatedTicks",
+                            cost);
+                        if (cost < bestCost) {
+                            bestCost = cost;
+                            bestSlot = slot;
+                        }
+                    } finally {
+                        minecraft.thePlayer.inventory.mainInventory[previous] = previousStack;
                     }
                 }
             } finally {
                 minecraft.thePlayer.inventory.currentItem = previous;
+                minecraft.thePlayer.inventory.mainInventory[previous] = previousStack;
             }
-            if (bestSlot != previous) {
-                minecraft.thePlayer.inventory.currentItem = bestSlot;
-                minecraft.playerController.updateController();
-                toolSlotChanged = true;
+            if (bestSlot >= 9) {
+                requireToolInventory();
+                stagedToolSource = bestSlot;
+                stagedToolHotbar = chooseStagingHotbarSlot();
+                stagedToolItem = minecraft.thePlayer.inventory.mainInventory[bestSlot].getItem();
+                stagedToolDisplaced = inventorySnapshots
+                    .fingerprint(minecraft.thePlayer.inventory.mainInventory[stagedToolHotbar]);
+                toolTransaction = toolSwap("stage");
+                transactions.begin(toolTransaction);
+                phase = Phase.WAITING_FOR_TOOL;
+                detail = "Waiting for the server to confirm the tree tool in the hotbar";
+                return true;
             }
+            selectHotbar(bestSlot);
+            return false;
+        }
+
+        private void selectHotbar(int slot) {
+            if (minecraft.thePlayer.inventory.currentItem == slot) return;
+            minecraft.thePlayer.inventory.currentItem = slot;
+            minecraft.playerController.updateController();
+            toolSlotChanged = true;
+        }
+
+        private void requireToolInventory() {
+            if (transactions == null || !lease.isValid()
+                || !guard.isActiveLease(lease)
+                || !lease.getCapabilities()
+                    .contains(ActionCapability.CONTAINER)
+                || minecraft.thePlayer.openContainer != minecraft.thePlayer.inventoryContainer
+                || minecraft.thePlayer.inventory.getItemStack() != null)
+                throw new IllegalStateException("Tree tool staging requires an owned player inventory session");
+        }
+
+        private ContainerTransaction toolSwap(String action) {
+            requireToolInventory();
+            ContainerSnapshot before = inventorySnapshots.captureCurrent(minecraft, inventoryRevision++);
+            return PlayerInventoryHotbarSwap.plan(
+                request.getRequestId() + "-tool-" + action + "-" + inventoryRevision,
+                lease.getEpoch(),
+                before,
+                stagedToolSource,
+                stagedToolHotbar);
+        }
+
+        private void pollToolTransfer() {
+            if (toolTransaction == null || !guard.isActiveLease(lease)) {
+                fail("Tree tool transaction lost its inventory session");
+                return;
+            }
+            if (toolTransaction.getState() == ContainerTransactionState.ABORTED) {
+                fail("Tree tool transfer was not confirmed: " + toolTransaction.getAbortReason());
+                return;
+            }
+            if (toolTransaction.getState() != ContainerTransactionState.COMPLETED) return;
+            toolTransaction = null;
+            if (phase == Phase.RETURNING_TOOL) {
+                stagedToolSource = -1;
+                stopSession();
+                phase = Phase.FINAL_DRAIN;
+                detail = "Tree tool returned; waiting for inventory cleanup";
+            } else {
+                selectHotbar(stagedToolHotbar);
+                startDiggingWithSelectedTool();
+            }
+        }
+
+        private void beginToolReturn() {
+            if (!guard.isReadyForSession()) {
+                detail = "Waiting to return the staged tree tool";
+                return;
+            }
+            ItemStack staged = minecraft.thePlayer.inventory.mainInventory[stagedToolHotbar];
+            if (!Objects.equals(
+                stagedToolDisplaced,
+                inventorySnapshots.fingerprint(minecraft.thePlayer.inventory.mainInventory[stagedToolSource]))
+                || staged != null && staged.getItem() != stagedToolItem) {
+                // Drops may have filled the vacated source slot. Keep both synchronized stacks where they are.
+                stagedToolSource = -1;
+                phase = Phase.FINAL_DRAIN;
+                detail = "Tree is clear; retained the staged tool because inventory contents changed";
+                return;
+            }
+            guard.begin(lease);
+            ownsSession = true;
+            toolTransaction = toolSwap("return");
+            transactions.begin(toolTransaction);
+            phase = Phase.RETURNING_TOOL;
+            detail = "Tree is clear; waiting for the server to confirm tool storage";
+        }
+
+        private boolean broken(ItemStack stack) {
+            return stack.hasTagCompound() && stack.getTagCompound()
+                .getCompoundTag("InfiTool")
+                .getBoolean("Broken");
         }
 
         private int chooseStagingHotbarSlot() {
@@ -820,8 +984,16 @@ public final class LiveVanillaTreeBackend implements TreeBackend {
 
         private void returnStagedSapling() {
             if (!inventoryStaged) return;
-            if (minecraft.thePlayer.inventory.getItemStack() != null
+            if (!lease.isValid() || !guard.isActiveLease(lease)
+                || minecraft.thePlayer.inventory.getItemStack() != null
                 || minecraft.thePlayer.openContainer != minecraft.thePlayer.inventoryContainer) return;
+            if (!Objects.equals(
+                saplingDisplaced,
+                inventorySnapshots.fingerprint(minecraft.thePlayer.inventory.mainInventory[saplingSourceSlot]))) return;
+            ItemStack remaining = minecraft.thePlayer.inventory.mainInventory[saplingHotbarSlot];
+            if (remaining != null && !work.getRequiredSaplingFingerprint()
+                .equals(MinecraftVanillaFarmObserver.materialIdentity(inventorySnapshots.fingerprint(remaining))))
+                return;
             minecraft.playerController.windowClick(
                 minecraft.thePlayer.openContainer.windowId,
                 saplingSourceSlot,
@@ -903,6 +1075,10 @@ public final class LiveVanillaTreeBackend implements TreeBackend {
         }
 
         private void stopSession() {
+            if (toolTransaction != null) {
+                transactions.cancel(toolTransaction, "tree tool action ended");
+                toolTransaction = null;
+            }
             ClientBootstrap.blockDamageShield()
                 .release(request.getRequestId());
             minecraft.playerController.resetBlockRemoving();
@@ -991,6 +1167,8 @@ public final class LiveVanillaTreeBackend implements TreeBackend {
     }
 
     private enum Phase {
+        WAITING_FOR_TOOL,
+        RETURNING_TOOL,
         WAITING_FOR_NAVIGATION,
         APPROACHING,
         WAITING_FOR_SESSION,

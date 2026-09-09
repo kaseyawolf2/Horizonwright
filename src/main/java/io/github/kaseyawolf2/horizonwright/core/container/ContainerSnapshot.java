@@ -69,6 +69,47 @@ public final class ContainerSnapshot {
             && slots.size() == other.slots.size();
     }
 
+    /** Bounded diagnostic containing item identities and hashes, never raw item NBT. */
+    public String describeDifference(ContainerSnapshot observed) {
+        if (!sameIdentityAndLayout(observed)) return "container identity or layout differs";
+        StringBuilder differences = new StringBuilder();
+        int count = 0;
+        for (int slot = 0; slot < slots.size(); slot++) {
+            if (Objects.equals(slots.get(slot), observed.slots.get(slot))) continue;
+            if (count++ >= 4) {
+                differences.append("; additional slots differ");
+                break;
+            }
+            if (differences.length() > 0) differences.append("; ");
+            differences.append("slot ")
+                .append(slot)
+                .append(" expected ")
+                .append(describe(slots.get(slot)))
+                .append(" observed ")
+                .append(describe(observed.slots.get(slot)));
+        }
+        if (!Objects.equals(cursor, observed.cursor)) {
+            if (differences.length() > 0) differences.append("; ");
+            differences.append("cursor expected ")
+                .append(describe(cursor))
+                .append(" observed ")
+                .append(describe(observed.cursor));
+        }
+        if (revision != observed.revision) differences.append("; snapshot revision differs");
+        return differences.length() == 0 ? "none" : differences.toString();
+    }
+
+    private static String describe(ItemFingerprint item) {
+        if (item == null) return "empty";
+        String hash = item.getDataHash();
+        return item.getItemId() + ":"
+            + item.getMetadata()
+            + " x"
+            + item.getCount()
+            + " NBT="
+            + hash.substring(0, Math.min(hash.length(), 12));
+    }
+
     @Override
     public boolean equals(Object other) {
         if (this == other) {

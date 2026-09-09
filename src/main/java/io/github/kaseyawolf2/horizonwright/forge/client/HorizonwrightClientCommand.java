@@ -119,6 +119,16 @@ public final class HorizonwrightClientCommand extends CommandBase {
             return;
         }
         HorizonwrightRuntime runtime = resolution.getRuntime();
+        if ("inventory".equals(subcommand)) {
+            io.github.kaseyawolf2.horizonwright.runtime.task.InventoryService inventory = runtime.getTaskServices()
+                .getInventoryService();
+            if (inventory instanceof io.github.kaseyawolf2.horizonwright.forge.client.inventory.LiveExtendedInventoryService) {
+                for (String line : ((io.github.kaseyawolf2.horizonwright.forge.client.inventory.LiveExtendedInventoryService) inventory)
+                    .describeInventories())
+                    sender.addChatMessage(new ChatComponentText(EnumChatFormatting.GRAY + line));
+            } else sender.addChatMessage(new ChatComponentText("Extended inventory service is unavailable."));
+            return;
+        }
         if ("status".equals(subcommand)) {
             showStatus(sender, runtime);
             return;
@@ -230,7 +240,8 @@ public final class HorizonwrightClientCommand extends CommandBase {
     }
 
     private static boolean isRuntimeCommand(String subcommand) {
-        return "status".equals(subcommand) || "task".equals(subcommand)
+        return "inventory".equals(subcommand) || "status".equals(subcommand)
+            || "task".equals(subcommand)
             || "goto".equals(subcommand)
             || "excavate".equals(subcommand)
             || "farm".equals(subcommand)
@@ -289,6 +300,7 @@ public final class HorizonwrightClientCommand extends CommandBase {
                 "profile",
                 "debug",
                 "status",
+                "inventory",
                 "task",
                 "goto",
                 "excavate",

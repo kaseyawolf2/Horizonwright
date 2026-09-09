@@ -4,6 +4,9 @@ import io.github.kaseyawolf2.horizonwright.core.base.CropObservation;
 import io.github.kaseyawolf2.horizonwright.core.base.FarmActionKind;
 import io.github.kaseyawolf2.horizonwright.core.base.FarmDecision;
 import io.github.kaseyawolf2.horizonwright.core.base.SeedReserveEvidence;
+import io.github.kaseyawolf2.horizonwright.core.container.ContainerSnapshot;
+import io.github.kaseyawolf2.horizonwright.core.container.ContainerTransaction;
+import io.github.kaseyawolf2.horizonwright.core.container.ContainerTransactionState;
 
 /** Minecraft-independent last-moment and post-action proof checks for vanilla harvesting. */
 final class VanillaFarmMutationVerifier {
@@ -48,5 +51,31 @@ final class VanillaFarmMutationVerifier {
                 .equals(after.getObservationFingerprint())) {
             throw new IllegalStateException("replacement crop does not satisfy the exact immature postcondition");
         }
+    }
+
+    /** A confirmed exact swap may change slot ordering, while material identity, quantity and reserve stay fixed. */
+    void requireCurrentAfterVerifiedSeedSwap(FarmDecision decision, CropObservation current,
+        SeedReserveEvidence reserve, String hotbarSeedFingerprint, ContainerTransaction transaction,
+        ContainerSnapshot synchronizedInventory) {
+        if (transaction == null || transaction.getState() != ContainerTransactionState.COMPLETED
+            || transaction.getClicks()
+                .size() != 1
+            || transaction.getClicks()
+                .get(0)
+                .getClickMode() != 2
+            || !transaction.getClicks()
+                .get(0)
+                .getExpectedAfter()
+                .equals(synchronizedInventory))
+            throw new IllegalStateException("The exact seed swap has not been confirmed by the server");
+        SeedReserveEvidence original = decision.getReserveEvidence();
+        if (reserve == null || !original.getSeedFingerprint()
+            .equals(reserve.getSeedFingerprint())
+            || original.getAvailableSeeds() != reserve.getAvailableSeeds()
+            || original.getMinimumReserve() != reserve.getMinimumReserve()
+            || original.getInventoryRevision() != reserve.getInventoryRevision()
+            || !reserve.canReplantAndPreserveReserve())
+            throw new IllegalStateException("The replant reserve changed during seed staging");
+        requireCurrent(decision, current, original, hotbarSeedFingerprint);
     }
 }
