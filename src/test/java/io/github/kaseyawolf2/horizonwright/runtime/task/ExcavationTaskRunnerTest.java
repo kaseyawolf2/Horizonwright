@@ -39,7 +39,89 @@ import io.github.kaseyawolf2.horizonwright.core.task.TaskState;
 
 public class ExcavationTaskRunnerTest {
 
+    @Test
+    public void periodicPickupWaitsTwoMinutesFromStartEvenAfterManyTargets() {
+        harness = new Harness();
+        harness.nowMillis = 1_000_000L;
+        harness.backend.collectDrops = true;
+        harness.controller.submit(ExcavationTask.cleanVolumeCylinder("pickup-cadence", 0, 0, 0, 10, 12, 12));
+        for (int i = 0; i < 200 && harness.backend.submissions < 21; i++) {
+            if (harness.backend.active != null) harness.backend.confirm();
+            harness.controller.tick();
+            assertTrue("Startup and 16 targets must not trigger pickup", harness.backend.collectionLease == null);
+        }
+        assertTrue(harness.backend.submissions >= 21);
+        harness.nowMillis += 119_999L;
+        harness.backend.confirm();
+        for (int i = 0; i < 5; i++) harness.controller.tick();
+        assertTrue(harness.backend.collectionLease == null);
+        harness.nowMillis++;
+        harness.backend.confirm();
+        for (int i = 0; i < 10 && harness.backend.collectionLease == null; i++) harness.controller.tick();
+        assertNotNull(harness.backend.collectionLease);
+    }
+
+    @Test
+    public void finalCollectionRetainsCheckpointAndReleasesMovementBeforeCompletion() {
+        harness = new Harness();
+        harness.backend.collectDrops = true;
+        TaskSpec spec = ExcavationTask.cleanVolumeCylinder("collect", 0, 0, 0, 0, 12, 12);
+        harness.controller.submit(spec);
+        for (int i = 0; i < 4; i++) harness.controller.tick();
+        harness.backend.confirm();
+        for (int i = 0; i < 25 && harness.backend.collectionLease == null; i++) harness.controller.tick();
+        assertNotNull(harness.backend.collectionLease);
+        assertTrue(harness.backend.collectionLease.isValid());
+        assertFalse(task(harness.controller.snapshot(), spec.getId()).getState() == TaskState.COMPLETED);
+        harness.backend.collectionDone = true;
+        for (int i = 0; i < 25; i++) harness.controller.tick();
+        assertTrue(harness.backend.collectionClosed);
+        assertFalse(harness.backend.collectionLease.isValid());
+        assertEquals(TaskState.COMPLETED, task(harness.controller.snapshot(), spec.getId()).getState());
+    }
+
+    @Test
+    public void interruptingCollectionCancelsItsMovementAndLeavesExcavationResumable() {
+        harness = new Harness();
+        harness.backend.collectDrops = true;
+        TaskSpec spec = ExcavationTask.cleanVolumeCylinder("collect-stop", 0, 0, 0, 0, 12, 12);
+        harness.controller.submit(spec);
+        for (int i = 0; i < 4; i++) harness.controller.tick();
+        harness.backend.confirm();
+        for (int i = 0; i < 25 && harness.backend.collectionLease == null; i++) harness.controller.tick();
+        assertNotNull(harness.backend.collectionLease);
+        harness.controller.pause(spec.getId());
+        for (int i = 0; i < 3; i++) harness.controller.tick();
+        assertTrue(harness.backend.collectionClosed);
+        assertFalse(harness.backend.collectionLease.isValid());
+        assertEquals(TaskState.SUSPENDED, task(harness.controller.snapshot(), spec.getId()).getState());
+    }
+
     private Harness harness;
+
+    @Test
+    public void walkingModeSubmitsNextTargetOnCleanAuditTick() {
+        harness = new Harness();
+        TaskSpec base = ExcavationTask.cleanVolumeCylinder("walking", 0, 8, 8, 2, 12, 12);
+        Map<String, String> parameters = new java.util.LinkedHashMap<>(base.getParameters());
+        parameters.put("movingMining", "true");
+        TaskSpec spec = new TaskSpec(base.getId(), base.getType(), base.getDisplayName(), base.getLane(), parameters);
+        harness.controller.submit(spec);
+        harness.controller.tick();
+        harness.controller.tick();
+        assertEquals(1, harness.backend.submissions);
+        harness.backend.confirm();
+        harness.controller.tick();
+        assertEquals(1, harness.backend.submissions);
+        harness.controller.tick();
+        assertEquals(2, harness.backend.submissions);
+        assertTrue(harness.backend.lastRequest.isMovingMining());
+        assertEquals(
+            "1",
+            task(harness.controller.snapshot(), spec.getId()).getCheckpoint()
+                .getValues()
+                .get("progress.completed"));
+    }
 
     @After
     public void closeHarness() {
@@ -568,6 +650,37 @@ public class ExcavationTaskRunnerTest {
     }
 
     @Test
+    public void missingQuarryMaterialBlocksWithoutRetryAndResumesAfterRefill() {
+        harness = new Harness();
+        harness.backend.materialAvailable = false;
+        TaskSpec spec = ExcavationTask
+            .managedQuarryCylinder("missing-ramp", 0, 8, 8, 2, 12, 12, ManagedQuarryConfiguration.defaults());
+        harness.controller.submit(spec);
+        TaskSnapshot blocked = null;
+        for (int tick = 0; tick < 6; tick++) blocked = task(harness.controller.tick(), spec.getId());
+        assertEquals(TaskState.BLOCKED, blocked.getState());
+        assertEquals(
+            BlockedCause.MISSING_REQUIREMENT,
+            blocked.getBlockedReason()
+                .get()
+                .getCause());
+        assertTrue(
+            blocked.getDetail()
+                .contains("minecraft:cobblestone"));
+        assertEquals(0, blocked.getRetryCount());
+        assertEquals(0, harness.backend.managedSubmissions);
+        assertTrue(
+            harness.broker.snapshot()
+                .getActiveOwners()
+                .isEmpty());
+
+        harness.backend.materialAvailable = true;
+        harness.controller.resume(spec.getId());
+        for (int tick = 0; tick < 6; tick++) harness.controller.tick();
+        assertEquals(1, harness.backend.managedSubmissions);
+    }
+
+    @Test
     public void managedQuarryFailsClosedWhenInfrastructureBackendIsUnavailable() {
         harness = new Harness();
         harness.backend.managedAvailable = false;
@@ -781,8 +894,9 @@ public class ExcavationTaskRunnerTest {
         private final InMemoryActionBroker broker = new InMemoryActionBroker();
         private final RecordingBackend backend = new RecordingBackend();
         private final Access access = new Access(backend);
+        private long nowMillis;
         private final TaskOrchestrator controller = new TaskOrchestrator(
-            new FixedClock(),
+            () -> nowMillis,
             new RuntimeTaskRunnerFactory(UnusedNavigationAccess.INSTANCE, access),
             broker);
 
@@ -814,8 +928,36 @@ public class ExcavationTaskRunnerTest {
 
     private static final class RecordingBackend implements ExcavationBackend {
 
+        private boolean collectDrops, collectionDone, collectionClosed;
+        private ActionLease collectionLease;
+
+        @Override
+        public boolean supportsDropCollection() {
+            return collectDrops;
+        }
+
+        @Override
+        public DropCollection collectDrops(String taskId, CylinderExcavationSpec area, ActionLease lease) {
+            collectionLease = lease;
+            return new DropCollection() {
+
+                public boolean poll() {
+                    return collectionDone;
+                }
+
+                public String detail() {
+                    return "Collecting mined items";
+                }
+
+                public void close() {
+                    collectionClosed = true;
+                }
+            };
+        }
+
         private boolean available = true;
         private boolean managedAvailable = true;
+        private boolean materialAvailable = true;
         private int observations;
         private int submissions;
         private int managedObservations;
@@ -860,7 +1002,8 @@ public class ExcavationTaskRunnerTest {
                     .getPosition(),
                 present ? request.getIntent()
                     .getApprovedMaterial() + "@0" : "minecraft:air@0",
-                present);
+                present,
+                materialAvailable);
         }
 
         @Override

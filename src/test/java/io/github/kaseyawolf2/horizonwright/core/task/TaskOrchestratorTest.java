@@ -21,6 +21,41 @@ import io.github.kaseyawolf2.horizonwright.core.action.InMemoryActionBroker;
 public class TaskOrchestratorTest {
 
     @Test
+    public void pausedSettingsUpdateIsAtomicAndRejectsStaleEditor() {
+        TaskOrchestrator orchestrator = newOrchestrator(
+            new FakeClock(),
+            (spec, checkpoint) -> context -> StepResult
+                .completed(context.getActionEpoch(), context.getCheckpoint(), "done"));
+        TaskSpec original = spec("edit", TaskLane.FALLBACK);
+        orchestrator.submit(original);
+        TaskSpec replacement = new TaskSpec(
+            "edit",
+            original.getType(),
+            "Edited",
+            TaskLane.FALLBACK,
+            original.getParameters());
+        try {
+            orchestrator.updatePaused(original, TaskCheckpoint.empty(), replacement, TaskCheckpoint.empty());
+            fail("queued edit allowed");
+        } catch (IllegalStateException expected) {}
+        orchestrator.pause("edit");
+        TaskSnapshot updated = orchestrator
+            .updatePaused(original, TaskCheckpoint.empty(), replacement, TaskCheckpoint.empty());
+        assertEquals(replacement, updated.getSpec());
+        assertEquals(TaskState.SUSPENDED, updated.getState());
+        try {
+            orchestrator.updatePaused(original, TaskCheckpoint.empty(), replacement, TaskCheckpoint.empty());
+            fail("stale edit allowed");
+        } catch (IllegalStateException expected) {}
+        assertEquals(
+            replacement,
+            orchestrator.snapshot()
+                .findTask("edit")
+                .get()
+                .getSpec());
+    }
+
+    @Test
     public void explicitRetryRestoresFailedTaskToItsLaneWithoutDuplicatingIt() {
         FakeClock clock = new FakeClock();
         AtomicInteger steps = new AtomicInteger();

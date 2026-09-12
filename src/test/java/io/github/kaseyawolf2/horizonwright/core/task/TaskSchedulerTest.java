@@ -16,6 +16,46 @@ import org.junit.Test;
 public class TaskSchedulerTest {
 
     @Test
+    public void travelLeadStartsOneOccurrenceEarlyWithoutMovingMorningCutoffOrOtherRules() {
+        TaskScheduler scheduler = new TaskScheduler();
+        io.github.kaseyawolf2.horizonwright.core.task.ScheduledTaskSpec sleep = io.github.kaseyawolf2.horizonwright.runtime.task.SleepTask
+            .scheduled("bed");
+        scheduler.submit(ScheduleRule.worldTimeWindow("sleep", sleep, 12542, 23461, Collections.emptySet(), 0, false));
+        scheduler.submit(ScheduleRule.worldTimeWindow("other", sleep, 12542, 23461, Collections.emptySet(), 0, false));
+        ScheduleEnvironment early = ScheduleEnvironment.connected(11542, Collections.emptySet())
+            .withWindowLeadTicks(Collections.singletonMap("sleep", 1000));
+        List<ScheduledTaskRequest> first = evaluate(scheduler, 0, early, false);
+        assertEquals(1, first.size());
+        assertEquals(
+            "schedule[sleep]#1",
+            first.get(0)
+                .getTask()
+                .getId());
+        assertEquals(
+            1,
+            evaluate(scheduler, 1, ScheduleEnvironment.connected(12542, Collections.emptySet()), false).size());
+        assertTrue(evaluate(scheduler, 2, early, false).isEmpty());
+        TaskScheduler restored = new TaskScheduler();
+        restored.restore(scheduler.snapshot());
+        assertTrue(evaluate(restored, 3, early, false).isEmpty());
+        assertTrue(
+            evaluate(
+                restored,
+                4,
+                ScheduleEnvironment.connected(24000, Collections.emptySet())
+                    .withWindowLeadTicks(Collections.singletonMap("sleep", 6000)),
+                false).isEmpty());
+        assertEquals(
+            1,
+            evaluate(
+                restored,
+                5,
+                ScheduleEnvironment.connected(35542, Collections.emptySet())
+                    .withWindowLeadTicks(Collections.singletonMap("sleep", 1000)),
+                false).size());
+    }
+
+    @Test
     public void manualRunResetsIntervalAndPersistsSequence() {
         TaskScheduler scheduler = new TaskScheduler();
         scheduler.submit(interval("manual", 100000L, 100000L, TaskLane.CHORE, 0));

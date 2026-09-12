@@ -15,10 +15,25 @@ public final class ManagedQuarryObservationResult {
     private final BlockPosition position;
     private final String blockFingerprint;
     private final boolean infrastructureSatisfied;
+    private final boolean materialAvailable;
 
     public ManagedQuarryObservationResult(long taskRevision, long actionEpoch, String geometryKey,
         ExcavationFrontier startFrontier, BlockPosition position, String blockFingerprint,
         boolean infrastructureSatisfied) {
+        this(
+            taskRevision,
+            actionEpoch,
+            geometryKey,
+            startFrontier,
+            position,
+            blockFingerprint,
+            infrastructureSatisfied,
+            true);
+    }
+
+    public ManagedQuarryObservationResult(long taskRevision, long actionEpoch, String geometryKey,
+        ExcavationFrontier startFrontier, BlockPosition position, String blockFingerprint,
+        boolean infrastructureSatisfied, boolean materialAvailable) {
         if (taskRevision < 1L) throw new IllegalArgumentException("taskRevision must be positive");
         if (actionEpoch < 1L) throw new IllegalArgumentException("actionEpoch must be positive");
         this.taskRevision = taskRevision;
@@ -28,6 +43,7 @@ public final class ManagedQuarryObservationResult {
         this.position = Objects.requireNonNull(position, "position");
         this.blockFingerprint = requireText(blockFingerprint, "blockFingerprint");
         this.infrastructureSatisfied = infrastructureSatisfied;
+        this.materialAvailable = materialAvailable;
     }
 
     public long getTaskRevision() {
@@ -52,6 +68,10 @@ public final class ManagedQuarryObservationResult {
 
     public String getBlockFingerprint() {
         return blockFingerprint;
+    }
+
+    public boolean isMaterialAvailable() {
+        return materialAvailable;
     }
 
     public boolean isInfrastructureSatisfied() {

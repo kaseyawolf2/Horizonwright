@@ -119,6 +119,26 @@ public final class CylinderExcavationGeometry {
             return frontier;
         }
         int layerY = frontier.getLayerY();
+        if (spec.usesSpiralLookup()) {
+            BlockPosition next = spec.circularSpiral()
+                .next(spec, frontier.getPosition());
+            return next == null ? nextLayer(spec, layerY) : rawPosition(spec, next);
+        }
+        if (spec.getTraversal() == ExcavationTraversal.ROWS_X || spec.getTraversal() == ExcavationTraversal.ROWS_Z) {
+            boolean alongX = spec.getTraversal() == ExcavationTraversal.ROWS_X;
+            BlockPosition p = frontier.getPosition();
+            int row = alongX ? p.getZ() : p.getX();
+            int minRow = alongX ? spec.getMinimumZ() : spec.getMinimumX();
+            int maxRow = alongX ? spec.getMaximumZ() : spec.getMaximumX();
+            int min = alongX ? spec.getMinimumX() : spec.getMinimumZ();
+            int max = alongX ? spec.getMaximumX() : spec.getMaximumZ();
+            int column = alongX ? p.getX() : p.getZ();
+            int direction = (row - minRow) % 2 == 0 ? 1 : -1;
+            if (column + direction < min || column + direction > max) {
+                if (++row > maxRow) return nextLayer(spec, layerY);
+            } else column += direction;
+            return rawPosition(spec, new BlockPosition(alongX ? column : row, layerY, alongX ? row : column));
+        }
         if (spec.isSpiral()) {
             BlockPosition next = InwardSpiral.next(spec, frontier.getPosition());
             if (next == null) return layerY == spec.getBottomY() ? ExcavationFrontier.complete(spec.getGeometryKey())
@@ -151,7 +171,11 @@ public final class CylinderExcavationGeometry {
     }
 
     private static ExcavationFrontier rawLayerStart(CylinderExcavationSpec spec, int layerY) {
-        if (spec.isSpiral())
+        if (spec.usesSpiralLookup()) return rawPosition(
+            spec,
+            spec.circularSpiral()
+                .first(spec, layerY));
+        if (spec.getTraversal() != ExcavationTraversal.CHUNKS)
             return rawPosition(spec, new BlockPosition(spec.getMinimumX(), layerY, spec.getMinimumZ()));
         return new ExcavationFrontier(
             spec.getGeometryKey(),
@@ -161,6 +185,10 @@ public final class CylinderExcavationGeometry {
             0,
             0,
             false);
+    }
+
+    private static ExcavationFrontier nextLayer(CylinderExcavationSpec spec, int y) {
+        return y == spec.getBottomY() ? ExcavationFrontier.complete(spec.getGeometryKey()) : rawLayerStart(spec, y - 1);
     }
 
     private static ExcavationFrontier rawPosition(CylinderExcavationSpec spec, BlockPosition p) {

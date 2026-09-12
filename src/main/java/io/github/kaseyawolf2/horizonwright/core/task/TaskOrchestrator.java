@@ -109,10 +109,27 @@ public final class TaskOrchestrator implements IHorizonwrightController, ActionR
 
     @Override
     public TaskSnapshot update(TaskSpec replacement) {
+        return updateChecked(replacement, null, null, null);
+    }
+
+    /** Atomically replaces settings and runner progress only if the paused editor's snapshot is still current. */
+    public TaskSnapshot updatePaused(TaskSpec expected, TaskCheckpoint expectedCheckpoint, TaskSpec replacement,
+        TaskCheckpoint replacementCheckpoint) {
+        java.util.Objects.requireNonNull(expected, "expected");
+        java.util.Objects.requireNonNull(expectedCheckpoint, "expectedCheckpoint");
+        java.util.Objects.requireNonNull(replacementCheckpoint, "replacementCheckpoint");
+        return updateChecked(replacement, expected, expectedCheckpoint, replacementCheckpoint);
+    }
+
+    private TaskSnapshot updateChecked(TaskSpec replacement, TaskSpec expected, TaskCheckpoint expectedCheckpoint,
+        TaskCheckpoint replacementCheckpoint) {
         requireSpec(replacement);
         synchronized (this) {
             long now = readNow();
             TaskRecord record = requireTask(replacement.getId());
+            if (expected != null && (!record.spec.equals(expected) || !record.checkpoint.equals(expectedCheckpoint)
+                || (record.state != TaskState.SUSPENDED && record.state != TaskState.BLOCKED)))
+                throw new IllegalStateException("Task changed or is not paused; reopen its settings.");
             if (record.state.isTerminal()) {
                 throw new IllegalStateException("terminal tasks cannot be edited: " + replacement.getId());
             }
@@ -128,6 +145,7 @@ public final class TaskOrchestrator implements IHorizonwrightController, ActionR
                     .add(replacement.getId());
             }
             record.spec = replacement;
+            if (replacementCheckpoint != null) record.checkpoint = replacementCheckpoint;
             record.controlVersion++;
             interruptForNewSafetyIfNeeded(record, now);
             enqueueRunnerBuild(record, "task specification updated");

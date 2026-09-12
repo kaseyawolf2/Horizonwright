@@ -161,7 +161,7 @@ public final class ContainerClickCorrelation {
             cancel("container identity or layout changed after click " + outstanding.getClickId());
             return false;
         }
-        if (!expected.equals(observed)) {
+        if (!outstanding.matchesAfter(observed)) {
             lastSnapshotDifference = expected.describeDifference(observed);
             return false;
         }

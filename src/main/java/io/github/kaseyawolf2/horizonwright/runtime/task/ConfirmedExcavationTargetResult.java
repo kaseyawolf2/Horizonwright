@@ -14,6 +14,25 @@ public final class ConfirmedExcavationTargetResult {
     private final ExcavationFrontier startFrontier;
     private final String observedFingerprint;
     private final ExcavationTargetResult targetResult;
+    private int brokenTargets;
+
+    public ConfirmedExcavationTargetResult withBrokenTargets(int count) {
+        if (count < 0 || count > 1)
+            throw new IllegalArgumentException("One request can confirm at most one target break");
+        ConfirmedExcavationTargetResult copy = new ConfirmedExcavationTargetResult(
+            taskRevision,
+            actionEpoch,
+            geometryKey,
+            startFrontier,
+            observedFingerprint,
+            targetResult);
+        copy.brokenTargets = count;
+        return copy;
+    }
+
+    public int getBrokenTargets() {
+        return brokenTargets;
+    }
 
     public ConfirmedExcavationTargetResult(long taskRevision, long actionEpoch, String geometryKey,
         ExcavationFrontier startFrontier, String observedFingerprint, ExcavationTargetResult targetResult) {

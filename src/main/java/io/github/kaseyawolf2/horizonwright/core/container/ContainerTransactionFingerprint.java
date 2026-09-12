@@ -25,6 +25,7 @@ public final class ContainerTransactionFingerprint {
             append(canonical, click.getSlot());
             append(canonical, click.getMouseButton());
             append(canonical, click.getClickMode());
+            append(canonical, click.getExtractionStorageSlots());
             append(canonical, click.getExpectedBefore());
             append(canonical, click.getExpectedAfter());
         }

@@ -9,6 +9,16 @@ public interface SleepBackend {
 
     Availability availability();
 
+    /** Estimated trip plus handoff allowance, in game ticks. */
+    default int preparationLeadTicks(String bedLocationId) {
+        return 0;
+    }
+
+    /** Temporary handoff gate; waiting here must not consume task retries. */
+    default boolean isReadyForAction() {
+        return true;
+    }
+
     ObservationSnapshot observe(ObservationRequest request);
 
     ActionHandle execute(ActionRequest request, ActionLease lease);

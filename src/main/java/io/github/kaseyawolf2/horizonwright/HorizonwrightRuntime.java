@@ -228,9 +228,6 @@ public final class HorizonwrightRuntime implements AutoCloseable {
         if (actionBroker.isDeathSafetyLocked()) {
             throw new IllegalStateException("death safety is active; new automation is unavailable");
         }
-        if (actionBroker.isAutomationLocked()) {
-            throw new IllegalStateException("automation is stopped; use /hw reset before submitting new work");
-        }
         TaskSpec spec = createGoToTaskSpec(dimensionId, x, y, z, tolerance);
         return controller.submit(spec);
     }
@@ -243,9 +240,6 @@ public final class HorizonwrightRuntime implements AutoCloseable {
         if (actionBroker.isDeathSafetyLocked()) {
             throw new IllegalStateException("death safety is active; new automation is unavailable");
         }
-        if (actionBroker.isAutomationLocked()) {
-            throw new IllegalStateException("automation is stopped; use /hw reset before submitting new work");
-        }
         return controller.submit(spec);
     }
 
@@ -257,9 +251,6 @@ public final class HorizonwrightRuntime implements AutoCloseable {
         if (actionBroker.isDeathSafetyLocked()) {
             throw new IllegalStateException("death safety is active; new automation is unavailable");
         }
-        if (actionBroker.isAutomationLocked()) {
-            throw new IllegalStateException("automation is stopped; use /hw reset before submitting new work");
-        }
         return controller.submit(spec);
     }
 
@@ -269,9 +260,6 @@ public final class HorizonwrightRuntime implements AutoCloseable {
         if (intervalMillis < 1L) throw new IllegalArgumentException("farm schedule interval must be positive");
         if (actionBroker.isDeathSafetyLocked()) {
             throw new IllegalStateException("death safety is active; new automation is unavailable");
-        }
-        if (actionBroker.isAutomationLocked()) {
-            throw new IllegalStateException("automation is stopped; use /hw reset before scheduling new work");
         }
         return controller.submitSchedule(
             ScheduleRule.connectedInterval(
@@ -302,7 +290,7 @@ public final class HorizonwrightRuntime implements AutoCloseable {
         if (spec == null || !TreeTask.TYPE.equals(spec.getType())) {
             throw new IllegalArgumentException("a tree-pass task specification is required");
         }
-        requireAutomationAvailable("submitting new work");
+        requireTaskCreationAvailable();
         return controller.submit(spec);
     }
 
@@ -315,7 +303,7 @@ public final class HorizonwrightRuntime implements AutoCloseable {
         long intervalMillis, int species, int spacing) {
         ensureOpen();
         if (intervalMillis < 1L) throw new IllegalArgumentException("tree schedule interval must be positive");
-        requireAutomationAvailable("scheduling new work");
+        requireTaskCreationAvailable();
         return controller.submitSchedule(
             ScheduleRule.connectedInterval(
                 scheduleId,
@@ -364,7 +352,7 @@ public final class HorizonwrightRuntime implements AutoCloseable {
         if (spec == null || !HusbandryTask.TYPE.equals(spec.getType())) {
             throw new IllegalArgumentException("a husbandry-pass task specification is required");
         }
-        requireAutomationAvailable("submitting new work");
+        requireTaskCreationAvailable();
         return controller.submit(spec);
     }
 
@@ -385,7 +373,7 @@ public final class HorizonwrightRuntime implements AutoCloseable {
         int minimumAdults, int maximumAdults, int maximumActions, boolean allowCulling, long intervalMillis) {
         ensureOpen();
         if (intervalMillis < 1L) throw new IllegalArgumentException("husbandry schedule interval must be positive");
-        requireAutomationAvailable("scheduling new work");
+        requireTaskCreationAvailable();
         return controller.submitSchedule(
             ScheduleRule.connectedInterval(
                 scheduleId,
@@ -491,13 +479,13 @@ public final class HorizonwrightRuntime implements AutoCloseable {
         if (spec == null || !SleepTask.TYPE.equals(spec.getType())) {
             throw new IllegalArgumentException("a sleep task specification is required");
         }
-        requireAutomationAvailable("submitting new work");
+        requireTaskCreationAvailable();
         return controller.submit(spec);
     }
 
     public ScheduleSnapshot scheduleNightSleep(String scheduleId, String bedLocationId) {
         ensureOpen();
-        requireAutomationAvailable("scheduling new work");
+        requireTaskCreationAvailable();
         return controller.submitSchedule(
             ScheduleRule.worldTimeWindow(
                 scheduleId,
@@ -522,12 +510,9 @@ public final class HorizonwrightRuntime implements AutoCloseable {
                 false));
     }
 
-    private void requireAutomationAvailable(String operation) {
+    private void requireTaskCreationAvailable() {
         if (actionBroker.isDeathSafetyLocked()) {
             throw new IllegalStateException("death safety is active; new automation is unavailable");
-        }
-        if (actionBroker.isAutomationLocked()) {
-            throw new IllegalStateException("automation is stopped; use /hw reset before " + operation);
         }
     }
 
@@ -576,6 +561,27 @@ public final class HorizonwrightRuntime implements AutoCloseable {
     public TaskSnapshot pauseTask(String taskId) {
         ensureOpen();
         return controller.pause(taskId);
+    }
+
+    public TaskSnapshot editExcavation(TaskSpec expected, TaskSpec replacement) {
+        ensureOpen();
+        ControllerSnapshot snapshot = controller.snapshot();
+        TaskSnapshot original = snapshot.findTask(expected.getId())
+            .orElseThrow(() -> new IllegalArgumentException("Task no longer exists."));
+        if (!original.getSpec()
+            .equals(expected)) throw new IllegalStateException("Settings changed; reopen the editor.");
+        for (TaskSnapshot task : snapshot.getTasks()) {
+            if (!task.getState()
+                .isTerminal() && expected.getId()
+                    .equals(
+                        task.getSpec()
+                            .getParameters()
+                            .get("service.parentTaskId")))
+                throw new IllegalStateException("Finish or cancel the linked unload/repair task before editing.");
+        }
+        io.github.kaseyawolf2.horizonwright.core.task.TaskCheckpoint updated = io.github.kaseyawolf2.horizonwright.runtime.task.ExcavationSettings
+            .checkpointFor(expected, replacement, original.getCheckpoint());
+        return controller.updatePaused(expected, original.getCheckpoint(), replacement, updated);
     }
 
     public TaskSnapshot resumeTask(String taskId) {
@@ -660,6 +666,10 @@ public final class HorizonwrightRuntime implements AutoCloseable {
             throw new IllegalArgumentException("environment must not be null");
         }
         scheduleEnvironment = environment;
+    }
+
+    public int getScheduleLeadTicks(String scheduleId) {
+        return scheduleEnvironment.getWindowLeadTicks(scheduleId);
     }
 
     public ControllerSnapshot clientTick() {

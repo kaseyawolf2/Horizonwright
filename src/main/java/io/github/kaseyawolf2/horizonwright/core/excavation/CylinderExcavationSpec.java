@@ -20,18 +20,51 @@ public final class CylinderExcavationSpec {
     private long columnCount;
     private long volume;
     private String geometryKey;
-    private boolean spiral;
+    private ExcavationTraversal traversal = ExcavationTraversal.CHUNKS;
+    private CircularSpiral circularSpiral;
+    private int spiralWidth = 1;
+
+    public int getSpiralWidth() {
+        return spiralWidth;
+    }
+
+    boolean usesSpiralLookup() {
+        return traversal == ExcavationTraversal.CIRCLE_SPIRAL
+            || (traversal == ExcavationTraversal.SQUARE_SPIRAL && spiralWidth > 1);
+    }
+
+    public ExcavationTraversal getTraversal() {
+        return traversal;
+    }
+
+    synchronized CircularSpiral circularSpiral() {
+        if (circularSpiral == null) circularSpiral = new CircularSpiral(this);
+        return circularSpiral;
+    }
 
     public boolean isSpiral() {
-        return spiral;
+        return traversal == ExcavationTraversal.SQUARE_SPIRAL;
     }
 
     public CylinderExcavationSpec withSpiral() {
+        return withTraversal(ExcavationTraversal.SQUARE_SPIRAL);
+    }
+
+    public CylinderExcavationSpec withTraversal(ExcavationTraversal order) {
+        return withTraversal(order, spiralWidth);
+    }
+
+    public CylinderExcavationSpec withTraversal(ExcavationTraversal order, int bandWidth) {
+        Objects.requireNonNull(order, "order");
+        if (bandWidth < 1 || bandWidth > 64) throw new IllegalArgumentException("spiral width must be 1..64 blocks");
         CylinderExcavationSpec result = isRectangle()
             ? rectangle(dimensionId, minX, maxX, minZ, maxZ, bottomY, topY, mode)
             : new CylinderExcavationSpec(dimensionId, centerX, centerZ, radius, bottomY, topY, mode);
-        result.spiral = true;
-        result.geometryKey += ":spiral-v1";
+        result.traversal = order;
+        result.spiralWidth = bandWidth;
+        if (order != ExcavationTraversal.CHUNKS) result.geometryKey += ":" + order.id();
+        if (bandWidth > 1 && (order == ExcavationTraversal.CIRCLE_SPIRAL || order == ExcavationTraversal.SQUARE_SPIRAL))
+            result.geometryKey += ":width-v1:" + bandWidth;
         return result;
     }
 

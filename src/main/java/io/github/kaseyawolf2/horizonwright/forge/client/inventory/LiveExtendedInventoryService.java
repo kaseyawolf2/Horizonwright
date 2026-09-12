@@ -79,6 +79,7 @@ public final class LiveExtendedInventoryService implements InventoryService {
     private final ContainerActionPacing pacing = new ContainerActionPacing(5);
     private final Map<String, InventoryPreparationTracker> prepared = new HashMap<>();
     private final Map<String, String> drained = new HashMap<>();
+    private final BagContentsCache bagContents = new BagContentsCache();
     private Session active;
     private long sequence;
     private String diagnostic = "Extended inventory ready";
@@ -119,10 +120,17 @@ public final class LiveExtendedInventoryService implements InventoryService {
         for (Carrier carrier : carriers()) {
             ItemStack stack = carrier.stack(mc);
             PortableInventoryAdapter adapter = adapters.find(stack);
-            String contents = adapter.contentsKnown(stack) ? adapter.readContents(stack)
-                .size() + " stored stacks"
-                : adapter instanceof Ae2TerminalAdapter ? "contents verified after opening a powered connection"
-                    : "contents verified when opened";
+            boolean tagged = adapter.contentsKnown(stack);
+            String cacheKey = bagCacheKey(carrier, adapter);
+            if (tagged) bagContents.observe(cacheKey, adapter.readContents(stack), mc.thePlayer.ticksExisted);
+            BagContentsCache.Entry cached = bagContents.get(cacheKey);
+            String contents = adapter instanceof Ae2TerminalAdapter ? "live wireless connection required"
+                : cached == null ? "not yet observed"
+                    : cached.contents()
+                        .size() + " stored stacks ("
+                        + (tagged ? "current bag data"
+                            : "last observed " + Math.max(0, mc.thePlayer.ticksExisted - cached.tick) / 20 + "s ago")
+                        + ")";
             lines.add(
                 (carrier.slot < 0 ? "Worn" : "Slot " + (carrier.slot + 1)) + ": "
                     + stack.getDisplayName()
@@ -130,6 +138,19 @@ public final class LiveExtendedInventoryService implements InventoryService {
                     + adapter.id()
                     + ") - "
                     + contents);
+            if (cached != null) {
+                Map<String, Integer> counts = new java.util.LinkedHashMap<>();
+                for (ItemStack stored : cached.contents())
+                    counts.merge(stored.getDisplayName(), stored.stackSize, Integer::sum);
+                int shown = 0;
+                for (Map.Entry<String, Integer> stored : counts.entrySet()) {
+                    if (shown++ == 8) {
+                        lines.add("  ... " + (counts.size() - 8) + " more item types");
+                        break;
+                    }
+                    lines.add("  " + stored.getValue() + " x " + stored.getKey());
+                }
+            }
         }
         return lines;
     }
@@ -223,6 +244,10 @@ public final class LiveExtendedInventoryService implements InventoryService {
                     s.carrier = s.carriers.get(s.index++);
                     s.adapter = adapters.find(s.carrier.stack(mc));
                     if (s.adapter == null) throw new IllegalStateException("An inventory carrier moved or disappeared");
+                    if (!bagNeedsVisit(s)) {
+                        diagnostic = "Skipped " + s.adapter.id() + ": current bag data has no needed transfer";
+                        return waiting(context, diagnostic);
+                    }
                     s.originalSlot = s.carrier.slot;
                     s.heldSlot = s.originalSlot < 0 ? -1 : s.originalSlot < 9 ? s.originalSlot : s.previousHotbar;
                     s.carrierBefore = raw.fingerprint(s.adapter.stableCarrier(s.carrier.stack(mc)));
@@ -300,6 +325,17 @@ public final class LiveExtendedInventoryService implements InventoryService {
                     requireOpen(s);
                     if (mc.thePlayer.inventory.getItemStack() != null)
                         throw new IllegalStateException("Inventory cursor is not empty");
+                    if (!(s.adapter instanceof Ae2TerminalAdapter)) {
+                        List<ItemStack> contents = new ArrayList<>();
+                        for (Slot slot : s.adapter.storageSlots(s.opened)) if (slot.getStack() != null) contents.add(
+                            slot.getStack()
+                                .copy());
+                        // Use the original carrier position for bags without a persistent UID.
+                        bagContents.observe(
+                            bagCacheKey(s.carrier, s.adapter, currentCarrier(s)),
+                            contents,
+                            mc.thePlayer.ticksExisted);
+                    }
                     mc.thePlayer.closeScreen();
                     s.opened = null;
                     s.phase = Phase.RETURN;
@@ -373,6 +409,34 @@ public final class LiveExtendedInventoryService implements InventoryService {
         }
     }
 
+    private String bagCacheKey(Carrier carrier, PortableInventoryAdapter adapter) {
+        return bagCacheKey(carrier, adapter, carrier.stack(mc));
+    }
+
+    private String bagCacheKey(Carrier carrier, PortableInventoryAdapter adapter, ItemStack stack) {
+        String identity = adapter.identity(stack);
+        return adapter.id() + ":"
+            + raw.fingerprint(adapter.stableCarrier(stack))
+            + (identity.isEmpty() ? ":slot:" + carrier.slot : ":uid:" + identity);
+    }
+
+    private boolean bagNeedsVisit(Session s) {
+        ItemStack bag = s.carrier.stack(mc);
+        // Server-only bags and wireless networks can change while closed. Last-seen contents remain
+        // useful to the operator, but never prove that a new task has no supplies to retrieve.
+        if (s.adapter instanceof Ae2TerminalAdapter || !s.adapter.contentsKnown(bag)) return true;
+        List<ItemStack> contents = s.adapter.readContents(bag);
+        bagContents.observe(bagCacheKey(s.carrier, s.adapter), contents, mc.thePlayer.ticksExisted);
+        return BagVisitPolicy.needsVisit(
+            contents,
+            mc.thePlayer.inventory.mainInventory,
+            s.policy,
+            s.unloading,
+            stored -> cargo(s, stored),
+            item -> adapters.find(item) == null && s.adapter.canStore(bag, item),
+            raw);
+    }
+
     private boolean transferBag(Session s) {
         List<Slot> storage = s.adapter.storageSlots(s.opened);
         List<Slot> player = playerSlots(s.opened);
@@ -444,19 +508,31 @@ public final class LiveExtendedInventoryService implements InventoryService {
             move.getDestination()
                 .getSlot());
         ItemStack stack = source.getStack();
+        if (!java.util.Objects.equals(move.getExpectedSource(), raw.fingerprint(stack))
+            || !java.util.Objects.equals(move.getExpectedDestination(), raw.fingerprint(target.getStack())))
+            throw new IllegalStateException(
+                "Inventory stacks changed after planning; transfer cancelled before pickup");
+        if (target.getStack() != null
+            && !InventoryTransferClicks.sameItem(raw.fingerprint(stack), raw.fingerprint(target.getStack())))
+            throw new IllegalStateException(
+                "The destination contains a different item; transfer cancelled before pickup");
         if (!source.canTakeStack(mc.thePlayer) || !target.isItemValid(stack))
             throw new IllegalStateException("The inventory filter changed before transfer");
         ContainerSnapshot before = snapshots.captureCurrent(mc, 0);
+        String transferId = "inventory-" + ++sequence;
+        io.github.kaseyawolf2.horizonwright.core.container.VerifiedContainerClick quickMove = BagQuickMove
+            .predict(transferId, s.opened, before, storage, playerModel, bagModel, plan);
         s.transaction = new ContainerTransaction(
-            "inventory-" + ++sequence,
+            transferId,
             s.epoch,
-            InventoryTransferClicks.move(
-                "inventory-" + sequence,
-                before,
-                source.slotNumber,
-                target.slotNumber,
-                Math.min(stack.getMaxStackSize(), target.getSlotStackLimit()),
-                move.getCount()));
+            quickMove != null ? java.util.Collections.singletonList(quickMove)
+                : InventoryTransferClicks.move(
+                    transferId,
+                    before,
+                    source.slotNumber,
+                    target.slotNumber,
+                    Math.min(stack.getMaxStackSize(), target.getSlotStackLimit()),
+                    move.getCount()));
         executor.begin(s.transaction);
         s.moved = true;
         return true;
@@ -503,7 +579,17 @@ public final class LiveExtendedInventoryService implements InventoryService {
             return true;
         }
         // Packing into AE2 uses only ordinary player slots; no virtual row is treated as a slot.
-        for (Slot slot : playerSlots(s.opened)) {
+        List<Slot> deposits = new ArrayList<>(playerSlots(s.opened));
+        deposits.sort(
+            java.util.Comparator
+                .comparingInt(
+                    (Slot slot) -> slot.getStack() != null && slot.getStack().stackSize >= slot.getStack()
+                        .getMaxStackSize() ? 0 : 1)
+                .thenComparing(
+                    java.util.Comparator
+                        .comparingInt((Slot slot) -> slot.getStack() == null ? 0 : slot.getStack().stackSize)
+                        .reversed()));
+        for (Slot slot : deposits) {
             ItemStack stack = slot.getStack();
             if (slot.getSlotIndex() == s.heldSlot || slot.getSlotIndex() == s.originalSlot
                 || adapters.find(stack) != null
@@ -819,6 +905,7 @@ public final class LiveExtendedInventoryService implements InventoryService {
     private void stop() {
         Session s = active;
         if (s == null) return;
+        if (s.carrier != null && s.adapter != null) bagContents.clear();
         executor.cancel("Extended inventory preparation interrupted; never replay an uncertain click");
         release(s);
         active = null;
@@ -828,6 +915,7 @@ public final class LiveExtendedInventoryService implements InventoryService {
         stop();
         prepared.clear();
         drained.clear();
+        bagContents.clear();
     }
 
     @Override

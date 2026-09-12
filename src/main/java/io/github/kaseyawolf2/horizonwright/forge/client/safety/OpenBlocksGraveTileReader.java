@@ -10,7 +10,7 @@ import io.github.kaseyawolf2.horizonwright.core.safety.death.DimensionBlockPosit
 import io.github.kaseyawolf2.horizonwright.core.safety.death.GraveIdentity;
 
 /**
- * Version-isolated decoder for the client-visible fields in OpenBlocks 1.12.18-GTNH graves.
+ * Version-isolated decoder for the client-visible fields in OpenBlocks 1.12.21-GTNH graves.
  *
  * <p>
  * The installed build synchronizes {@code getUsername()} and {@code isInventoryEmpty()}, but does not synchronize
@@ -62,7 +62,7 @@ public final class OpenBlocksGraveTileReader {
             return Optional.of(new OpenBlocksGraveTileEvidence(identity, username, (Boolean) rawEmpty));
         } catch (NoSuchMethodException | IllegalAccessException | InvocationTargetException failure) {
             throw new IllegalStateException(
-                "OpenBlocks 1.12.18-GTNH grave API does not match the tested adapter",
+                "OpenBlocks 1.12.21-GTNH grave API does not match the tested adapter",
                 failure);
         }
     }

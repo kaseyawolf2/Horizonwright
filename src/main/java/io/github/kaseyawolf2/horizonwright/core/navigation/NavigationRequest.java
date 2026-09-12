@@ -5,6 +5,8 @@ import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
+import io.github.kaseyawolf2.horizonwright.core.excavation.BlockPosition;
+
 public final class NavigationRequest {
 
     public static final int MIN_Y = 0;
@@ -25,6 +27,39 @@ public final class NavigationRequest {
     private final List<String> allowedBreakBlockIds;
     private final long createdAtNanos;
     private final long deadlineNanos;
+    private final boolean scaffolding;
+    private final List<BlockPosition> scaffoldExclusions;
+
+    private NavigationRequest(NavigationRequest original, List<BlockPosition> exclusions) {
+        requestId = original.requestId;
+        actionEpoch = original.actionEpoch;
+        dimensionId = original.dimensionId;
+        x = original.x;
+        y = original.y;
+        z = original.z;
+        tolerance = original.tolerance;
+        goalKind = original.goalKind;
+        placementAllowed = original.placementAllowed;
+        allowedBreakBlockIds = original.allowedBreakBlockIds;
+        createdAtNanos = original.createdAtNanos;
+        deadlineNanos = original.deadlineNanos;
+        scaffolding = true;
+        scaffoldExclusions = Collections.unmodifiableList(new ArrayList<>(exclusions));
+    }
+
+    public NavigationRequest withScaffolding(List<BlockPosition> exclusions) {
+        if (exclusions == null || exclusions.contains(null))
+            throw new IllegalArgumentException("Scaffolding requires valid exclusions");
+        return new NavigationRequest(this, exclusions);
+    }
+
+    public boolean isScaffoldingAllowed() {
+        return scaffolding;
+    }
+
+    public List<BlockPosition> getScaffoldExclusions() {
+        return scaffoldExclusions;
+    }
 
     public NavigationRequest(String requestId, long actionEpoch, int dimensionId, int x, int y, int z, int tolerance) {
         this(requestId, actionEpoch, dimensionId, x, y, z, tolerance, System.nanoTime(), MAX_RUNTIME_NANOS);
@@ -167,6 +202,8 @@ public final class NavigationRequest {
             String checked = blockId.trim();
             if (!checkedBreakIds.contains(checked)) checkedBreakIds.add(checked);
         }
+        this.scaffolding = false;
+        this.scaffoldExclusions = Collections.emptyList();
         this.requestId = requestId.trim();
         this.actionEpoch = actionEpoch;
         this.dimensionId = dimensionId;
@@ -222,7 +259,7 @@ public final class NavigationRequest {
     }
 
     public boolean isBreakingAllowed() {
-        return !allowedBreakBlockIds.isEmpty();
+        return scaffolding || !allowedBreakBlockIds.isEmpty();
     }
 
     public long getCreatedAtNanos() {

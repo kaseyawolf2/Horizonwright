@@ -87,6 +87,7 @@ public final class GuiScheduleManager extends GuiReadableScreen {
         GuiButton activeTab = new GuiHorizonwrightButton(21, left + 144, top + 12, 120, 20, "Schedules");
         activeTab.enabled = false;
         buttonList.add(activeTab);
+        buttonList.add(new GuiHorizonwrightButton(22, left + 272, top + 12, 150, 20, "Fallback tasks"));
 
         scheduleButtons.clear();
         for (int index = 0; index < SCHEDULES_PER_PAGE; index++) {
@@ -137,6 +138,10 @@ public final class GuiScheduleManager extends GuiReadableScreen {
 
     @Override
     protected void actionPerformed(GuiButton button) {
+        if (button.id == 22) {
+            mc.displayGuiScreen(new GuiTaskManager(parent, runtimeProvider, editorProvider, true));
+            return;
+        }
         if (button.id == 20) {
             mc.displayGuiScreen(new GuiTaskManager(parent, runtimeProvider, editorProvider));
             return;
@@ -506,7 +511,10 @@ public final class GuiScheduleManager extends GuiReadableScreen {
                 io.github.kaseyawolf2.horizonwright.core.task.ScheduleTiming.describe(
                     selected,
                     requireRuntime().controllerSnapshot()
-                        .getScheduler()),
+                        .getScheduler(),
+                    requireRuntime().getScheduleLeadTicks(
+                        selected.getRule()
+                            .getId())),
                 left + 16,
                 top + 210,
                 0xFFF0C674);
@@ -528,7 +536,7 @@ public final class GuiScheduleManager extends GuiReadableScreen {
         editorLabel(title + " - " + targetLabel(selected), 16, 232);
         if (isSleep(selected)) {
             drawParagraph(
-                "Runs once each Minecraft night at the saved bed. No minute interval or seed reserve is needed.",
+                "Returns to the saved bed early using estimated walking time, then waits until sleep is possible. Terrain can make the trip longer.",
                 left + 16,
                 top + 278,
                 panelWidth - 32,

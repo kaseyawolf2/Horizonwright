@@ -32,6 +32,9 @@ public final class ContainerTransaction {
         List<VerifiedContainerClick> copy = new ArrayList<VerifiedContainerClick>(clicks);
         Set<String> clickIds = new HashSet<String>();
         for (VerifiedContainerClick click : copy) {
+            if (click.getExtractionStorageSlots() > 0 && copy.size() != 1) {
+                throw new IllegalArgumentException("extraction-aware unloading must replan after each click");
+            }
             if (!clickIds.add(click.getClickId())) {
                 throw new IllegalArgumentException("click IDs must be unique");
             }
@@ -56,8 +59,7 @@ public final class ContainerTransaction {
             return Optional.empty();
         }
         if (!validateEpoch(currentEpoch) || !clicks.get(nextIndex)
-            .getExpectedBefore()
-            .equals(observed)) {
+            .matchesBefore(observed)) {
             if (state != ContainerTransactionState.ABORTED) {
                 abort(
                     "container changed before click " + clicks.get(nextIndex)
@@ -87,8 +89,7 @@ public final class ContainerTransaction {
             abort("server rejected click " + clickId);
             return false;
         }
-        if (!click.getExpectedAfter()
-            .equals(observed)) {
+        if (!click.matchesAfter(observed)) {
             abort("container changed unexpectedly after click " + clickId);
             return false;
         }

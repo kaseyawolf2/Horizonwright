@@ -283,7 +283,12 @@ final class TreeTaskRunner implements TaskRunner {
         try {
             if (collection == null) {
                 Optional<ActionLease> acquired = context.getActions()
-                    .tryAcquire(EnumSet.of(ActionCapability.MOVEMENT, ActionCapability.LOOK));
+                    .tryAcquire(
+                        EnumSet.of(
+                            ActionCapability.MOVEMENT,
+                            ActionCapability.LOOK,
+                            ActionCapability.DIG,
+                            ActionCapability.HELD_USE));
                 if (!acquired.isPresent()) return StepResult
                     .waitFor(context.getActionEpoch(), checkpoint, 0L, "Waiting for tree drop collection authority");
                 activeLease = acquired.get();

@@ -51,8 +51,9 @@ import io.github.kaseyawolf2.horizonwright.core.task.TaskStepContext;
 final class ExcavationTaskRunner implements TaskRunner {
 
     private static final int TARGETS_PER_SCAN = CylinderExcavationGeometry.MAX_BATCH_SIZE;
-    private static final int CLEARED_CACHE_AUDIT_BATCH = CylinderExcavationGeometry.MAX_BATCH_SIZE;
+    private static final int CLEARED_CACHE_AUDIT_BATCH = 64;
     private static final long POLL_DELAY_MILLIS = 0L;
+    private static final long PERIODIC_PICKUP_INTERVAL_MILLIS = 120_000L;
     private static final Set<ActionCapability> REQUIRED_CAPABILITIES = Collections.unmodifiableSet(
         EnumSet.of(
             ActionCapability.MOVEMENT,
@@ -70,6 +71,8 @@ final class ExcavationTaskRunner implements TaskRunner {
             ActionCapability.CONTAINER));
 
     private final TaskSpec spec;
+    private final ExcavationStatistics statistics;
+    private long lastStatisticsSave;
     private final CylinderExcavationSpec cylinder;
     private final ManagedQuarryConfiguration managedConfiguration;
     private final ExcavationRuntimeAccess runtime;
@@ -98,6 +101,14 @@ final class ExcavationTaskRunner implements TaskRunner {
     private boolean cacheAuditPending;
     private ExcavationFrontier cacheAuditFrontier;
     private long cacheAuditOffset;
+    private ExcavationBackend.DropCollection dropCollection;
+    private ActionLease collectionLease;
+    private ExcavationBackend collectionBackend;
+    private int targetsSinceCollection;
+    private long lastCollectionMillis;
+    private boolean collectionTimerStarted;
+    private boolean collectionDue;
+    private boolean boundaryCollectionDone;
 
     ExcavationTaskRunner(TaskSpec spec, TaskCheckpoint checkpoint, ExcavationRuntimeAccess runtime) {
         if (checkpoint == null || runtime == null) {
@@ -109,6 +120,13 @@ final class ExcavationTaskRunner implements TaskRunner {
         this.runtime = runtime;
         this.taskCheckpoint = checkpoint;
         this.excavationCheckpoint = ExcavationTaskCheckpointCodec.decode(cylinder, checkpoint);
+        this.statistics = new ExcavationStatistics(
+            checkpoint,
+            excavationCheckpoint == null ? cylinder.getTopY()
+                : excavationCheckpoint.getFrontier()
+                    .getLayerY(),
+            cylinder.getColumnCount(),
+            cylinder.getTopY());
         this.cacheAuditFrontier = CylinderExcavationGeometry.initialFrontier(cylinder);
         if (excavationCheckpoint != null && excavationCheckpoint.isComplete()) {
             throw new IllegalArgumentException("completed excavation checkpoint cannot be resumed");
@@ -118,7 +136,9 @@ final class ExcavationTaskRunner implements TaskRunner {
 
     @Override
     public synchronized boolean isInventoryPreparationSafe() {
-        return activeHandle == null && activeLease == null
+        return dropCollection == null && collectionLease == null
+            && activeHandle == null
+            && activeLease == null
             && activeManagedHandle == null
             && activeManagedLease == null
             && pendingManagedPlan == null
@@ -128,6 +148,31 @@ final class ExcavationTaskRunner implements TaskRunner {
 
     @Override
     public synchronized StepResult step(TaskStepContext context) {
+        requireContext(context);
+        if (!collectionTimerStarted) {
+            lastCollectionMillis = context.getNowMillis();
+            collectionTimerStarted = true;
+        }
+        statistics.tick(context.getNowMillis());
+        TaskCheckpoint before = taskCheckpoint;
+        StepResult result = stepWork(context);
+        if (excavationCheckpoint != null) statistics.layer(
+            excavationCheckpoint.isComplete() ? cylinder.getBottomY()
+                : excavationCheckpoint.getFrontier()
+                    .getLayerY());
+        if (result.getKind() != StepResult.Kind.WAIT && result.getKind() != StepResult.Kind.PROGRESS)
+            statistics.pause();
+        if (result.getCheckpoint()
+            .getRevision() > 0
+            && (!before.equals(result.getCheckpoint()) || context.getNowMillis() - lastStatisticsSave >= 1000)) {
+            taskCheckpoint = statistics.attach(result.getCheckpoint());
+            lastStatisticsSave = context.getNowMillis();
+            return result.withCheckpoint(taskCheckpoint);
+        }
+        return result;
+    }
+
+    private StepResult stepWork(TaskStepContext context) {
         requireContext(context);
         if (context.isSuspensionRequested()) {
             return suspend(context);
@@ -218,6 +263,10 @@ final class ExcavationTaskRunner implements TaskRunner {
         if (activeHandle != null) {
             return observeAction(context, backend);
         }
+        if (dropCollection != null || backend.supportsDropCollection() && (collectionDue || targetsSinceCollection > 0
+            && context.getNowMillis() - lastCollectionMillis >= PERIODIC_PICKUP_INTERVAL_MILLIS)) {
+            return collectDrops(context, backend);
+        }
         if (verificationFrontier != null) return verifyCompletedVolume(context, backend);
         if (cacheAuditPending) return performCacheAudit(context, backend);
         return observeAndSubmit(context, backend);
@@ -228,6 +277,7 @@ final class ExcavationTaskRunner implements TaskRunner {
         if (interruption == null) {
             throw new IllegalArgumentException("interruption must not be null");
         }
+        statistics.pause();
         RuntimeException failure = stopActive();
         clearVerification();
         restoredAuthorityNeedsRebind = true;
@@ -380,7 +430,10 @@ final class ExcavationTaskRunner implements TaskRunner {
             plan.getStartFrontier(),
             intent,
             cylinder,
-            policy != null && policy.hasRepair() ? policy.getReservedToolSlot() : -1);
+            policy != null && policy.hasRepair() ? policy.getReservedToolSlot() : -1).withMovingMining(
+                Boolean.parseBoolean(
+                    spec.getParameters()
+                        .get("movingMining")));
         ExcavationActionHandle handle = null;
         try {
             if (!lease.isValid() || lease.getEpoch() != context.getActionEpoch()
@@ -546,6 +599,25 @@ final class ExcavationTaskRunner implements TaskRunner {
                 context.getActionEpoch(),
                 taskCheckpoint,
                 "Confirmed existing " + intent.getApprovedMaterial() + " at " + intent.getPosition());
+        }
+
+        if (!observation.isMaterialAvailable()) {
+            RuntimeException cleanupFailure = stopActive();
+            if (cleanupFailure != null) {
+                return StepResult.failed(
+                    context.getActionEpoch(),
+                    taskCheckpoint,
+                    "Could not stop quarry before material refill: " + describe(cleanupFailure),
+                    false);
+            }
+            return StepResult.blocked(
+                context.getActionEpoch(),
+                taskCheckpoint,
+                BlockedReason.missingRequirement(
+                    "Quarry needs " + intent.getApprovedMaterial() + " for " + intent.getKind(),
+                    spec.getId(),
+                    intent.getApprovedMaterial(),
+                    "Bring the approved material in your inventory or a supported bag, then resume the quarry."));
         }
 
         Optional<ActionLease> acquired = context.getActions()
@@ -871,6 +943,11 @@ final class ExcavationTaskRunner implements TaskRunner {
             if (application.getDisposition() != ExcavationResultDisposition.APPLIED) {
                 throw new IllegalStateException("excavation reducer returned an inconsistent disposition");
             }
+            targetsSinceCollection++;
+            statistics.broken(
+                confirmation.getBrokenTargets(),
+                targetResult.getPosition()
+                    .getY());
             cacheAuditPending = true;
             RuntimeException releaseFailure = releaseConfirmed();
             if (releaseFailure != null) {
@@ -1048,6 +1125,11 @@ final class ExcavationTaskRunner implements TaskRunner {
             ExcavationFrontier next = activePlan.getNextFrontier();
             RuntimeException releaseFailure = releaseConfirmed();
             if (releaseFailure != null) throw releaseFailure;
+            targetsSinceCollection++;
+            statistics.broken(
+                confirmation.getBrokenTargets(),
+                result.getPosition()
+                    .getY());
             verificationFrontier = next;
             verificationChanged = true;
             return StepResult.progress(
@@ -1077,6 +1159,16 @@ final class ExcavationTaskRunner implements TaskRunner {
                     ? "Rediscovered blocks were cleared; starting the required final clean verification pass"
                     : "Rediscovered blocks were cleared; rechecking completed layer " + verificationLayerY);
         }
+        if (!boundaryCollectionDone && runtime.getExcavationBackend()
+            .supportsDropCollection()) {
+            boundaryCollectionDone = true;
+            collectionDue = true;
+            return StepResult.progress(
+                context.getActionEpoch(),
+                taskCheckpoint,
+                "Collecting mined items before leaving the cleared layer");
+        }
+        boundaryCollectionDone = false;
         excavationCheckpoint = completionCandidate;
         taskCheckpoint = ExcavationTaskCheckpointCodec.encode(cylinder, excavationCheckpoint);
         Integer completedLayer = verificationLayerY;
@@ -1246,6 +1338,72 @@ final class ExcavationTaskRunner implements TaskRunner {
         }
     }
 
+    private StepResult collectDrops(TaskStepContext context, ExcavationBackend backend) {
+        try {
+            if (dropCollection == null) {
+                if (!backend.readyForDropCollection()) return StepResult.waitFor(
+                    context.getActionEpoch(),
+                    taskCheckpoint,
+                    0L,
+                    "Waiting for mining packets before item collection");
+                Optional<ActionLease> acquired = context.getActions()
+                    .tryAcquire(
+                        Collections.unmodifiableSet(
+                            EnumSet.of(
+                                ActionCapability.MOVEMENT,
+                                ActionCapability.LOOK,
+                                ActionCapability.DIG,
+                                ActionCapability.HELD_USE)));
+                if (!acquired.isPresent()) return StepResult
+                    .waitFor(context.getActionEpoch(), taskCheckpoint, 0L, "Waiting for item collection movement");
+                collectionLease = acquired.get();
+                collectionBackend = backend;
+                dropCollection = backend.collectDrops(spec.getId(), cylinder, collectionLease);
+                if (dropCollection == null) throw new IllegalStateException("Missing excavation drop collector");
+            }
+            if (collectionBackend != backend || !collectionLease.isValid())
+                throw new IllegalStateException("Item collection authority changed");
+            if (!dropCollection.poll())
+                return StepResult.waitFor(context.getActionEpoch(), taskCheckpoint, 0L, dropCollection.detail());
+            String detail = dropCollection.detail();
+            RuntimeException cleanup = stopCollection();
+            if (cleanup != null) throw cleanup;
+            targetsSinceCollection = 0;
+            lastCollectionMillis = context.getNowMillis();
+            collectionDue = false;
+            return StepResult.progress(context.getActionEpoch(), taskCheckpoint, detail);
+        } catch (RuntimeException failure) {
+            RuntimeException cleanup = stopCollection();
+            if (cleanup != null) failure.addSuppressed(cleanup);
+            return StepResult.failed(
+                context.getActionEpoch(),
+                taskCheckpoint,
+                "Item collection failed: " + describe(failure),
+                false);
+        }
+    }
+
+    private RuntimeException stopCollection() {
+        ExcavationBackend.DropCollection handle = dropCollection;
+        ActionLease lease = collectionLease;
+        dropCollection = null;
+        collectionLease = null;
+        collectionBackend = null;
+        RuntimeException failure = null;
+        try {
+            if (handle != null) handle.close();
+        } catch (RuntimeException problem) {
+            failure = problem;
+        }
+        try {
+            if (lease != null) lease.close();
+        } catch (RuntimeException problem) {
+            if (failure == null) failure = problem;
+            else failure.addSuppressed(problem);
+        }
+        return failure;
+    }
+
     private RuntimeException stopActive() {
         ExcavationActionHandle handle = activeHandle;
         ActionLease lease = activeLease;
@@ -1254,6 +1412,9 @@ final class ExcavationTaskRunner implements TaskRunner {
         clearActiveReferences();
         clearManagedSequence(true);
         RuntimeException failure = cancelAndClose(handle, lease);
+        RuntimeException collectionFailure = stopCollection();
+        if (failure == null) failure = collectionFailure;
+        else if (collectionFailure != null) failure.addSuppressed(collectionFailure);
         RuntimeException managedFailure = cancelAndClose(managedHandle, managedLease);
         if (failure == null) return managedFailure;
         if (managedFailure != null) failure.addSuppressed(managedFailure);
@@ -1386,6 +1547,12 @@ final class ExcavationTaskRunner implements TaskRunner {
             return resetPrimaryToRediscoveredLayer(context, position);
         }
         if (cacheAuditFrontier.isComplete() || cacheAuditOffset >= clearedPositions) resetCacheAuditCursor();
+        // This audit is read-only. Walking mode can plan the next target in the same tick
+        // after a clean audit instead of inserting another idle tick between every block.
+        if (Boolean.parseBoolean(
+            spec.getParameters()
+                .get("movingMining")))
+            return observeAndSubmit(context, backend);
         return StepResult.progress(
             context.getActionEpoch(),
             taskCheckpoint,

@@ -6,6 +6,10 @@ public final class ScheduleTiming {
     private ScheduleTiming() {}
 
     public static String describe(ScheduleSnapshot schedule, SchedulerSnapshot clock) {
+        return describe(schedule, clock, 0);
+    }
+
+    public static String describe(ScheduleSnapshot schedule, SchedulerSnapshot clock, int travelLeadTicks) {
         if (schedule.getState() != ScheduleState.ACTIVE) return "Next activation: " + schedule.getState()
             .name()
             .toLowerCase(java.util.Locale.ROOT);
@@ -18,7 +22,10 @@ public final class ScheduleTiming {
         long world = clock.getLastWorldTimeTicks();
         if (world == ScheduleEnvironment.UNKNOWN_WORLD_TIME) return "Next activation: waiting for world time";
         long day = world / ScheduleRule.WORLD_DAY_TICKS;
-        long start = day * ScheduleRule.WORLD_DAY_TICKS + rule.getWindowStartTick();
+        int lead = rule.getWindowStartTick() < rule.getWindowEndTick()
+            ? Math.min(rule.getWindowStartTick(), Math.max(0, travelLeadTicks))
+            : 0;
+        long start = day * ScheduleRule.WORLD_DAY_TICKS + rule.getWindowStartTick() - lead;
         long end = day * ScheduleRule.WORLD_DAY_TICKS + rule.getWindowEndTick();
         if (rule.getWindowEndTick() <= rule.getWindowStartTick()) {
             if (world % ScheduleRule.WORLD_DAY_TICKS < rule.getWindowEndTick()) {
@@ -30,7 +37,9 @@ public final class ScheduleTiming {
             return "Next activation: window open; waiting for eligibility";
         }
         if (start <= world || day <= schedule.getLastWorldOccurrence()) start += ScheduleRule.WORLD_DAY_TICKS;
-        return "Next activation: ~" + duration(Math.max(0L, start - world) * 50L) + " (world time)";
+        return lead > 0
+            ? "Depart in ~" + duration(Math.max(0L, start - world) * 50L) + "; estimated trip " + duration(lead * 50L)
+            : "Next activation: ~" + duration(Math.max(0L, start - world) * 50L) + " (world time)";
     }
 
     private static String duration(long millis) {

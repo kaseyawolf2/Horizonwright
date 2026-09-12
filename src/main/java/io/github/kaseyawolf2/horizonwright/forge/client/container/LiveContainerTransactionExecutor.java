@@ -177,7 +177,7 @@ public final class LiveContainerTransactionExecutor implements ConfirmedContaine
                         .getRevision());
                 String difference = click.getExpectedAfter()
                     .describeDifference(observed);
-                if (!"none".equals(difference) && !difference.equals(lastReportedDifference)) {
+                if (!click.matchesAfter(observed) && !difference.equals(lastReportedDifference)) {
                     trace(
                         "snapshot-mismatch",
                         active.getTransaction(),

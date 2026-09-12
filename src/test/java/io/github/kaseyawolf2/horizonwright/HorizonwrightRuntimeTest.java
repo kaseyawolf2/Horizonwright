@@ -38,6 +38,29 @@ import io.github.kaseyawolf2.horizonwright.runtime.task.TreeTask;
 public class HorizonwrightRuntimeTest {
 
     @Test
+    public void schedulesCanBeCreatedWhileStoppedWithoutStartingTheirWork() {
+        InMemoryActionBroker broker = new InMemoryActionBroker();
+        HorizonwrightRuntime runtime = new HorizonwrightRuntime(broker, new ActionSessionGuard(), new FixedClock());
+        try {
+            runtime.stopAutomation("planning");
+            runtime.scheduleNightSleep("bed", "home-bed");
+            runtime.scheduleFarm("farm", "plot", 2, 1000L);
+            runtime.scheduleTreePass("tree", "trees", 2, 1000L);
+            assertFalse(
+                runtime.clientTick(ScheduleEnvironment.connected(13000L, java.util.Collections.emptySet()))
+                    .getActiveTaskId()
+                    .isPresent());
+            assertTrue(
+                broker.snapshot()
+                    .getActiveOwners()
+                    .isEmpty());
+            assertTrue(broker.isAutomationLocked());
+        } finally {
+            runtime.close();
+        }
+    }
+
+    @Test
     public void rerunCopiesSettingsButRetainsCompletedHistoryAndStartsFresh() {
         HorizonwrightRuntime runtime = new HorizonwrightRuntime(
             new InMemoryActionBroker(),
@@ -222,14 +245,14 @@ public class HorizonwrightRuntimeTest {
             broker.snapshot()
                 .isDeathSafetyLocked());
         assertEquals(ActionSessionGuard.Mode.PLAYER, guard.getMode());
-        try {
-            runtime.submitGoTo(0, 4, 64, 4, 1);
-            fail("manual automation stop must reject new work");
-        } catch (IllegalStateException expected) {
-            assertTrue(
-                expected.getMessage()
-                    .contains("/hw reset"));
-        }
+        io.github.kaseyawolf2.horizonwright.core.task.TaskSnapshot queuedWhileStopped = runtime
+            .submitGoTo(0, 4, 64, 4, 1);
+        assertEquals(TaskState.QUEUED, queuedWhileStopped.getState());
+        assertFalse(
+            runtime.clientTick(ScheduleEnvironment.connected(13000L, java.util.Collections.emptySet()))
+                .getActiveTaskId()
+                .isPresent());
+        assertTrue(broker.isAutomationLocked());
         try {
             runtime.resumeTask("anything");
             fail("manual automation stop must reject resumes");
@@ -264,14 +287,14 @@ public class HorizonwrightRuntimeTest {
         }
 
         runtime.stopAutomation("operator test");
-        try {
-            runtime.submitExcavation(ExcavationTask.cleanVolumeCylinder("blocked", 0, 0, 0, 1, 60, 60));
-            fail("automation stop must reject new excavation work");
-        } catch (IllegalStateException expected) {
-            assertTrue(
-                expected.getMessage()
-                    .contains("/hw reset"));
-        }
+        io.github.kaseyawolf2.horizonwright.core.task.TaskSnapshot queuedWhileStopped = runtime
+            .submitExcavation(ExcavationTask.cleanVolumeCylinder("blocked", 0, 0, 0, 1, 60, 60));
+        assertEquals(TaskState.QUEUED, queuedWhileStopped.getState());
+        assertFalse(
+            runtime.clientTick(ScheduleEnvironment.connected(13000L, java.util.Collections.emptySet()))
+                .getActiveTaskId()
+                .isPresent());
+        assertTrue(broker.isAutomationLocked());
         runtime.close();
     }
 
@@ -295,14 +318,14 @@ public class HorizonwrightRuntimeTest {
         }
 
         runtime.stopAutomation("operator test");
-        try {
-            runtime.submitFarm(FarmTask.finitePass("blocked", "north-field", 2));
-            fail("automation stop must reject new farm work");
-        } catch (IllegalStateException expected) {
-            assertTrue(
-                expected.getMessage()
-                    .contains("/hw reset"));
-        }
+        io.github.kaseyawolf2.horizonwright.core.task.TaskSnapshot queuedWhileStopped = runtime
+            .submitFarm(FarmTask.finitePass("blocked", "north-field", 2));
+        assertEquals(TaskState.QUEUED, queuedWhileStopped.getState());
+        assertFalse(
+            runtime.clientTick(ScheduleEnvironment.connected(13000L, java.util.Collections.emptySet()))
+                .getActiveTaskId()
+                .isPresent());
+        assertTrue(broker.isAutomationLocked());
         runtime.close();
     }
 

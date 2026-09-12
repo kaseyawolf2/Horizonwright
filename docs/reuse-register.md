@@ -56,7 +56,7 @@ remote commit URL for them.
 | Farming, Pam HarvestCraft, and CropsNH behavior | `REIMPLEMENT` | Use exact-version public APIs/observed metadata contracts and independently recorded ordinary-crop fixtures; no optional-mod implementation classes ship in Horizonwright. |
 | GT prospecting grid calculations | `REIMPLEMENT` | Use coordinate fixtures and an independent implementation. |
 | Storage/container transactions | `REIMPLEMENT` | New epoch-bound transactional service. |
-| Tinkers classification and repair behavior | `REIMPLEMENT` | Exact TConstruct `1.14.93-GTNH`, TGregworks `1.0.33`, and Mantle `0.5.4` source hashes gate a reflection-isolated adapter; no implementation types enter core or task packages. |
+| Tinkers classification and repair behavior | `REIMPLEMENT` | Exact TConstruct `1.14.108-GTNH`, TGregworks `1.0.33`, and Mantle `0.5.4` source hashes gate a reflection-isolated adapter; no implementation types enter core or task packages. |
 | Piston Boots movement behavior | `REIMPLEMENT` | Capability snapshots replace mutable global settings. |
 
 ## Compatibility rule
@@ -74,8 +74,8 @@ runtime artifact installed in the disposable GTNH instance:
 
 | Field | Recorded value |
 | --- | --- |
-| Runtime filename | `harvestcraft-1.3.11-GTNH.jar` |
-| Binary SHA-256 | `da05759c991b81516fe04c26c437c6c27f04dbec0addec9dffe974e9668b911d` |
+| Runtime filename | `harvestcraft-1.3.14-GTNH.jar` |
+| Binary SHA-256 | `6f605b9bbf03122bf8700a3332e3c56bfd5d0472e8d4e03c04841064e5ba9a01` |
 | Ground crop class | `com.pam.harvestcraft.BlockPamCrop` |
 | Hanging fruit class | `com.pam.harvestcraft.BlockPamFruit` |
 | Fruiting log class | `com.pam.harvestcraft.BlockPamFruitingLog` |

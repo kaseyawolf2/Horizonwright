@@ -45,6 +45,10 @@ public final class InventorySlot {
         return accepts.test(value) ? Math.max(0, capacity.applyAsInt(value)) : 0;
     }
 
+    public boolean isFull(ItemFingerprint value) {
+        return value != null && capacity.applyAsInt(value) > 0 && value.getCount() >= capacity.applyAsInt(value);
+    }
+
     /** Higher priorities represent narrower filters and are filled before general-purpose slots. */
     public int getRestrictionPriority() {
         return restrictionPriority;

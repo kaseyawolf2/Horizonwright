@@ -1,8 +1,11 @@
 # Pinned toolchain
 
+See [the Beta3 migration record](beta3-migration.md) for the current instance,
+artifact comparison, and physical-validation limits.
+
 | Component | Pin | Purpose |
 | --- | --- | --- |
-| GTNH pack | `2.9.0-beta-2` | Initial compatibility and disposable smoke-test target |
+| GTNH pack | `2.9.0-beta-3` | Current compatibility and disposable smoke-test target |
 | Minecraft | `1.7.10` | Game target |
 | Forge | `10.13.4.1614` | Mod loader and client API |
 | MCP | `stable_12` | Development mappings |
@@ -10,10 +13,10 @@
 | Target bytecode | Java 8 | Compatibility with the 1.7.10 ecosystem |
 | Gradle | `9.3.1` | Wrapper distribution |
 | GTNH conventions | `2.0.20` | RetroFuturaGradle project configuration |
-| TConstruct | `1.14.93-GTNH` / `D4B5C6F4...C772E` | Exact Tool Station/Forge repair adapter |
+| TConstruct | `1.14.108-GTNH` / `EF13FB8B...E02A0` | Exact Tool Station/Forge repair adapter |
 | TGregworks | `1.7.10-GTNH-1.0.33` / `93FFCA6F...5E807` | Eligible GT repair-material stack |
 | Mantle | `0.5.4` / `6E5C4B06...6B9EE` | Required TConstruct runtime foundation |
-| Pam HarvestCraft | `1.3.11-GTNH` / `DA05759C...8B911D` | Exact non-destructive crop/fruit metadata and right-click adapter |
+| Pam HarvestCraft | `1.3.14-GTNH` / `6F605B9B...A9A01` | Exact non-destructive crop/fruit metadata and right-click adapter |
 | Hunger Overhaul | `1.0.0.jenkins104` / `800E55C3...92641F9` | Exact non-destructive `BlockCrops` right-click behavior |
 
 The daemon provisioning URLs name the exact Temurin release rather than the
@@ -42,7 +45,7 @@ The optional Pam adapter recognizes only the three class names and metadata
 contracts recorded in `reuse-register.md`. It resolves the two public
 right-click configuration flags through the block's own class loader and has no
 compile-time HarvestCraft dependency. Its Forge-side probe requires exactly one
-loaded `harvestcraft` container with version `1.3.11-GTNH` and the complete
+loaded `harvestcraft` container with version `1.3.14-GTNH` and the complete
 recorded SHA-256 before production Pam actions are exposed. A missing,
 duplicate, version-different, byte-different, or unreadable artifact disables
 only Pam automation; vanilla and CropsNH farming remain available. The artifact

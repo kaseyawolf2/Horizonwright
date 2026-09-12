@@ -99,6 +99,10 @@ public final class HorizonwrightClientCommand extends CommandBase {
             ClientBootstrap.openDashboard();
             return;
         }
+        if ("hud".equals(subcommand)) {
+            ClientBootstrap.requestHudEditor();
+            return;
+        }
         if ("profile".equals(subcommand)) {
             controlProfile(sender, arguments);
             return;
@@ -297,6 +301,7 @@ public final class HorizonwrightClientCommand extends CommandBase {
             return getListOfStringsMatchingLastWord(
                 arguments,
                 "panel",
+                "hud",
                 "profile",
                 "debug",
                 "status",
@@ -1148,6 +1153,16 @@ public final class HorizonwrightClientCommand extends CommandBase {
                 new ChatComponentText(
                     task.isPresent() ? formatTask(task.get())
                         : EnumChatFormatting.RED + "Unknown Horizonwright task: " + arguments[1]));
+            if (task.isPresent() && "excavation".equals(
+                task.get()
+                    .getSpec()
+                    .getType())) {
+                for (String line : io.github.kaseyawolf2.horizonwright.runtime.task.ExcavationStatistics
+                    .describe(
+                        task.get()
+                            .getCheckpoint())
+                    .split("\n")) sender.addChatMessage(new ChatComponentText(line));
+            }
             return;
         }
         sender.addChatMessage(

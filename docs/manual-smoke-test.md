@@ -15,7 +15,7 @@ the complete `[HWTRACE]` sequence is flushed to `.minecraft/logs/fml-client-late
    into the isolated instance.
    Confirm there is exactly one Horizonwright JAR and one Baritone JAR in
    `.minecraft/mods`.
-2. Launch through `GTNH-2.9.0-Beta2-Horizonwright.lnk` and maximize Minecraft.
+2. Launch through `GTNH-2.9.0-Beta3-Horizonwright.lnk` and maximize Minecraft.
 3. At the main menu, open **Mods** and confirm both `Horizonwright` and Baritone
    are present with the expected versions.
 4. Back up and then open the disposable `Horizonwright Smoke Tes` world, or
@@ -242,7 +242,7 @@ The long approach must not retry at 30 seconds. If a CropsNH spade is selected,
 the server must receive the held-slot change without an action-guard block; the
 crop must reset to immature and the pass must continue normally.
 
-For Pam HarvestCraft 1.3.11-GTNH, separately test one mature ground crop, one
+For Pam HarvestCraft 1.3.14-GTNH, separately test one mature ground crop, one
 mature hanging fruit, and one mature fruiting log while the pack's right-click
 harvest settings are enabled. Each must receive one normal right click and
 return to its exact immature metadata. The fruiting log must remain in place and
@@ -451,3 +451,24 @@ operator also created two resumable routes and confirmed that ambiguous
 `/hw resume` listed both choices and that an exact task ID resumed only the
 selected route. All checks passed with production JAR SHA-256
 `CF9C16E234048D818C0957BA3284394FA6C62C81CA6D24ED6AC8DDB5415B41D7`.
+## World profile button and camera control
+
+Press H or use /hw panel in an unenrolled world, then click **Create world profile**.
+The dashboard can enroll the world before a runtime exists and refreshes into the
+normal dashboard after activation. The button is hidden for an existing profile,
+a disconnected client, or a binding that requires recovery/reassociation. Profile
+creation uses the same persisted enrollment flow as /hw profile enroll. A stale
+click after the observed world changes does not enroll that other world.
+
+Enrollment previously activated a mouse wrapper that copied only integer deltas.
+LWJGL3ify 3.0.31's renderer instead reads FloatMouseHelper's fractional deltas from
+the wrapper, so those zero values prevented player looking. The wrapper now copies
+the public floating-point deltas and clears them on grab, release and focus loss,
+while preserving no-warp background release and ordinary vanilla mouse support.
+
+Regression tests cover fractional movement below one integer unit, clearing stale
+samples, vanilla fallback, profile persistence, duplicate creation and stale-world
+or disconnected clicks. The complete build passed with 809 tests on 2026-09-11.
+Physical checks: create a profile in a disposable world, close the dashboard, look
+in all directions, open/close a menu, Alt-Tab away/back, then reconnect and verify
+that the profile is retained and mouse looking still works.

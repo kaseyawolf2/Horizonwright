@@ -137,7 +137,7 @@ public final class GeneralizedInventoryPlanner {
                 if (remaining == 0) break;
             }
         }
-        for (StateSlot source : slots) {
+        for (StateSlot source : sourcesFullFirst(slots, StateSlot::isPlayer)) {
             if (!source.isPlayer() || !source.canExtract()
                 || carriers.contains(source.location)
                 || !mayStore.test(source.item)) continue;
@@ -147,7 +147,9 @@ public final class GeneralizedInventoryPlanner {
         List<MissingRequirement> missing = new ArrayList<>();
         for (LoadoutReservation requirement : requiredInPlayer) {
             int needed = Math.max(0, requirement.getMinimumCount() - countPlayer(slots, requirement));
-            for (StateSlot source : slots) {
+            for (StateSlot source : sourcesFullFirst(
+                slots,
+                slot -> !slot.isPlayer() && requirement.matches(slot.item))) {
                 if (needed == 0) break;
                 if (source.isPlayer() || !source.canExtract()
                     || carriers.contains(source.location)
@@ -189,8 +191,13 @@ public final class GeneralizedInventoryPlanner {
                 destinations.add(slot);
         }
         destinations.sort(
-            Comparator.comparingInt((StateSlot slot) -> slot.slot.getRestrictionPriority())
-                .reversed()
+            Comparator
+                .comparingInt(
+                    (StateSlot slot) -> source.slot.isFull(source.item) && requested >= source.item.getCount()
+                        && slot.freeCapacity(source.item) < source.item.getCount() ? 1 : 0)
+                .thenComparing(
+                    Comparator.comparingInt((StateSlot slot) -> slot.slot.getRestrictionPriority())
+                        .reversed())
                 .thenComparingInt(slot -> slot.item == null ? 1 : 0)
                 .thenComparing(slot -> slot.location.getEndpointId())
                 .thenComparingInt(slot -> slot.location.getSlot()));
@@ -208,6 +215,17 @@ public final class GeneralizedInventoryPlanner {
             remaining -= count;
         }
         return initial - remaining;
+    }
+
+    private static List<StateSlot> sourcesFullFirst(List<StateSlot> slots, Predicate<StateSlot> eligible) {
+        List<StateSlot> sorted = new ArrayList<>();
+        for (StateSlot slot : slots) if (slot.canExtract() && eligible.test(slot)) sorted.add(slot);
+        sorted.sort(
+            Comparator.comparingInt((StateSlot slot) -> slot.slot.isFull(slot.item) ? 0 : 1)
+                .thenComparing(
+                    Comparator.comparingInt((StateSlot slot) -> slot.item == null ? 0 : slot.item.getCount())
+                        .reversed()));
+        return sorted;
     }
 
     private static int countPlayer(List<StateSlot> slots, LoadoutReservation requirement) {

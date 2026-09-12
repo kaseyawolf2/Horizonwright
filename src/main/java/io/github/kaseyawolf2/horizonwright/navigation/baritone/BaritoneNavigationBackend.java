@@ -9,11 +9,14 @@ import java.util.Set;
 
 import net.minecraft.block.Block;
 import net.minecraft.client.Minecraft;
+import net.minecraft.network.play.client.C08PacketPlayerBlockPlacement;
 
 import baritone.api.BaritoneAPI;
 import baritone.api.IBaritone;
 import baritone.api.Settings;
+import baritone.api.event.events.PacketEvent;
 import baritone.api.event.events.SprintStateEvent;
+import baritone.api.event.events.type.EventState;
 import baritone.api.event.listener.AbstractGameEventListener;
 import baritone.api.pathing.goals.Goal;
 import baritone.api.pathing.goals.GoalBlock;
@@ -32,6 +35,7 @@ import io.github.kaseyawolf2.horizonwright.core.action.ActionLease;
 import io.github.kaseyawolf2.horizonwright.core.action.ActionRevocation;
 import io.github.kaseyawolf2.horizonwright.core.action.ActionRevocationListener;
 import io.github.kaseyawolf2.horizonwright.core.action.ActionSessionGuard;
+import io.github.kaseyawolf2.horizonwright.core.excavation.BlockPosition;
 import io.github.kaseyawolf2.horizonwright.core.navigation.BackendAvailability;
 import io.github.kaseyawolf2.horizonwright.core.navigation.CropTravelSafety;
 import io.github.kaseyawolf2.horizonwright.core.navigation.NavigationBackend;
@@ -40,6 +44,7 @@ import io.github.kaseyawolf2.horizonwright.core.navigation.NavigationHandle;
 import io.github.kaseyawolf2.horizonwright.core.navigation.NavigationProgress;
 import io.github.kaseyawolf2.horizonwright.core.navigation.NavigationRequest;
 import io.github.kaseyawolf2.horizonwright.core.navigation.NavigationState;
+import io.github.kaseyawolf2.horizonwright.forge.client.PillarMaterialPolicy;
 
 public final class BaritoneNavigationBackend
     implements NavigationBackend, CropTravelSafety, ActionRevocationListener, AbstractGameEventListener {
@@ -58,7 +63,126 @@ public final class BaritoneNavigationBackend
     private volatile BackendAvailability availability = BackendAvailability
         .available("Baritone enhanced build fcbbd4882c ready (scoped navigation contexts)");
     private Handle active;
+    private io.github.kaseyawolf2.horizonwright.forge.client.ScaffoldDigHandle scaffoldDig;
     private PendingCleanup pendingCleanup;
+    private final ScaffoldMaterialsScope scaffoldMaterials = new ScaffoldMaterialsScope();
+    private boolean scaffoldMaterialsActive;
+    private final ScaffoldLedger scaffolds = new ScaffoldLedger();
+    private Object scaffoldWorld;
+    private java.nio.file.Path scaffoldJournalDirectory;
+
+    @Override
+    public synchronized void configureScaffoldJournal(java.nio.file.Path directory) {
+        scaffoldJournalDirectory = directory;
+        scaffoldWorld = null;
+        observeScaffoldPlacement();
+    }
+
+    @Override
+    public synchronized boolean readyForScaffoldCleanup() {
+        return pendingCleanup == null && scaffoldPlacements.isEmpty()
+            && actionSessionGuard.isReadyForSession()
+            && baritone.getPlayerContext()
+                .player() != null
+            && io.github.kaseyawolf2.horizonwright.forge.client.VerticalMiningStability.isStable(
+                baritone.getPlayerContext()
+                    .player());
+    }
+
+    @Override
+    public synchronized NavigationHandle tryBreakScaffold(BlockPosition target, ActionLease lease, String requestId,
+        int dimension) {
+        requireClientThread();
+        if (!readyForScaffoldCleanup()) throw new IllegalStateException("Pillar removal is waiting for packet drain");
+        if (!remainingScaffolds().contains(target)) throw new IllegalArgumentException("Not a recorded pillar block");
+        scaffoldDig = io.github.kaseyawolf2.horizonwright.forge.client.ScaffoldDigHandle
+            .startIfReachable(Minecraft.getMinecraft(), actionSessionGuard, lease, requestId, dimension, target, () -> {
+                net.minecraft.world.World world = baritone.getPlayerContext()
+                    .world();
+                return world != null && world.provider.dimensionId == dimension
+                    && world.blockExists(target.getX(), target.getY(), target.getZ())
+                    && scaffolds.matches(
+                        target,
+                        Block.blockRegistry
+                            .getNameForObject(world.getBlock(target.getX(), target.getY(), target.getZ())) + ":"
+                            + world.getBlockMetadata(target.getX(), target.getY(), target.getZ()));
+            });
+        return scaffoldDig;
+    }
+
+    @Override
+    public synchronized java.util.List<BlockPosition> remainingScaffolds() {
+        observeScaffoldPlacement();
+        net.minecraft.world.World world = baritone.getPlayerContext()
+            .world();
+        java.util.List<BlockPosition> result = scaffolds.positions();
+        for (BlockPosition pos : result) {
+            if (world == null || !world.blockExists(pos.getX(), pos.getY(), pos.getZ()))
+                throw new IllegalStateException("Pending pillar cleanup is unloaded at " + pos);
+            if (world.isAirBlock(pos.getX(), pos.getY(), pos.getZ())) {
+                scaffolds.remove(pos);
+                continue;
+            }
+            String actual = Block.blockRegistry.getNameForObject(world.getBlock(pos.getX(), pos.getY(), pos.getZ()))
+                + ":"
+                + world.getBlockMetadata(pos.getX(), pos.getY(), pos.getZ());
+            if (!scaffolds.matches(pos, actual)) throw new IllegalStateException(
+                "Pending pillar block changed at " + pos + "; inspect it before cleanup");
+        }
+        List<BlockPosition> remaining = scaffolds.positions();
+        for (BlockPosition pending : scaffoldPlacements.positions())
+            if (!remaining.contains(pending)) remaining.add(pending);
+        return remaining;
+    }
+
+    private final ScaffoldPlacementTracker scaffoldPlacements = new ScaffoldPlacementTracker();
+
+    @Override
+    public synchronized void onSendPacket(PacketEvent event) {
+        if (event.getState() != EventState.PRE || !(event.getPacket() instanceof C08PacketPlayerBlockPlacement)
+            || active == null
+            || !active.request.isScaffoldingAllowed()
+            || !active.request.isPlacementAllowed()
+            || !actionSessionGuard.isActiveLease(active.movementLease)) return;
+        Minecraft mc = Minecraft.getMinecraft();
+        // dispatchPacket normally runs on the caller's client thread, before local placement.
+        if (!mc.func_152345_ab() || mc.theWorld == null || mc.thePlayer == null) return;
+        // PRE runs before dispatchPacket enqueues this C08. Enqueue an explicit C09 first:
+        // vanilla may already have cached a slot change that was blocked during an earlier drain.
+        io.github.kaseyawolf2.horizonwright.forge.client.network.HeldSlotSynchronization.sendCurrentSlot(mc);
+        observeScaffoldPlacement();
+        BlockPosition pos = scaffoldPlacements.sent(
+            (C08PacketPlayerBlockPlacement) event.getPacket(),
+            mc.thePlayer.ticksExisted,
+            p -> mc.theWorld.isAirBlock(p.getX(), p.getY(), p.getZ()));
+        if (pos != null) DevelopmentTrace
+            .event("scaffolding", "placement-sent", "request", active.request.getRequestId(), "position", pos);
+    }
+
+    private synchronized void observeScaffoldPlacement() {
+        net.minecraft.world.World world = baritone.getPlayerContext()
+            .world();
+        if (world != scaffoldWorld) {
+            scaffolds.bind(
+                world == null || scaffoldJournalDirectory == null ? null
+                    : scaffoldJournalDirectory
+                        .resolve("scaffolds-dimension-" + world.provider.dimensionId + ".properties"));
+            scaffoldWorld = world;
+            scaffoldPlacements.clear();
+        }
+        if (world == null || baritone.getPlayerContext()
+            .player() == null) return;
+        scaffoldPlacements.observe(
+            baritone.getPlayerContext()
+                .player().ticksExisted,
+            pos -> world.getBlock(pos.getX(), pos.getY(), pos.getZ()),
+            (pos, block) -> {
+                String fingerprint = Block.blockRegistry.getNameForObject(block) + ":"
+                    + world.getBlockMetadata(pos.getX(), pos.getY(), pos.getZ());
+                scaffolds.record(pos, fingerprint);
+                DevelopmentTrace.event("scaffolding", "placement-confirmed", "position", pos, "block", fingerprint);
+            });
+    }
 
     BaritoneNavigationBackend(IBaritone baritone, ActionSessionGuard actionSessionGuard) {
         if (baritone == null || actionSessionGuard == null) {
@@ -156,14 +280,41 @@ public final class BaritoneNavigationBackend
         Goal goal = request.getGoalKind() == NavigationGoalKind.ADJACENT ? new GoalGetToBlock(target)
             : request.getTolerance() == 0 ? new GoalBlock(request.getX(), request.getY(), request.getZ())
                 : new GoalNear(target, request.getTolerance());
-        CalculationContext calculationContext = createMovementContext(
-            request.isPlacementAllowed(),
-            request.getAllowedBreakBlockIds());
+        observeScaffoldPlacement();
+        Settings scaffoldSettings = BaritoneAPI.getSettings();
+        if (request.isScaffoldingAllowed()) {
+            synchronized (scaffoldSettings) {
+                scaffoldSettings.acceptableThrowawayItems.value = scaffoldMaterials.begin(
+                    scaffoldSettings.acceptableThrowawayItems.value,
+                    PillarMaterialPolicy.hotbarItems(
+                        baritone.getPlayerContext()
+                            .player().inventory.mainInventory));
+                scaffoldMaterialsActive = true;
+            }
+        }
+        CalculationContext calculationContext;
+        try {
+            calculationContext = createMovementContext(request.isPlacementAllowed(), request.getAllowedBreakBlockIds());
+            if (request.isScaffoldingAllowed()) ((HorizonwrightCalculationContext) calculationContext)
+                .withScaffolds(scaffolds, request.getScaffoldExclusions());
+        } catch (RuntimeException failure) {
+            restoreScaffoldMaterials();
+            throw failure;
+        }
         Handle handle = new Handle(this, request, movementLease, goal, calculationContext);
-        actionSessionGuard.begin(movementLease);
-        active = handle;
-        suppressInventoryMoves();
-        process.activate(handle);
+        try {
+            actionSessionGuard.begin(movementLease);
+            active = handle;
+            suppressInventoryMoves();
+            process.activate(handle);
+        } catch (RuntimeException failure) {
+            if (active == handle) {
+                handle.cancel();
+            } else {
+                restoreScaffoldMaterials();
+            }
+            throw failure;
+        }
         DevelopmentTrace.event(
             "navigation",
             "activated",
@@ -198,6 +349,7 @@ public final class BaritoneNavigationBackend
 
     @Override
     public void clientTick() {
+        observeScaffoldPlacement();
         enforceCropSprintSafety();
         PendingCleanup cleanup;
         synchronized (this) {
@@ -393,6 +545,7 @@ public final class BaritoneNavigationBackend
     }
 
     private void cancelRevokedEpoch(ActionRevocation revocation) {
+        if (scaffoldDig != null && scaffoldDig.epoch() == revocation.getRevokedEpoch()) scaffoldDig.cancel();
         Handle handle;
         synchronized (this) {
             handle = active;
@@ -503,10 +656,20 @@ public final class BaritoneNavigationBackend
         if (pendingCleanup == cleanup) {
             pendingCleanup = null;
             restoreInventoryMoves();
+            restoreScaffoldMaterials();
         }
     }
 
     private final NavigationInventorySuppression inventorySuppression = new NavigationInventorySuppression();
+
+    private void restoreScaffoldMaterials() {
+        if (!scaffoldMaterialsActive) return;
+        Settings settings = BaritoneAPI.getSettings();
+        synchronized (settings) {
+            settings.acceptableThrowawayItems.value = scaffoldMaterials.end(settings.acceptableThrowawayItems.value);
+        }
+        scaffoldMaterialsActive = false;
+    }
 
     private void suppressInventoryMoves() {
         Settings settings = BaritoneAPI.getSettings();

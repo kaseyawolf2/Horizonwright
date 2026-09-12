@@ -7,6 +7,7 @@ import net.minecraft.inventory.Container;
 
 import io.github.kaseyawolf2.horizonwright.core.action.ActionCapability;
 import io.github.kaseyawolf2.horizonwright.core.action.ActionLease;
+import io.github.kaseyawolf2.horizonwright.core.action.ActionSessionGuard;
 import io.github.kaseyawolf2.horizonwright.core.container.ContainerTransaction;
 import io.github.kaseyawolf2.horizonwright.core.container.ContainerTransactionState;
 import io.github.kaseyawolf2.horizonwright.core.logistics.NamedLoadout;
@@ -119,12 +120,8 @@ public final class LiveVanillaChestUnloadBackend implements UnloadBackend {
         Configuration resolved = configuration.resolve(request.getLoadoutId(), request.getStorageId(), chest);
         NamedLoadout loadout = resolved.loadout;
         StorageItemFilter filter = resolved.destinationFilter;
-        VanillaChestQuickMovePredictor.Prediction prediction = predictor.predict(
-            chest,
-            minecraft.thePlayer.inventory.getItemStack(),
-            loadout,
-            filter,
-            request.getTaskId() + "-r" + request.getCheckpointRevision());
+        VanillaChestQuickMovePredictor.Prediction prediction = predictor
+            .predict(chest, minecraft.thePlayer.inventory.getItemStack(), loadout, filter, request);
         return new UnloadObservationResult(
             request.getTaskId(),
             request.getCheckpointRevision(),
@@ -133,15 +130,17 @@ public final class LiveVanillaChestUnloadBackend implements UnloadBackend {
             loadout,
             prediction.getPlayerSlots(),
             filter,
-            prediction.getPredictions());
+            prediction.nextExtractionAwareTransfer(
+                SupportedChestLayout.inventory(chest)
+                    .getSizeInventory()));
     }
 
     @Override
     public UnloadActionHandle execute(UnloadActionRequest request, ActionLease lease) {
         requireClient(request);
         requireLease(request, lease);
-        executor.begin(request.getTransaction());
-        return new Handle(request.getRequestId(), request.getTransaction(), executor);
+        if (accessGuard == null) throw new IllegalStateException("Unload action session guard is unavailable");
+        return new Handle(request.getRequestId(), request.getTransaction(), executor, accessGuard, lease);
     }
 
     private void requireClient(Object request) {
@@ -164,17 +163,24 @@ public final class LiveVanillaChestUnloadBackend implements UnloadBackend {
         }
     }
 
-    private static final class Handle implements UnloadActionHandle {
+    static final class Handle implements UnloadActionHandle {
 
         private final String requestId;
         private final ContainerTransaction transaction;
         private final ConfirmedContainerTransactionExecutor executor;
+        private final ActionSessionGuard guard;
+        private final ActionLease lease;
+        private boolean started;
+        private boolean cancelled;
+        private boolean ownsSession;
 
-        private Handle(String requestId, ContainerTransaction transaction,
-            ConfirmedContainerTransactionExecutor executor) {
+        Handle(String requestId, ContainerTransaction transaction, ConfirmedContainerTransactionExecutor executor,
+            ActionSessionGuard guard, ActionLease lease) {
             this.requestId = requestId;
             this.transaction = transaction;
             this.executor = executor;
+            this.guard = guard;
+            this.lease = lease;
         }
 
         @Override
@@ -183,12 +189,36 @@ public final class LiveVanillaChestUnloadBackend implements UnloadBackend {
         }
 
         @Override
-        public UnloadActionProgress progress() {
+        public synchronized UnloadActionProgress progress() {
+            if (cancelled || !lease.isValid()) {
+                cancel();
+                return progress(UnloadActionState.FAILED, "Unload container authority was released");
+            }
+            if (!started) {
+                if (!guard.isReadyForSession()) return progress(
+                    UnloadActionState.EXECUTING,
+                    "Waiting for storage-opening packets to drain: " + guard.readinessDiagnostic());
+                try {
+                    guard.begin(lease);
+                    ownsSession = true;
+                    executor.begin(transaction);
+                    started = true;
+                } catch (RuntimeException failure) {
+                    cancel();
+                    return progress(
+                        UnloadActionState.FAILED,
+                        "Unload transaction could not start: " + failure.getMessage());
+                }
+            }
             ContainerTransactionState state = transaction.getState();
             if (state == ContainerTransactionState.COMPLETED) {
-                return progress(UnloadActionState.CONFIRMED, "Server confirmed the exact unload transaction");
+                endSession();
+                return progress(
+                    UnloadActionState.CONFIRMED,
+                    "Server confirmed the unload transfer; storage extraction is allowed");
             }
             if (state == ContainerTransactionState.ABORTED) {
+                endSession();
                 String reason = transaction.getAbortReason();
                 UnloadActionState result = reason.startsWith("server rejected") ? UnloadActionState.REJECTED
                     : UnloadActionState.FAILED;
@@ -198,8 +228,21 @@ public final class LiveVanillaChestUnloadBackend implements UnloadBackend {
         }
 
         @Override
-        public void cancel() {
-            executor.cancel(transaction, "unload task released its live transaction");
+        public synchronized void cancel() {
+            cancelled = true;
+            try {
+                executor.cancel(transaction, "unload task released its live transaction");
+            } finally {
+                endSession();
+            }
+        }
+
+        private void endSession() {
+            if (ownsSession) {
+                guard.quarantine(lease);
+                guard.end(lease);
+                ownsSession = false;
+            }
         }
 
         private UnloadActionProgress progress(UnloadActionState state, String detail) {

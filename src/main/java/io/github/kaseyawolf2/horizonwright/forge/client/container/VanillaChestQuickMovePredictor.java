@@ -31,6 +31,12 @@ final class VanillaChestQuickMovePredictor {
     }
 
     Prediction predict(Container chest, ItemStack cursor, NamedLoadout loadout, StorageItemFilter filter,
+        io.github.kaseyawolf2.horizonwright.runtime.task.UnloadObservationRequest request) {
+        // Saving PREPARED advances the checkpoint, but must not rename the same clicks.
+        return predict(chest, cursor, loadout, filter, request.getTaskId() + "-e" + request.getActionEpoch());
+    }
+
+    Prediction predict(Container chest, ItemStack cursor, NamedLoadout loadout, StorageItemFilter filter,
         String clickIdPrefix) {
         requireExactLayout(chest, cursor);
         ContainerSnapshot initial = snapshots.capture(chest, cursor, 0L);
@@ -46,14 +52,24 @@ final class VanillaChestQuickMovePredictor {
 
         List<UnloadClickPrediction> predictions = new ArrayList<>();
         long revision = 0L;
-        for (Integer playerSlot : plan.getUnloadableSlots()) {
+        List<Integer> ordered = new ArrayList<>(plan.getUnloadableSlots());
+        ordered.sort(java.util.Comparator.comparingInt((Integer slot) -> {
+            ItemStack item = simulated.get(windowSlot(chestSlots, slot));
+            return item.stackSize >= item.getMaxStackSize() ? 0 : 1;
+        })
+            .thenComparing(
+                java.util.Comparator
+                    .comparingInt((Integer slot) -> simulated.get(windowSlot(chestSlots, slot)).stackSize)
+                    .reversed()));
+        for (Integer playerSlot : ordered) {
             int windowSlot = windowSlot(chestSlots, playerSlot);
             if (!SupportedChestLayout.accepts(chest, simulated.get(windowSlot), chestSlots))
                 throw new IllegalStateException("Storage rejects approved player slot " + playerSlot);
-            ContainerSnapshot before = snapshot(initial, simulated, revision++);
+            ContainerSnapshot before = snapshot(initial, simulated, revision);
             if (!quickMoveIntoChest(simulated, windowSlot, chestSlots)) {
-                throw new IllegalStateException("vanilla chest has no capacity for approved player slot " + playerSlot);
+                continue;
             }
+            revision++;
             ContainerSnapshot after = snapshot(initial, simulated, revision);
             VerifiedContainerClick click = new VerifiedContainerClick(
                 clickIdPrefix + "-slot-" + playerSlot,
@@ -171,6 +187,16 @@ final class VanillaChestQuickMovePredictor {
 
         List<ItemFingerprint> getPlayerSlots() {
             return playerSlots;
+        }
+
+        List<UnloadClickPrediction> nextExtractionAwareTransfer(int storageSlots) {
+            if (predictions.isEmpty()) return Collections.emptyList();
+            UnloadClickPrediction first = predictions.get(0);
+            return Collections.singletonList(
+                new UnloadClickPrediction(
+                    first.getPlayerSlot(),
+                    first.getClick()
+                        .allowingStorageExtraction(storageSlots)));
         }
 
         List<UnloadClickPrediction> getPredictions() {

@@ -11,6 +11,28 @@ public final class ActionPacketDispatch {
 
     private ActionPacketDispatch() {}
 
+    /** Retains packet authority until already-queued tool restoration writes have passed the firewall. */
+    public static void endAfterPendingWrites(Minecraft minecraft,
+        io.github.kaseyawolf2.horizonwright.core.action.ActionSessionGuard guard,
+        io.github.kaseyawolf2.horizonwright.core.action.ActionLease lease) {
+        endAfterPendingWrites(guard, lease, completion -> afterPendingWrites(minecraft, completion));
+    }
+
+    static void endAfterPendingWrites(io.github.kaseyawolf2.horizonwright.core.action.ActionSessionGuard guard,
+        io.github.kaseyawolf2.horizonwright.core.action.ActionLease lease,
+        java.util.function.Consumer<Runnable> dispatcher) {
+        Runnable end = () -> {
+            guard.quarantine(lease);
+            guard.end(lease);
+        };
+        try {
+            dispatcher.accept(end);
+        } catch (RuntimeException failure) {
+            end.run();
+            throw failure;
+        }
+    }
+
     public static void afterPendingWrites(Minecraft minecraft, Runnable cleanup) {
         if (minecraft == null || cleanup == null) {
             throw new IllegalArgumentException("minecraft and cleanup are required");

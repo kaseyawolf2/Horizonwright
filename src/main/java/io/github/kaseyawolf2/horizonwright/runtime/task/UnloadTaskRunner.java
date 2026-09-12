@@ -41,6 +41,7 @@ final class UnloadTaskRunner implements TaskRunner {
     private UnloadBackend accessBackend;
     private String accessRequestId;
     private boolean finishingStorage;
+    private boolean storageObservedOpen;
     private String completionDetail;
 
     UnloadTaskRunner(TaskSpec spec, TaskCheckpoint checkpoint, UnloadRuntimeAccess runtime) {
@@ -87,6 +88,15 @@ final class UnloadTaskRunner implements TaskRunner {
         if (accessHandle != null) return pollStorageAccess(context, backend);
         UnloadBackendAvailability availability = availability(backend);
         if (backend == null || !availability.isAvailable()) {
+            if (storageObservedOpen) {
+                RuntimeException cleanup = stopActive();
+                restoredUncertainPhase = state.getPhase() != UnloadTaskCheckpoint.Phase.READY;
+                return blocked(
+                    context,
+                    appendCleanup("Storage was closed or became unavailable; unloading stopped.", cleanup),
+                    "explicit retry after storage closure",
+                    "Retry this unload task when ready. The chest will remain closed until then.");
+            }
             if (backend != null && activeHandle == null) {
                 StepResult access = beginStorageAccess(context, backend);
                 if (access != null) return access;
@@ -97,6 +107,7 @@ final class UnloadTaskRunner implements TaskRunner {
                 "an open, configured, version-tested storage container",
                 "Open the configured storage container or repair its adapter, then resume this task.");
         }
+        storageObservedOpen = true;
         if (activeHandle != null) {
             if (activeBackend != backend) {
                 return failed(context, "Unload backend changed during a transaction", stopActive(), false);
@@ -125,6 +136,7 @@ final class UnloadTaskRunner implements TaskRunner {
             throw new IllegalArgumentException("interruption must not be null");
         }
         RuntimeException failure = stopActive();
+        storageObservedOpen = false;
         restoredUncertainPhase = state.getPhase() != UnloadTaskCheckpoint.Phase.READY;
         if (failure != null) {
             throw failure;
@@ -184,6 +196,7 @@ final class UnloadTaskRunner implements TaskRunner {
                         finishingStorage = false;
                         return StepResult.completed(context.getActionEpoch(), taskCheckpoint, completionDetail);
                     }
+                    storageObservedOpen = true;
                     return StepResult.progress(
                         context.getActionEpoch(),
                         taskCheckpoint,
@@ -211,11 +224,11 @@ final class UnloadTaskRunner implements TaskRunner {
         try {
             built = observe(context, backend, spec.getId() + "-unload-" + (state.getRevision() + 1L));
         } catch (RuntimeException failure) {
-            return StepResult.failed(
-                context.getActionEpoch(),
-                taskCheckpoint,
+            return blocked(
+                context,
                 "Unload observation or planning failed: " + describe(failure),
-                true);
+                "valid inventory observation",
+                "Place any held cursor stack in a slot, inspect the chest, then retry unloading.");
         }
         if (!built.plan.mayStartTransaction()) {
             return blocked(
@@ -230,6 +243,12 @@ final class UnloadTaskRunner implements TaskRunner {
                 .size() + " destination-filtered stacks retained";
             return closeStorage(context, backend);
         }
+        if (built.transaction == null) return blocked(
+            context,
+            "Storage has no compatible capacity for the remaining " + built.plan.getUnloadableSlots()
+                .size() + " cargo stack(s).",
+            "free space for the remaining cargo",
+            "Make space in the configured chest, then retry this unload task. Items already transferred are retained.");
         String fingerprint = ContainerTransactionFingerprint.fingerprint(built.transaction);
         state = new UnloadTaskCheckpoint(
             state.getRevision() + 1L,
@@ -249,11 +268,11 @@ final class UnloadTaskRunner implements TaskRunner {
         try {
             built = observe(context, backend, state.getTransactionId());
         } catch (RuntimeException failure) {
-            return StepResult.failed(
-                context.getActionEpoch(),
-                taskCheckpoint,
+            return blocked(
+                context,
                 "Prepared unload revalidation failed: " + describe(failure),
-                true);
+                "valid inventory observation",
+                "Place any held cursor stack in a slot, inspect the chest, then retry unloading.");
         }
         if (built.transaction == null) {
             clearToReady(false);
@@ -376,11 +395,11 @@ final class UnloadTaskRunner implements TaskRunner {
         try {
             observe(context, backend, spec.getId() + "-reconcile-" + (state.getRevision() + 1L));
         } catch (RuntimeException failure) {
-            return StepResult.failed(
-                context.getActionEpoch(),
-                taskCheckpoint,
+            return blocked(
+                context,
                 "Uncertain unload reconciliation failed: " + describe(failure),
-                true);
+                "valid inventory observation",
+                "Place any held cursor stack in a slot, inspect the chest, then retry unloading.");
         }
         clearToReady(false);
         restoredUncertainPhase = false;
@@ -414,8 +433,10 @@ final class UnloadTaskRunner implements TaskRunner {
             .plan(observed.getLoadout(), observed.getPlayerSlots(), observed.getDestinationFilter());
         ContainerTransaction transaction = null;
         if (plan.mayStartTransaction() && !plan.getUnloadableSlots()
-            .isEmpty()) {
-            transaction = UnloadTransactionPlanner.create(
+            .isEmpty()
+            && !observed.getPredictions()
+                .isEmpty()) {
+            transaction = UnloadTransactionPlanner.createBatch(
                 transactionId,
                 context.getActionEpoch(),
                 plan,

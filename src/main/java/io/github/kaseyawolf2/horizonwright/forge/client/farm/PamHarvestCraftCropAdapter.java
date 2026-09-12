@@ -8,7 +8,7 @@ import net.minecraft.block.Block;
 
 import io.github.kaseyawolf2.horizonwright.core.base.CropFamily;
 
-/** Reflection-isolated adapter for the pinned Pam's HarvestCraft 1.3.11-GTNH blocks. */
+/** Reflection-isolated adapter for the pinned Pam's HarvestCraft 1.3.14-GTNH blocks. */
 final class PamHarvestCraftCropAdapter {
 
     static final String CROP_CLASS = "com.pam.harvestcraft.BlockPamCrop";
@@ -82,7 +82,7 @@ final class PamHarvestCraftCropAdapter {
             return field.getBoolean(null);
         } catch (ClassNotFoundException | NoSuchFieldException | IllegalAccessException failure) {
             throw new IllegalStateException(
-                "Pam's HarvestCraft 1.3.11-GTNH crop API does not match the tested adapter",
+                "Pam's HarvestCraft 1.3.14-GTNH crop API does not match the tested adapter",
                 failure);
         }
     }
@@ -110,7 +110,7 @@ final class PamHarvestCraftCropAdapter {
         }
 
         String getObservationFingerprint() {
-            return blockId + "|meta=" + metadata + "|adapter=pam-1.3.11-gtnh";
+            return blockId + "|meta=" + metadata + "|adapter=pam-1.3.14-gtnh";
         }
 
         String getHarvestIdentity() {

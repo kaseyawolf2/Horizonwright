@@ -80,6 +80,35 @@ public final class ClientBootstrap {
         "key.categories.horizonwright");
     private final ClientInputArbiter inputArbiter = new ClientInputArbiter();
     private final ClientScheduleEnvironmentTracker scheduleEnvironment = new ClientScheduleEnvironmentTracker();
+    private long nextSleepEstimate;
+    private java.util.Map<String, Integer> sleepEstimates = java.util.Collections.emptyMap();
+
+    private java.util.Map<String, Integer> sleepTravelEstimates() {
+        if (attachedRuntime == null || liveSleepBackend == null) return java.util.Collections.emptyMap();
+        if (System.nanoTime() < nextSleepEstimate) return sleepEstimates;
+        nextSleepEstimate = System.nanoTime() + 1_000_000_000L;
+        java.util.Map<String, Integer> estimates = new java.util.LinkedHashMap<>();
+        for (io.github.kaseyawolf2.horizonwright.core.task.ScheduleSnapshot schedule : attachedRuntime
+            .controllerSnapshot()
+            .getScheduler()
+            .getSchedules()) {
+            io.github.kaseyawolf2.horizonwright.core.task.ScheduledTaskSpec spec = schedule.getRule()
+                .getTask();
+            if (!io.github.kaseyawolf2.horizonwright.runtime.task.SleepTask.TYPE.equals(spec.getType())) continue;
+            try {
+                estimates.put(
+                    schedule.getRule()
+                        .getId(),
+                    liveSleepBackend.preparationLeadTicks(
+                        io.github.kaseyawolf2.horizonwright.runtime.task.SleepTask.bedLocationId(spec)));
+            } catch (RuntimeException unavailable) {
+                // The sleep task reports missing/changed bed configuration when its normal window arrives.
+            }
+        }
+        sleepEstimates = estimates;
+        return estimates;
+    }
+
     private final ProgressiveBlockDamageShield blockDamageShield = new ProgressiveBlockDamageShield(
         Minecraft.getMinecraft());
     private ClientRuntimeSessionManager runtimeSessions;
@@ -92,6 +121,7 @@ public final class ClientBootstrap {
     private long observedMarkerRevision = -1L;
     private WorldProfileIdentity activeIdentity;
     private HorizonwrightRuntime attachedRuntime;
+    private final BackgroundClientControl backgroundControl = new BackgroundClientControl();
     private ClientPacketFirewallInstaller packetFirewall;
     private ContainerTransactionPacketCoordinator containerTransactions;
     private LiveContainerTransactionExecutor containerTransactionExecutor;
@@ -132,7 +162,8 @@ public final class ClientBootstrap {
             Minecraft minecraft = Minecraft.getMinecraft();
             boolean connected = minecraft.theWorld != null && minecraft.thePlayer != null;
             long worldTime = connected ? MinecraftRuntimeAccess.worldTime(minecraft.theWorld) : 0L;
-            return scheduleEnvironment.observe(connected, worldTime, Collections.<String>emptySet());
+            return scheduleEnvironment.observe(connected, worldTime, Collections.<String>emptySet())
+                .withWindowLeadTicks(connected ? sleepTravelEstimates() : Collections.emptyMap());
         }, (runtime, connection) -> new DisabledDeathSafetyBoundary()),
             identity -> new TaskControllerRuntimeSessionPersistence(persistenceStore, identity),
             System::currentTimeMillis);
@@ -141,6 +172,9 @@ public final class ClientBootstrap {
             .bus()
             .register(this);
         MinecraftForge.EVENT_BUS.register(new ExcavationTargetOverlay());
+        MinecraftForge.EVENT_BUS.register(
+            new io.github.kaseyawolf2.horizonwright.forge.client.excavation.ExcavationStatisticsOverlay(
+                runtimeSessions));
         SingleplayerWorldMarkerRegistry.getInstance()
             .initialize();
         registerClientCommand(
@@ -209,6 +243,7 @@ public final class ClientBootstrap {
 
     @SubscribeEvent
     public void onKeyInput(InputEvent.KeyInputEvent event) {
+        if (!org.lwjgl.opengl.Display.isActive()) return;
         if (Minecraft.getMinecraft().currentScreen == null && Keyboard.getEventKeyState()) {
             preemptForPhysicalInput(Keyboard.getEventKey());
         }
@@ -219,6 +254,7 @@ public final class ClientBootstrap {
 
     @SubscribeEvent
     public void onMouseInput(InputEvent.MouseInputEvent event) {
+        if (!org.lwjgl.opengl.Display.isActive()) return;
         if (Minecraft.getMinecraft().currentScreen == null && Mouse.getEventButtonState()
             && Mouse.getEventButton() >= 0) {
             preemptForPhysicalInput(Mouse.getEventButton() - 100);
@@ -228,16 +264,24 @@ public final class ClientBootstrap {
     @SubscribeEvent
     public synchronized void onClientTick(TickEvent.ClientTickEvent event) {
         if (event.phase == TickEvent.Phase.START) {
+            backgroundControl.update(Minecraft.getMinecraft(), attachedRuntime != null);
             blockDamageShield.beforeVanillaInput();
             return;
         }
         blockDamageShield.afterVanillaInput();
+        if (hudEditorRequested) {
+            hudEditorRequested = false;
+            CurrentRuntimeProvider provider = runtimeSessions;
+            if (provider != null) Minecraft.getMinecraft()
+                .displayGuiScreen(new GuiHudEditor(null, provider));
+        }
         if (runtimeSessions == null) {
             return;
         }
         try {
             synchronizeSingleplayerProfile();
             activateReadyProfile();
+            backgroundControl.update(Minecraft.getMinecraft(), attachedRuntime != null);
             tickAttachedRuntime();
         } catch (RuntimeException failure) {
             HorizonwrightMod.LOG.error("Horizonwright client session tick failed safely", failure);
@@ -255,7 +299,15 @@ public final class ClientBootstrap {
             return;
         }
         Minecraft.getMinecraft()
-            .displayGuiScreen(new GuiHorizonwrightDashboard(provider, INSTANCE.profileEditorProvider()));
+            .displayGuiScreen(
+                new GuiHorizonwrightDashboard(provider, INSTANCE.profileEditorProvider(), INSTANCE.profileBindings));
+    }
+
+    private static volatile boolean hudEditorRequested;
+
+    public static void requestHudEditor() {
+        // Chat closes its screen after command dispatch; open on the next client tick.
+        hudEditorRequested = true;
     }
 
     private synchronized ProfileAssetEditorProvider profileEditorProvider() {
@@ -328,6 +380,10 @@ public final class ClientBootstrap {
             attachedRuntime.getActionBroker()
                 .addRevocationListener(inputArbiter);
             ClientNavigationBootstrap.initialize(attachedRuntime);
+            if (attachedRuntime.getNavigationBackend() != null) attachedRuntime.getNavigationBackend()
+                .configureScaffoldJournal(
+                    persistenceStore.pathsForProfile(identity.getProfileId())
+                        .getProfileDirectory());
             containerTransactions = new ContainerTransactionPacketCoordinator();
             containerTransactionExecutor = new LiveContainerTransactionExecutor(
                 minecraft,
@@ -386,7 +442,16 @@ public final class ClientBootstrap {
                 .bindInventoryService(extendedInventory);
             liveUnloadBackend = new LiveVanillaChestUnloadBackend(
                 minecraft,
-                new ProfileVanillaChestUnloadConfiguration(minecraft, persistenceStore, identity),
+                new ProfileVanillaChestUnloadConfiguration(minecraft, persistenceStore, identity, () -> {
+                    io.github.kaseyawolf2.horizonwright.core.task.ControllerSnapshot unloadSnapshot = attachedRuntime
+                        .controllerSnapshot();
+                    return unloadSnapshot.getActiveTaskId()
+                        .flatMap(unloadSnapshot::findTask)
+                        .map(
+                            task -> io.github.kaseyawolf2.horizonwright.runtime.task.UnloadTask
+                                .isExcavationUnload(task.getSpec()))
+                        .orElse(false);
+                }),
                 containerTransactionExecutor,
                 attachedRuntime.getActionSessionGuard(),
                 attachedRuntime::getNavigationBackend);
@@ -471,8 +536,7 @@ public final class ClientBootstrap {
                 MinecraftRuntimeAccess.addChatMessage(
                     minecraft.thePlayer,
                     new ChatComponentText(
-                        EnumChatFormatting.RED + "Horizonwright blocked "
-                            + taskId
+                        (TaskNoticeFormatting.color(reason) + "Horizonwright paused ") + taskId
                             + ": "
                             + reason.getDetail()
                             + EnumChatFormatting.GRAY
@@ -538,6 +602,7 @@ public final class ClientBootstrap {
         }
         activeIdentity = null;
         attachedRuntime = null;
+        backgroundControl.update(Minecraft.getMinecraft(), false);
         packetFirewall = null;
         containerTransactions = null;
         containerTransactionExecutor = null;
@@ -554,6 +619,7 @@ public final class ClientBootstrap {
         if (runtimeSessions == null || !isPlayerActionBinding(keyCode)) {
             return;
         }
+        if (FreecamCompatibility.controlsCamera() && isCameraMovementBinding(keyCode)) return;
         Optional<HorizonwrightRuntime> current = runtimeSessions.getCurrentRuntime();
         if (!current.isPresent() || current.get()
             .getActionSessionGuard()
@@ -584,6 +650,18 @@ public final class ClientBootstrap {
     private static String randomStableId() {
         return UUID.randomUUID()
             .toString();
+    }
+
+    private static boolean isCameraMovementBinding(int keyCode) {
+        net.minecraft.client.settings.GameSettings settings = Minecraft.getMinecraft().gameSettings;
+        KeyBinding[] interactions = { settings.keyBindAttack, settings.keyBindUseItem, settings.keyBindPickBlock,
+            settings.keyBindDrop };
+        for (KeyBinding binding : interactions) if (binding.getKeyCode() == keyCode) return false;
+        for (KeyBinding binding : settings.keyBindsHotbar) if (binding.getKeyCode() == keyCode) return false;
+        KeyBinding[] movement = { settings.keyBindForward, settings.keyBindBack, settings.keyBindLeft,
+            settings.keyBindRight, settings.keyBindJump, settings.keyBindSneak, settings.keyBindSprint };
+        for (KeyBinding binding : movement) if (binding.getKeyCode() == keyCode) return true;
+        return false;
     }
 
     private static boolean isPlayerActionBinding(int keyCode) {

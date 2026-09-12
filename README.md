@@ -1,5 +1,10 @@
 # Horizonwright
 
+Mining setup now offers square/circle spirals, chunk order and X/Z rows, optional walking during digging,
+and persisted layer timers, throughput and ETA. Bag-content observations are cached and Freecam camera
+movement is distinguished from player takeover. See the [performance test checklist](docs/mining-performance-smoke-test.md)
+for behavior, measurement definitions and physical checks.
+
 Horizonwright is a greenfield Forge 1.7.10 client mod for GT New Horizons. It
 is intended to own long-running task orchestration, safety, logistics,
 persistence, and its local dashboard while treating navigation as a private,
@@ -18,7 +23,7 @@ atomic persistence, exact hash-verified Baritone adapter, synchronous input
 revocation, and a noninterfering outbound action boundary. The death-safety
 kernel is now attached to live health, connection, persistence, respawn, and
 packet boundaries. The version-isolated OpenBlocks adapter now decodes only
-the owner and empty-state fields that OpenBlocks 1.12.18-GTNH actually syncs
+the owner and empty-state fields that OpenBlocks 1.12.21-GTNH actually syncs
 to clients. Its loaded-chunk scanner bounds discovery to the configured death
 radius, maps the current account name to the recorded player incarnation, and
 conservatively reconstructs likely grave contents by subtracting the observed
@@ -81,7 +86,7 @@ session's service. This live unload path is covered by automated layout,
 capacity, cursor, persistence, transaction-owner, and lifecycle tests but has
 not yet been installed into the Prism instance or physically exercised.
 Pinned Tinkers repair now has the corresponding live prepared-station path.
-The adapter follows the actual 1.14.93-GTNH semantics: station slot `1` is the
+The adapter follows the actual 1.14.108-GTNH semantics: station slot `1` is the
 damaged input, slots `2...` are materials, and slot `0` is the repaired output
 preview. A named repair station binds one exact world location to one loadout;
 the live adapter requires both the input tool and every consumed material to
@@ -136,7 +141,7 @@ contract now carries all scan, target, seed-reserve, action, and confirmation
 authority. The live observation half now resolves only an exact identity-bound
 named area, refuses cross-dimension, oversized, or partially unloaded plots,
 and recognizes pinned vanilla wheat, carrots, potatoes, nether wart, and cocoa;
-CropsNH 2.0.91 crop sticks; and the exact Pam HarvestCraft 1.3.11-GTNH crop,
+CropsNH 2.0.114 crop sticks; and the exact Pam HarvestCraft 1.3.14-GTNH crop,
 hanging-fruit, and fruiting-log classes. Pam crop and fruit support is enabled
 only when their pinned right-click configuration flags are active. Maturity is
 bound to each adapter's exact metadata/API state. Wheat, carrots, and potatoes
@@ -308,7 +313,7 @@ Baritone's separate `chatDebug` setting.
 
 ## Pinned target
 
-- GT New Horizons: `2.9.0-beta-2`
+- GT New Horizons: `2.9.0-beta-3`
 - Minecraft: `1.7.10`
 - Forge: `10.13.4.1614`
 - MCP mappings: `stable_12`

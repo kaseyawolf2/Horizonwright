@@ -85,7 +85,12 @@ public final class TreePlanner {
                 checkpoint,
                 tree,
                 TreeActionKind.HOLD_SAPLING_RESERVE,
-                "no verified sapling is available above reserve",
+                "not enough verified saplings: available " + reserveEvidence.getAvailableSaplings()
+                    + ", reserve "
+                    + reserveEvidence.getMinimumReserve()
+                    + ", planting sites "
+                    + checkpoint.getReplantPositions()
+                        .size(),
                 reserveEvidence);
         }
         return decision(

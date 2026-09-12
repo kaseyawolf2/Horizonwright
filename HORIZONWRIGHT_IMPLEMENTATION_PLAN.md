@@ -595,7 +595,7 @@ Exit criterion: Horizonwright crafts a multi-level item requiring both 2x2 and 3
 - Test scan prerequisite progression, duplicate fingerprints, moving entities, interrupted line of sight, node movement, dangerous nodes, node reserves, and pedestal ejection/recovery.
 - Verify no warp-bearing research can enter note creation without approval.
 - Verify no direct knowledge/NBT mutation and no Thaumcraft action packet after the death latch.
-- Run exact integration against the complete GTNH 2.9.0-beta-2 Thaumcraft stack and representative addon research/aspects.
+- Run exact integration against the complete GTNH 2.9.0-beta-3 Thaumcraft stack and representative addon research/aspects.
 
 ### Mobility, CropsNH, exploration, and crafting
 

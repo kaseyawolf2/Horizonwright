@@ -4,11 +4,11 @@
 
 The canonical Horizonwright physical-test instance is:
 
-- Prism display name: `GTNH-2.9.0-Beta2-Horizonwright`
-- Prism instance UUID: `199d415b36ca44079210867153c00f3a`
-- Instance directory: `D:\Games\Standalone\Minecraft\PrismLauncher-Windows-MinGW-w64-Portable-11.0.2\instances\GTNH-2.9.0-Beta2-Horizonwright`
-- Game directory: `D:\Games\Standalone\Minecraft\PrismLauncher-Windows-MinGW-w64-Portable-11.0.2\instances\GTNH-2.9.0-Beta2-Horizonwright\.minecraft`
-- Mods directory: `D:\Games\Standalone\Minecraft\PrismLauncher-Windows-MinGW-w64-Portable-11.0.2\instances\GTNH-2.9.0-Beta2-Horizonwright\.minecraft\mods`
+- Prism display name: `GTNH-2.9.0-Beta3-Horizonwright`
+- Prism instance UUID: `44d6c004c8a54826a7b334625f610a16`
+- Instance directory: `D:\Games\Standalone\Minecraft\PrismLauncher-Windows-MinGW-w64-Portable-11.0.2\instances\GTNH-2.9.0-Beta3-Horizonwright`
+- Game directory: `D:\Games\Standalone\Minecraft\PrismLauncher-Windows-MinGW-w64-Portable-11.0.2\instances\GTNH-2.9.0-Beta3-Horizonwright\.minecraft`
+- Mods directory: `D:\Games\Standalone\Minecraft\PrismLauncher-Windows-MinGW-w64-Portable-11.0.2\instances\GTNH-2.9.0-Beta3-Horizonwright\.minecraft\mods`
 
 Before installing or replacing Horizonwright or Baritone jars, verify the target using the exact Prism display name, instance UUID, and directory above. Do not deploy to another similarly named GTNH instance or another modpack instance.
 

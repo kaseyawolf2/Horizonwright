@@ -17,10 +17,11 @@ import io.github.kaseyawolf2.horizonwright.core.navigation.NavigationHandle;
 import io.github.kaseyawolf2.horizonwright.core.navigation.NavigationProgress;
 import io.github.kaseyawolf2.horizonwright.core.navigation.NavigationRequest;
 import io.github.kaseyawolf2.horizonwright.core.navigation.NavigationState;
+import io.github.kaseyawolf2.horizonwright.core.navigation.ScaffoldCleanup;
 import io.github.kaseyawolf2.horizonwright.forge.client.MinecraftRuntimeAccess;
 import io.github.kaseyawolf2.horizonwright.runtime.task.TreeBackend;
 
-/** Non-destructive, live-rescanned pickup pass before any saplings are planted. */
+/** Removes recorded supports, then rescans drops before any saplings are planted. */
 final class TreeDropCollector implements TreeBackend.CollectionHandle {
 
     private final Minecraft minecraft;
@@ -31,6 +32,8 @@ final class TreeDropCollector implements TreeBackend.CollectionHandle {
     private final ActionLease lease;
     private NavigationHandle moving;
     private EntityItem target;
+    private ScaffoldCleanup scaffoldCleanup;
+    private boolean scaffoldsCleared;
     private long deadline;
     private int emptySince = -1;
     private int arrivalTick = -1;
@@ -57,6 +60,19 @@ final class TreeDropCollector implements TreeBackend.CollectionHandle {
     public boolean poll() {
         if (cancelled || !lease.isValid() || minecraft.thePlayer == null || minecraft.theWorld == null)
             throw new IllegalStateException("Tree collection interrupted");
+        if (!scaffoldsCleared) {
+            if (scaffoldCleanup == null) scaffoldCleanup = new ScaffoldCleanup(
+                navigation,
+                lease,
+                task,
+                area.getMinimum()
+                    .getDimensionId());
+            if (!scaffoldCleanup.poll()) {
+                detail = "Removing remaining temporary tree pillars";
+                return false;
+            }
+            scaffoldsCleared = true;
+        }
         BasePosition min = area.getMinimum(), max = area.getMaximum();
         int pickupMargin = io.github.kaseyawolf2.horizonwright.core.base.TreeHarvestBoundary.OUTSIDE_REACH;
         if (minecraft.theWorld.provider.dimensionId != min.getDimensionId())
@@ -216,6 +232,7 @@ final class TreeDropCollector implements TreeBackend.CollectionHandle {
     @Override
     public void cancel() {
         cancelled = true;
+        if (scaffoldCleanup != null) scaffoldCleanup.close();
         if (moving != null) moving.cancel();
         moving = null;
     }

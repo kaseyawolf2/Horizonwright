@@ -1,0 +1,13 @@
+# Unloading into automated processing storage
+
+The September 12 trace showed 20 confirmed transfers into the diamond chest, then a five-second timeout after pipes removed previously deposited stacks. The old verifier required the full chest to keep its predicted contents.
+
+Live chest unloading now submits one quick-move per persisted transaction and observes the current inventory before planning the next transfer. Storage may be emptied, partially drained, or repacked during a transfer. Aggregate storage contents must remain a subset of the predicted item identities/counts, including metadata and NBT hashes. The source slot, cursor, window identity, layout, and action ownership remain verified. If extraction frees more capacity, the approved source stack may decrease further than predicted; other player slots may gain items from incidental pickups, but must not lose items or change the identity of an existing stack. The next plan includes newly collected cargo.
+
+A matching server acknowledgement is required. When Minecraft rejects the client prediction and sends a resync, both the full-window and cursor resync must arrive before the transfer can complete. Missing acknowledgement, an unchanged source, or a loss/replacement in another player inventory slot does not become a successful unload. No uncertain click is replayed. Ordinary container transactions retain exact snapshot checks. Extraction-aware clicks cannot be chained into a stale multi-click transaction, and their verification policy is included in the persisted transaction fingerprint.
+
+Regression coverage includes a draining chest with a rejected prediction and authoritative resync, continued fresh transfer planning, extraction before dispatch, extra space for a partial source, unchanged-source and missing-acknowledgement rejection, cursor/window/NBT checks, ordinary transaction strictness, and one-transfer live planning for a 108-slot chest.
+
+Physical verification: keep extraction from the configured unload chest running, fill the mining cargo inventory, and let an unload complete. Confirm that the bot resumes its work even if deposited stacks leave the chest immediately. Automated tests cover the state transitions; this physical scenario still needs an in-game run.
+
+The subsequent 10:31:13 trace exposed an incidental ink-sac pickup into the previously emptied window slot 138 while slot 141 was unloading. The accepted transfer now tolerates those additions and replans the new cargo. Regression tests reproduce the 108-slot chest, the exact affected window slots, extraction, the accepted transfer, and a subsequent server-resynchronized transfer of the new ink sac.

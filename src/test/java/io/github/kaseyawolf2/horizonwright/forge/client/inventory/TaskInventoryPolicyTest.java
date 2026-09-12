@@ -49,6 +49,87 @@ public class TaskInventoryPolicyTest {
     private final MinecraftContainerSnapshotter fingerprints = new MinecraftContainerSnapshotter(ids::get);
 
     @Test
+    public void knownBagIsSkippedWhenItCannotSupplyOrAcceptAnythingNeeded() {
+        ItemStack axe = tool("test:axe", "axe");
+        TaskInventoryPolicy policy = policy(TreeTask.TYPE, Collections.emptyMap(), Collections.emptyList(), null);
+        assertFalse(
+            BagVisitPolicy.needsVisit(
+                Collections.emptyList(),
+                new ItemStack[] { axe },
+                policy,
+                false,
+                stack -> false,
+                stack -> true,
+                fingerprints));
+        assertFalse(
+            BagVisitPolicy.needsVisit(
+                Collections.singletonList(axe.copy()),
+                new ItemStack[] { axe },
+                policy,
+                false,
+                stack -> false,
+                stack -> true,
+                fingerprints));
+    }
+
+    @Test
+    public void knownBagStillOpensForMissingToolAndCountedSurplus() {
+        ItemStack axe = tool("test:axe", "axe");
+        TaskInventoryPolicy policy = policy(TreeTask.TYPE, Collections.emptyMap(), Collections.emptyList(), null);
+        assertTrue(
+            BagVisitPolicy.needsVisit(
+                Collections.singletonList(axe),
+                new ItemStack[0],
+                policy,
+                false,
+                stack -> false,
+                stack -> true,
+                fingerprints));
+        assertTrue(
+            BagVisitPolicy.needsVisit(
+                Collections.emptyList(),
+                new ItemStack[] { axe, axe.copy() },
+                policy,
+                false,
+                stack -> false,
+                stack -> true,
+                fingerprints));
+        assertFalse(
+            BagVisitPolicy.needsVisit(
+                Collections.emptyList(),
+                new ItemStack[] { axe, axe.copy() },
+                policy,
+                false,
+                stack -> false,
+                stack -> false,
+                fingerprints));
+    }
+
+    @Test
+    public void unloadDecisionRespectsDestinationCargoPredicate() {
+        ItemStack item = tool("test:axe", "axe");
+        TaskInventoryPolicy policy = policy(TreeTask.TYPE, Collections.emptyMap(), Collections.emptyList(), null);
+        assertTrue(
+            BagVisitPolicy.needsVisit(
+                Collections.singletonList(item),
+                new ItemStack[0],
+                policy,
+                true,
+                stack -> true,
+                stack -> false,
+                fingerprints));
+        assertFalse(
+            BagVisitPolicy.needsVisit(
+                Collections.singletonList(item),
+                new ItemStack[0],
+                policy,
+                true,
+                stack -> false,
+                stack -> true,
+                fingerprints));
+    }
+
+    @Test
     public void activeAxeStaysAndIdenticalSpareAxeIsPacked() {
         ItemStack axe = tool("test:axe", "axe");
         ItemStack spare = axe.copy();

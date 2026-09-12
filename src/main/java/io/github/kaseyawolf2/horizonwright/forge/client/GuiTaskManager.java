@@ -22,6 +22,9 @@ public final class GuiTaskManager extends GuiReadableScreen {
     private static final int CLEAR_COMPLETED_BUTTON = 5;
     private static final int RERUN_BUTTON = 6;
     private static final int RETRY_BUTTON = 7;
+    private static final int EDIT_BUTTON = 8;
+    private GuiButton editButton;
+    private boolean fallbackTab;
     private GuiButton retryButton;
     private static final int TASKS_TAB = 20;
     private static final int SCHEDULES_TAB = 21;
@@ -62,6 +65,13 @@ public final class GuiTaskManager extends GuiReadableScreen {
         this.runtimeProvider = runtimeProvider;
     }
 
+    public GuiTaskManager(GuiScreen parent, CurrentRuntimeProvider runtimeProvider,
+        io.github.kaseyawolf2.horizonwright.runtime.persistence.profile.ProfileAssetEditorProvider editorProvider,
+        boolean fallbackTab) {
+        this(parent, runtimeProvider, editorProvider);
+        this.fallbackTab = fallbackTab;
+    }
+
     @Override
     public void initGui() {
         super.initGui();
@@ -72,9 +82,12 @@ public final class GuiTaskManager extends GuiReadableScreen {
         top = (height - panelHeight) / 2;
 
         GuiButton activeTab = new GuiHorizonwrightButton(TASKS_TAB, left + 16, top + 12, 120, 20, "Tasks");
-        activeTab.enabled = false;
+        activeTab.enabled = fallbackTab;
         buttonList.add(activeTab);
         buttonList.add(new GuiHorizonwrightButton(SCHEDULES_TAB, left + 144, top + 12, 120, 20, "Schedules"));
+        GuiButton fallback = new GuiHorizonwrightButton(22, left + 272, top + 12, 150, 20, "Fallback tasks");
+        fallback.enabled = !fallbackTab;
+        buttonList.add(fallback);
 
         taskButtons.clear();
         for (int index = 0; index < TASKS_PER_PAGE; index++) {
@@ -117,6 +130,14 @@ public final class GuiTaskManager extends GuiReadableScreen {
             20,
             "Clear completed");
         buttonList.add(clearCompletedButton);
+        editButton = new GuiHorizonwrightButton(
+            EDIT_BUTTON,
+            left + 140,
+            top + panelHeight - 28,
+            120,
+            20,
+            "Edit settings");
+        buttonList.add(editButton);
         buttonList.add(deleteButton);
         buttonList.add(
             new GuiHorizonwrightButton(BACK_BUTTON, left + panelWidth - 72, top + panelHeight - 28, 56, 20, "Back"));
@@ -124,6 +145,28 @@ public final class GuiTaskManager extends GuiReadableScreen {
 
     @Override
     protected void actionPerformed(GuiButton button) {
+        if (button.id == TASKS_TAB || button.id == 22) {
+            mc.displayGuiScreen(new GuiTaskManager(parent, runtimeProvider, editorProvider, button.id == 22));
+            return;
+        }
+        if (button.id == EDIT_BUTTON && selectedTaskId != null) {
+            CurrentRuntimeUiResolver.Resolution resolution = CurrentRuntimeUiResolver.resolve(runtimeProvider);
+            if (!resolution.isAvailable()) {
+                message = resolution.getDiagnostic();
+                return;
+            }
+            TaskSnapshot selected = resolution.getRuntime()
+                .controllerSnapshot()
+                .findTask(selectedTaskId)
+                .orElse(null);
+            if (selected != null && "excavation".equals(
+                selected.getSpec()
+                    .getType())
+                && !selected.getState()
+                    .isTerminal())
+                mc.displayGuiScreen(new GuiExcavationSettings(this, runtimeProvider, selected.getSpec()));
+            return;
+        }
         if (button.id == SCHEDULES_TAB) {
             mc.displayGuiScreen(new GuiScheduleManager(parent, runtimeProvider, editorProvider));
             return;
@@ -215,6 +258,7 @@ public final class GuiTaskManager extends GuiReadableScreen {
         List<TaskSnapshot> tasks = resolution.isAvailable() ? resolution.getRuntime()
             .controllerSnapshot()
             .getTasks() : Collections.<TaskSnapshot>emptyList();
+        tasks = filterTasks(tasks);
         configureTaskButtons(tasks);
         TaskSnapshot selected = find(tasks, selectedTaskId);
         if (selectedTaskId != null && selected == null) {
@@ -244,6 +288,11 @@ public final class GuiTaskManager extends GuiReadableScreen {
             message.startsWith("Task was not") || message.startsWith("Session unavailable") ? 0xFFFF7777 : 0xFF8FAAD0);
 
         deleteButton.enabled = selected != null && canDelete(selected);
+        editButton.enabled = selected != null && "excavation".equals(
+            selected.getSpec()
+                .getType())
+            && !selected.getState()
+                .isTerminal();
         rerunButton.enabled = selected != null
             && (selected.getState() == TaskState.COMPLETED || selected.getState() == TaskState.FAILED);
         deleteButton.displayString = selected != null && selected.getSpec()
@@ -265,6 +314,7 @@ public final class GuiTaskManager extends GuiReadableScreen {
         List<TaskSnapshot> tasks = resolution.getRuntime()
             .controllerSnapshot()
             .getTasks();
+        tasks = filterTasks(tasks);
         int count = completedCount(tasks);
         if (count == 0) {
             confirmClearCompleted = false;
@@ -301,6 +351,16 @@ public final class GuiTaskManager extends GuiReadableScreen {
         int count = 0;
         for (TaskSnapshot task : tasks) if (task.getState() == TaskState.COMPLETED) count++;
         return count;
+    }
+
+    private List<TaskSnapshot> filterTasks(List<TaskSnapshot> tasks) {
+        List<TaskSnapshot> filtered = new ArrayList<>();
+        for (TaskSnapshot task : tasks) {
+            boolean fallback = task.getSpec()
+                .getLane() == io.github.kaseyawolf2.horizonwright.core.task.TaskLane.FALLBACK;
+            if (fallback == fallbackTab) filtered.add(task);
+        }
+        return filtered;
     }
 
     private void configureTaskButtons(List<TaskSnapshot> tasks) {
@@ -358,6 +418,21 @@ public final class GuiTaskManager extends GuiReadableScreen {
             .append(task.getState())
             .append("]\n")
             .append(task.getDetail());
+        if ("excavation".equals(
+            task.getSpec()
+                .getType())) {
+            result.append("\nOrder: ")
+                .append(
+                    io.github.kaseyawolf2.horizonwright.core.excavation.ExcavationTraversal.parse(
+                        task.getSpec()
+                            .getParameters()
+                            .get("traversal"))
+                        .label());
+            result.append("\n")
+                .append(
+                    io.github.kaseyawolf2.horizonwright.runtime.task.ExcavationStatistics
+                        .describe(task.getCheckpoint()));
+        }
         BlockedReason reason = task.getBlockedReason()
             .orElse(null);
         if (reason != null) {

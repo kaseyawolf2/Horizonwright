@@ -8,8 +8,8 @@ import java.util.Locale;
 final class PamHarvestCraftCompatibilityInspector {
 
     static final String MOD_ID = "harvestcraft";
-    static final String VERSION = "1.3.11-GTNH";
-    static final String SHA256 = "DA05759C991B81516FE04C26C437C6C27F04DBEC0ADDEC9DFFE974E9668B911D";
+    static final String VERSION = "1.3.14-GTNH";
+    static final String SHA256 = "6F605B9BBF03122BF8700A3332E3C56BFD5D0472E8D4E03C04841064E5BA9A01";
 
     PamHarvestCraftCompatibilityStatus inspect(List<ArtifactEvidence> evidence, boolean deobfuscatedEnvironment) {
         if (evidence == null || evidence.contains(null)) {

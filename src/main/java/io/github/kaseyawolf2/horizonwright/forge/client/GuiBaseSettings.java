@@ -91,8 +91,7 @@ public final class GuiBaseSettings extends GuiReadableScreen {
                 ItemStack held = mc.thePlayer.getHeldItem();
                 ItemFingerprint item = new MinecraftContainerSnapshotter().fingerprint(held);
                 if (item == null) throw new IllegalArgumentException("Hold the repair material first.");
-                if (held.getMaxStackSize() == 1 || !held.getItem()
-                    .getToolClasses(held)
+                if (held.getMaxStackSize() == 1 || !ToolCapabilities.classes(held)
                     .isEmpty()) throw new IllegalArgumentException("Hold a repair material, not a tool.");
                 List<LoadoutReservation> items = new ArrayList<>();
                 for (LoadoutReservation value : AutomaticInventory.inspect(mc, editor.load())

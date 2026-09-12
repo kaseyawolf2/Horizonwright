@@ -30,14 +30,19 @@ import io.github.kaseyawolf2.horizonwright.core.container.ContainerSnapshot;
 import io.github.kaseyawolf2.horizonwright.core.container.ContainerTransaction;
 import io.github.kaseyawolf2.horizonwright.core.container.ContainerTransactionState;
 import io.github.kaseyawolf2.horizonwright.core.container.ItemFingerprint;
+import io.github.kaseyawolf2.horizonwright.core.excavation.BlockPosition;
 import io.github.kaseyawolf2.horizonwright.core.navigation.BackendAvailability;
 import io.github.kaseyawolf2.horizonwright.core.navigation.NavigationBackend;
 import io.github.kaseyawolf2.horizonwright.core.navigation.NavigationHandle;
 import io.github.kaseyawolf2.horizonwright.core.navigation.NavigationProgress;
 import io.github.kaseyawolf2.horizonwright.core.navigation.NavigationRequest;
 import io.github.kaseyawolf2.horizonwright.core.navigation.NavigationState;
+import io.github.kaseyawolf2.horizonwright.core.navigation.ScaffoldCleanup;
 import io.github.kaseyawolf2.horizonwright.forge.client.ClientBootstrap;
 import io.github.kaseyawolf2.horizonwright.forge.client.MinecraftRuntimeAccess;
+import io.github.kaseyawolf2.horizonwright.forge.client.PillarMaterialStaging;
+import io.github.kaseyawolf2.horizonwright.forge.client.ToolCapabilities;
+import io.github.kaseyawolf2.horizonwright.forge.client.VerticalMiningStability;
 import io.github.kaseyawolf2.horizonwright.forge.client.container.ConfirmedContainerTransactionExecutor;
 import io.github.kaseyawolf2.horizonwright.forge.client.container.MinecraftContainerSnapshotter;
 import io.github.kaseyawolf2.horizonwright.forge.client.excavation.ExcavationTargetOverlay;
@@ -275,6 +280,12 @@ public final class LiveVanillaTreeBackend implements TreeBackend {
         private long inventoryRevision;
         private String pendingApproachReason;
         private int[][] standBackPositions;
+        private PillarMaterialStaging pillarStaging;
+        private final java.util.List<BlockPosition> scaffoldExclusions = new java.util.ArrayList<>();
+        private int returnX, returnY, returnZ;
+        private boolean returningToGround;
+        private ScaffoldCleanup scaffoldCleanup;
+
         private TreeObservation confirmedAfter;
         private volatile boolean cancellationRequested;
 
@@ -285,9 +296,30 @@ public final class LiveVanillaTreeBackend implements TreeBackend {
             this.lease = lease;
             this.navigation = navigation;
             this.priorHotbarSlot = minecraft.thePlayer.inventory.currentItem;
+            returnX = (int) Math.floor(minecraft.thePlayer.posX);
+            returnY = (int) Math.floor(minecraft.thePlayer.boundingBox.minY);
+            returnZ = (int) Math.floor(minecraft.thePlayer.posZ);
+            for (BasePosition log : work.getCapturedBlocks())
+                scaffoldExclusions.add(new BlockPosition(log.getX(), log.getY(), log.getZ()));
         }
 
         private void start() {
+            if (!navigation.remainingScaffolds()
+                .isEmpty()) {
+                scaffoldCleanup = new ScaffoldCleanup(
+                    navigation,
+                    lease,
+                    request.getRequestId(),
+                    minecraft.theWorld.provider.dimensionId);
+                phase = Phase.REMOVING_OLD_SCAFFOLDS;
+                state = ActionState.EXECUTING;
+                deadlineNanos = add(System.nanoTime(), APPROACH_TIMEOUT_NANOS);
+                detail = "Removing remaining pillar blocks before resuming tree work";
+                return;
+            }
+            returnX = (int) Math.floor(minecraft.thePlayer.posX);
+            returnY = (int) Math.floor(minecraft.thePlayer.boundingBox.minY);
+            returnZ = (int) Math.floor(minecraft.thePlayer.posZ);
             if (request.getDecision()
                 .getAction() == TreeActionKind.FELL_CAPTURED_BLOCKS) prepareNextLog();
             else preparePlant();
@@ -315,8 +347,20 @@ public final class LiveVanillaTreeBackend implements TreeBackend {
                 fail("Tree action deadline exceeded during " + phase);
                 return snapshot();
             }
-            if (phase == Phase.APPROACHING) pollApproach();
+            if (phase == Phase.REMOVING_OLD_SCAFFOLDS) {
+                if (scaffoldCleanup.poll()) {
+                    scaffoldCleanup.close();
+                    scaffoldCleanup = null;
+                    start();
+                }
+            } else if (phase == Phase.APPROACHING) pollApproach();
             else if (phase == Phase.WAITING_FOR_NAVIGATION) startPendingApproach();
+            else if (phase == Phase.WAITING_FOR_PILLAR_STACK) {
+                if (pillarStaging.poll()) {
+                    pillarStaging = null;
+                    phase = Phase.WAITING_FOR_NAVIGATION;
+                }
+            } else if (phase == Phase.RETURNING_TO_GROUND) returnToGround();
             else if (phase == Phase.WAITING_FOR_SESSION) beginActionWhenReady();
             else if (phase == Phase.WAITING_FOR_TOOL || phase == Phase.RETURNING_TOOL) pollToolTransfer();
             else if (phase == Phase.DIGGING) digOneTick();
@@ -367,6 +411,13 @@ public final class LiveVanillaTreeBackend implements TreeBackend {
             target = null;
             phase = Phase.CONFIRMING;
             deadlineNanos = add(System.nanoTime(), ACTION_TIMEOUT_NANOS);
+            if (!navigation.remainingScaffolds()
+                .isEmpty() || minecraft.thePlayer.boundingBox.minY > returnY + 1.0) {
+                phase = Phase.RETURNING_TO_GROUND;
+                deadlineNanos = add(System.nanoTime(), APPROACH_TIMEOUT_NANOS);
+                detail = "Descending from tree scaffolding before collecting drops";
+                return;
+            }
             detail = "All captured logs are gone; confirming the clear root";
         }
 
@@ -418,6 +469,16 @@ public final class LiveVanillaTreeBackend implements TreeBackend {
                     guard.readinessDiagnostic());
                 return;
             }
+            if (request.getDecision()
+                .getAction() == TreeActionKind.FELL_CAPTURED_BLOCKS) {
+                pillarStaging = PillarMaterialStaging
+                    .prepare(minecraft, guard, lease, stagedToolSource, stagedToolHotbar);
+                if (pillarStaging != null) {
+                    phase = Phase.WAITING_FOR_PILLAR_STACK;
+                    detail = "Staging logs or building blocks for tree pillaring";
+                    return;
+                }
+            }
             approachAttempt++;
             long now = System.nanoTime();
             NavigationRequest navigationRequest = request.getDecision()
@@ -466,6 +527,9 @@ public final class LiveVanillaTreeBackend implements TreeBackend {
                     APPROACH_TIMEOUT_NANOS);
                 trace("stand-back-goal", "x", point[0], "y", point[1], "z", point[2]);
             }
+            if (request.getDecision()
+                .getAction() == TreeActionKind.FELL_CAPTURED_BLOCKS)
+                navigationRequest = navigationRequest.withScaffolding(scaffoldExclusions);
             navigationHandle = navigation.submit(navigationRequest, lease);
             phase = Phase.APPROACHING;
             deadlineNanos = add(now, APPROACH_TIMEOUT_NANOS);
@@ -474,10 +538,60 @@ public final class LiveVanillaTreeBackend implements TreeBackend {
             trace("approach-start", "attempt", approachAttempt, "reason", pendingApproachReason);
         }
 
+        private void returnToGround() {
+            if (scaffoldCleanup == null) scaffoldCleanup = new ScaffoldCleanup(
+                navigation,
+                lease,
+                request.getRequestId(),
+                minecraft.theWorld.provider.dimensionId);
+            if (!returningToGround && !scaffoldCleanup.poll()) {
+                detail = "Removing all temporary tree pillar blocks";
+                return;
+            }
+            if (navigationHandle == null) {
+                if (!guard.isReadyForSession()) return;
+                if (returningToGround) {
+                    phase = Phase.CONFIRMING;
+                    detail = "Returned from scaffolding; confirming the clear root";
+                    return;
+                }
+                navigationHandle = navigation.submit(
+                    new NavigationRequest(
+                        request.getRequestId() + "-descend",
+                        lease.getEpoch(),
+                        minecraft.theWorld.provider.dimensionId,
+                        returnX,
+                        returnY,
+                        returnZ,
+                        1,
+                        System.nanoTime(),
+                        APPROACH_TIMEOUT_NANOS),
+                    lease);
+                returningToGround = true;
+                return;
+            }
+            NavigationProgress progress = navigationHandle.progress();
+            if (progress.getState() == NavigationState.COMPLETED) {
+                navigationHandle = null;
+            } else
+                if (progress.getState() == NavigationState.FAILED || progress.getState() == NavigationState.CANCELLED) {
+                    fail("Could not descend from tree scaffold: " + progress.getDetail());
+                }
+        }
+
         private void pollApproach() {
+            if (request.getDecision()
+                .getAction() == TreeActionKind.FELL_CAPTURED_BLOCKS
+                && minecraft.theWorld.isAirBlock(target.getX(), target.getY(), target.getZ())) {
+                navigationHandle.cancel();
+                navigationHandle = null;
+                phase = Phase.WAITING_FOR_SESSION;
+                detail = "Lumber axe cleared this log during approach; reconciling after packet drain";
+                return;
+            }
             boolean reached = request.getDecision()
                 .getAction() == TreeActionKind.FELL_CAPTURED_BLOCKS ? canReachBlock(target) : canReachSupport(target);
-            if (reached) {
+            if (reached && VerticalMiningStability.isStable(minecraft.thePlayer)) {
                 navigationHandle.cancel();
                 navigationHandle = null;
                 phase = Phase.WAITING_FOR_SESSION;
@@ -512,6 +626,10 @@ public final class LiveVanillaTreeBackend implements TreeBackend {
         }
 
         private void beginDig() {
+            if (!VerticalMiningStability.isStable(minecraft.thePlayer)) {
+                detail = "Waiting for supported, vertically stationary footing before cutting logs";
+                return;
+            }
             if (minecraft.theWorld.isAirBlock(target.getX(), target.getY(), target.getZ())) {
                 nextLog++;
                 prepareNextLog();
@@ -534,6 +652,12 @@ public final class LiveVanillaTreeBackend implements TreeBackend {
         }
 
         private void startDiggingWithSelectedTool() {
+            if (!VerticalMiningStability.isStable(minecraft.thePlayer)) {
+                stopSession();
+                phase = Phase.WAITING_FOR_SESSION;
+                detail = "Waiting for vertical movement to stop after tool selection";
+                return;
+            }
             if (minecraft.theWorld.isAirBlock(target.getX(), target.getY(), target.getZ())) {
                 stopSession();
                 nextLog++;
@@ -571,6 +695,12 @@ public final class LiveVanillaTreeBackend implements TreeBackend {
             }
             if (!observer.hasExpectedLog(target, work.getRequiredSaplingFingerprint())) {
                 fail("Tree log changed while digging");
+                return;
+            }
+            if (!VerticalMiningStability.isStable(minecraft.thePlayer)) {
+                stopSession();
+                phase = Phase.WAITING_FOR_SESSION;
+                detail = "Tree mining paused until vertical movement stops";
                 return;
             }
             if (!canReachBlock(target)) {
@@ -793,7 +923,7 @@ public final class LiveVanillaTreeBackend implements TreeBackend {
                 .block(minecraft.theWorld, position.getX(), position.getY(), position.getZ());
             int previous = minecraft.thePlayer.inventory.currentItem;
             ItemStack previousStack = minecraft.thePlayer.inventory.mainInventory[previous];
-            int bestSlot = previous;
+            int bestSlot = -1;
             double bestCost = Double.POSITIVE_INFINITY;
             int logs = 0, cubeLogs = 0, highLogs = 0;
             for (BasePosition log : work.getCapturedBlocks()) {
@@ -806,6 +936,8 @@ public final class LiveVanillaTreeBackend implements TreeBackend {
             try {
                 for (int slot = 0; slot < (transactions == null ? 9 : 36); slot++) {
                     ItemStack candidate = minecraft.thePlayer.inventory.mainInventory[slot];
+                    if (!ToolCapabilities.usable(candidate) || !ToolCapabilities.classes(candidate)
+                        .contains("axe")) continue;
                     minecraft.thePlayer.inventory.currentItem = slot < 9 ? slot : previous;
                     if (slot >= 9) minecraft.thePlayer.inventory.mainInventory[previous] = candidate;
                     try {
@@ -879,6 +1011,8 @@ public final class LiveVanillaTreeBackend implements TreeBackend {
                 minecraft.thePlayer.inventory.currentItem = previous;
                 minecraft.thePlayer.inventory.mainInventory[previous] = previousStack;
             }
+            if (bestSlot < 0) throw new IllegalStateException(
+                "No usable axe or hatchet in the 36 player slots; check bag access and tool durability");
             if (bestSlot >= 9) {
                 requireToolInventory();
                 stagedToolSource = bestSlot;
@@ -1060,11 +1194,7 @@ public final class LiveVanillaTreeBackend implements TreeBackend {
 
         private void showTarget() {
             if (target == null) return;
-            ExcavationTargetOverlay.show(
-                new io.github.kaseyawolf2.horizonwright.core.excavation.BlockPosition(
-                    target.getX(),
-                    target.getY(),
-                    target.getZ()));
+            ExcavationTargetOverlay.show(new BlockPosition(target.getX(), target.getY(), target.getZ()));
         }
 
         private void restoreSlot() {
@@ -1075,6 +1205,14 @@ public final class LiveVanillaTreeBackend implements TreeBackend {
         }
 
         private void stopSession() {
+            if (scaffoldCleanup != null) {
+                scaffoldCleanup.close();
+                scaffoldCleanup = null;
+            }
+            if (pillarStaging != null) {
+                pillarStaging.close();
+                pillarStaging = null;
+            }
             if (toolTransaction != null) {
                 transactions.cancel(toolTransaction, "tree tool action ended");
                 toolTransaction = null;
@@ -1167,6 +1305,9 @@ public final class LiveVanillaTreeBackend implements TreeBackend {
     }
 
     private enum Phase {
+        REMOVING_OLD_SCAFFOLDS,
+        WAITING_FOR_PILLAR_STACK,
+        RETURNING_TO_GROUND,
         WAITING_FOR_TOOL,
         RETURNING_TOOL,
         WAITING_FOR_NAVIGATION,

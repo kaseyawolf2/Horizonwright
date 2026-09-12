@@ -9,7 +9,7 @@ import net.minecraft.tileentity.TileEntity;
 
 import io.github.kaseyawolf2.horizonwright.core.base.CropFamily;
 
-/** Reflection-isolated adapter for the CropsNH 2.0.91 crop-stick API. */
+/** Reflection-isolated adapter for the CropsNH 2.0.114 crop-stick API. */
 final class CropsNhCropAdapter {
 
     static final String BLOCK_ID = "cropsnh:cropSticks";
@@ -57,7 +57,9 @@ final class CropsNhCropAdapter {
             }
             return Optional.of(new Descriptor(cropId, growthProgress, mature, weed, crossCrop, machineOnly));
         } catch (NoSuchMethodException | IllegalAccessException | InvocationTargetException failure) {
-            throw new IllegalStateException("CropsNH 2.0.91 crop-stick API does not match the tested adapter", failure);
+            throw new IllegalStateException(
+                "CropsNH 2.0.114 crop-stick API does not match the tested adapter",
+                failure);
         }
     }
 

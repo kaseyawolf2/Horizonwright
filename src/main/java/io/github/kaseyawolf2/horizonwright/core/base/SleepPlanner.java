@@ -21,10 +21,18 @@ public final class SleepPlanner {
     }
 
     public SleepDecision plan(SleepObservation observation) {
+        return plan(observation, 0);
+    }
+
+    public SleepDecision plan(SleepObservation observation, int travelLeadTicks) {
         if (observation == null) {
             throw new IllegalArgumentException("observation must not be null");
         }
-        if (!sleepWindow.contains(observation.getWorldTime())) {
+        long time = observation.getWorldTime() % sleepWindow.getDayLength();
+        boolean departingEarly = sleepWindow.equals(SleepWindow.vanilla()) && travelLeadTicks > 0
+            && time >= 12542L - Math.min(SleepTravelEstimate.MAX_LEAD_TICKS, travelLeadTicks)
+            && time < 12542L;
+        if (!sleepWindow.contains(observation.getWorldTime()) && !departingEarly) {
             return decision(SleepActionKind.SKIP_DAYTIME, observation);
         }
         if (!observation.isSleepValidDimension()) {

@@ -10,6 +10,7 @@ import java.util.function.Function;
 import net.minecraft.item.ItemStack;
 
 import io.github.kaseyawolf2.horizonwright.core.container.ItemFingerprint;
+import io.github.kaseyawolf2.horizonwright.forge.client.ToolCapabilities;
 import io.github.kaseyawolf2.horizonwright.forge.client.container.MinecraftContainerSnapshotter;
 
 /** Detects work that needs a bag, rather than treating every player-inventory edit as dirty. */
@@ -59,8 +60,7 @@ final class InventoryPreparationTracker {
             int reserve = policy.requiredCount(stack);
             if (reserve > 0 && TaskInventoryPolicy.isTool(stack)) {
                 if (!TaskInventoryPolicy.usableTool(stack)) continue;
-                java.util.Set<String> classes = stack.getItem()
-                    .getToolClasses(stack.copy());
+                java.util.Set<String> classes = ToolCapabilities.classes(stack);
                 if (classes.isEmpty()) result.supplyLevels.put(
                     "tool:" + fingerprints.fingerprint(stack)
                         .getItemId(),

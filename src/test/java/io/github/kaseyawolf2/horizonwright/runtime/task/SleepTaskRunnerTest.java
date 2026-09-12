@@ -26,11 +26,48 @@ import io.github.kaseyawolf2.horizonwright.core.task.TaskState;
 
 public class SleepTaskRunnerTest {
 
+    @Test
+    public void travelLeadStartsAnActionBeforeNightInsteadOfCompletingAsDaytime() {
+        harness = new Harness(observation(1L, 12000L, false, true, true));
+        harness.backend.leadTicks = 1000;
+        TaskSpec spec = SleepTask.once("early-bed", "home-bed");
+        harness.controller.submit(spec);
+        TaskSnapshot running = task(harness.controller.tick(), spec.getId());
+        assertEquals(TaskState.RUNNING, running.getState());
+        assertEquals(1, harness.backend.actions);
+        assertEquals(TaskCheckpoint.empty(), running.getCheckpoint());
+    }
+
     private Harness harness;
 
     @After
     public void closeHarness() {
         if (harness != null) harness.close();
+    }
+
+    @Test
+    public void packetDrainWaitDoesNotSpendRetriesOrReleaseSleepToFallbackWork() {
+        harness = new Harness(observation(1L, 13000L, false, true, true));
+        io.github.kaseyawolf2.horizonwright.core.action.ActionSessionGuard guard = new io.github.kaseyawolf2.horizonwright.core.action.ActionSessionGuard();
+        guard.markFirewallInstalled();
+        ActionLease previous = harness.broker
+            .tryAcquire("previous-excavation", java.util.EnumSet.of(ActionCapability.MOVEMENT, ActionCapability.LOOK))
+            .get();
+        guard.begin(previous);
+        guard.end(previous);
+        previous.close();
+        harness.backend.ready = guard::isReadyForSession;
+        TaskSpec spec = SleepTask.once("sleep", "home-bed");
+        harness.controller.submit(spec);
+        for (int tick = 0; tick < 20; tick++) {
+            TaskSnapshot waiting = task(harness.controller.tick(), spec.getId());
+            assertEquals(TaskState.RUNNING, waiting.getState());
+            assertEquals(0, waiting.getRetryCount());
+            assertEquals(0, harness.backend.actions);
+        }
+        assertTrue(guard.completeDrain(guard.drainGenerationOrZero()));
+        task(harness.controller.tick(), spec.getId());
+        assertEquals(1, harness.backend.actions);
     }
 
     @Test
@@ -225,14 +262,27 @@ public class SleepTaskRunnerTest {
 
     private static final class RecordingBackend implements SleepBackend {
 
+        private int leadTicks;
+
+        @Override
+        public int preparationLeadTicks(String bedLocationId) {
+            return leadTicks;
+        }
+
         private final SleepObservation observation;
         private int observations;
         private int actions;
+        private java.util.function.BooleanSupplier ready = () -> true;
         private ActionLease lease;
         private Handle handle;
 
         private RecordingBackend(SleepObservation observation) {
             this.observation = observation;
+        }
+
+        @Override
+        public boolean isReadyForAction() {
+            return ready.getAsBoolean();
         }
 
         @Override

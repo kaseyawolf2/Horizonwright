@@ -38,8 +38,6 @@ import io.github.kaseyawolf2.horizonwright.runtime.task.SleepBackend;
 /** Conservative registered-vanilla-bed interaction with fresh danger and block evidence. */
 public final class LiveVanillaSleepBackend implements SleepBackend {
 
-    private static final int REQUIRED_SLEEPING_TICKS = 5;
-
     public interface NavigationSource {
 
         NavigationBackend getNavigationBackend();
@@ -68,6 +66,22 @@ public final class LiveVanillaSleepBackend implements SleepBackend {
         this.guard = guard;
         this.navigationSource = navigationSource;
         this.configuration = configuration;
+    }
+
+    @Override
+    public int preparationLeadTicks(String bedLocationId) {
+        if (minecraft.thePlayer == null || minecraft.theWorld == null) return 0;
+        NamedLocation bed = configuration.resolveBed(bedLocationId);
+        if (minecraft.theWorld.provider.dimensionId != bed.getDimensionId()
+            || !minecraft.theWorld.provider.canRespawnHere()) return 0;
+        return io.github.kaseyawolf2.horizonwright.core.base.SleepTravelEstimate.ticks(
+            Math.hypot(bed.getX() + 0.5 - minecraft.thePlayer.posX, bed.getZ() + 0.5 - minecraft.thePlayer.posZ),
+            bed.getY() - minecraft.thePlayer.boundingBox.minY);
+    }
+
+    @Override
+    public boolean isReadyForAction() {
+        return guard.isReadyForSession();
     }
 
     @Override
@@ -256,8 +270,7 @@ public final class LiveVanillaSleepBackend implements SleepBackend {
 
     private boolean canReach(BasePosition bed) {
         EntityPlayer player = minecraft.thePlayer;
-        Vec3 eyes = Vec3
-            .createVectorHelper(player.posX, player.posY + MinecraftRuntimeAccess.eyeHeight(player), player.posZ);
+        Vec3 eyes = MinecraftRuntimeAccess.playerInteractionOrigin(player);
         Vec3 center = Vec3.createVectorHelper(bed.getX() + 0.5D, bed.getY() + 0.5D, bed.getZ() + 0.5D);
         double reach = Math.min(minecraft.playerController.getBlockReachDistance(), MAX_INTERACTION_DISTANCE);
         if (eyes.squareDistanceTo(center) > reach * reach) return false;
@@ -289,7 +302,8 @@ public final class LiveVanillaSleepBackend implements SleepBackend {
         private final NavigationBackend navigation;
         private final NamedLocation location;
         private final BasePosition bed;
-        private final long deadlineNanos;
+        private long deadlineNanos;
+        private final long approachTimeoutNanos;
         private NavigationHandle navigationHandle;
         private Phase phase = Phase.APPROACHING;
         private ActionState state = ActionState.SUBMITTED;
@@ -306,7 +320,10 @@ public final class LiveVanillaSleepBackend implements SleepBackend {
             this.navigation = navigation;
             this.location = location;
             this.bed = new BasePosition(location.getDimensionId(), location.getX(), location.getY(), location.getZ());
-            this.deadlineNanos = saturatingAdd(startedAtNanos, TIMEOUT_NANOS);
+            this.approachTimeoutNanos = Math.min(
+                NavigationRequest.MAX_RUNTIME_NANOS,
+                TIMEOUT_NANOS + TimeUnit.MILLISECONDS.toNanos(preparationLeadTicks(request.getBedLocationId()) * 50L));
+            this.deadlineNanos = saturatingAdd(startedAtNanos, approachTimeoutNanos);
         }
 
         private void start() {
@@ -327,7 +344,7 @@ public final class LiveVanillaSleepBackend implements SleepBackend {
                     bed.getZ(),
                     APPROACH_TOLERANCE,
                     System.nanoTime(),
-                    TIMEOUT_NANOS),
+                    approachTimeoutNanos),
                 lease);
             state = ActionState.EXECUTING;
             detail = "Approaching registered bed";
@@ -366,7 +383,12 @@ public final class LiveVanillaSleepBackend implements SleepBackend {
                 fail("Sleep action lease was revoked");
                 return snapshot();
             }
-            if (System.nanoTime() - deadlineNanos >= 0L) {
+            long now = System.nanoTime();
+            // Waiting for other players or a delayed morning must not resume work while in bed.
+            if (phase == Phase.CONFIRMING && MinecraftRuntimeAccess.isPlayerSleeping(minecraft.thePlayer)) {
+                deadlineNanos = saturatingAdd(now, TIMEOUT_NANOS);
+            }
+            if (now - deadlineNanos >= 0L) {
                 stopProducers();
                 fail("Sleep action deadline exceeded");
                 return snapshot();
@@ -415,6 +437,21 @@ public final class LiveVanillaSleepBackend implements SleepBackend {
             SleepObservation fresh = observeBed(location);
             SleepDecision freshDecision = planner.plan(fresh);
             traceObservation("pre-interaction-observation", request.getTaskId(), request.getBedLocationId(), fresh);
+            if (freshDecision.getAction() == SleepActionKind.SKIP_DAYTIME
+                && io.github.kaseyawolf2.horizonwright.core.base.SleepTravelEstimate.beforeTonight(
+                    fresh.getWorldTime(),
+                    request.getDecision()
+                        .getWorldTime())) {
+                // This task departed early. Arrival does not mean sleep is complete.
+                if (fresh.isDanger() || !fresh.isProviderAvailable() || !canReach(bed)) {
+                    fail("Registered bed is no longer safe and reachable while waiting for night");
+                    return;
+                }
+                deadlineNanos = saturatingAdd(System.nanoTime(), TIMEOUT_NANOS);
+                detail = "At bed early; waiting " + ((12542L - fresh.getWorldTime() % 24000L + 19) / 20)
+                    + "s until sleep time";
+                return;
+            }
             if (freshDecision.getAction() == SleepActionKind.SKIP_DAYTIME) {
                 state = ActionState.CONFIRMED;
                 detail = "Daytime was confirmed before bed interaction";
@@ -480,13 +517,13 @@ public final class LiveVanillaSleepBackend implements SleepBackend {
                 return;
             }
             phase = Phase.CONFIRMING;
+            deadlineNanos = saturatingAdd(System.nanoTime(), TIMEOUT_NANOS);
             detail = "Waiting for server-confirmed sleeping or daytime";
         }
 
         private MovingObjectPosition rayTraceBed(BasePosition target) {
             EntityPlayer player = minecraft.thePlayer;
-            Vec3 eyes = Vec3
-                .createVectorHelper(player.posX, player.posY + MinecraftRuntimeAccess.eyeHeight(player), player.posZ);
+            Vec3 eyes = MinecraftRuntimeAccess.playerInteractionOrigin(player);
             Vec3 center = Vec3.createVectorHelper(target.getX() + 0.5D, target.getY() + 0.5D, target.getZ() + 0.5D);
             MovingObjectPosition hit = MinecraftRuntimeAccess.rayTraceBlocks(minecraft.theWorld, eyes, center, false);
             return hit != null && hit.typeOfHit == MovingObjectPosition.MovingObjectType.BLOCK
@@ -511,24 +548,22 @@ public final class LiveVanillaSleepBackend implements SleepBackend {
                 daytime,
                 "worldTime",
                 MinecraftRuntimeAccess.worldTime(minecraft.theWorld));
-            if (consecutiveSleepingTicks >= REQUIRED_SLEEPING_TICKS || daytime) {
+            if (SleepCompletionPolicy
+                .mayResumeWork(daytime, MinecraftRuntimeAccess.isPlayerSleeping(minecraft.thePlayer))) {
                 state = ActionState.CONFIRMED;
-                detail = consecutiveSleepingTicks >= REQUIRED_SLEEPING_TICKS ? "Stable player sleeping state confirmed"
-                    : "Daytime confirmed after sleep";
+                detail = "Daytime and awake player confirmed after sleep";
                 clearActive(this);
             } else {
-                detail = consecutiveSleepingTicks == 0 ? "Waiting for server-confirmed sleeping or daytime"
-                    : "Confirming stable sleeping state (" + consecutiveSleepingTicks
-                        + "/"
-                        + REQUIRED_SLEEPING_TICKS
-                        + ")";
+                detail = consecutiveSleepingTicks == 0 ? "Waiting for server-confirmed daytime"
+                    : "Sleeping; excavation stays paused until daytime and waking";
             }
         }
 
         private void aimAt(BasePosition target) {
             Entity player = minecraft.thePlayer;
             double dx = target.getX() + 0.5D - player.posX;
-            double dy = target.getY() + 0.5D - (player.posY + MinecraftRuntimeAccess.eyeHeight(minecraft.thePlayer));
+            double dy = target.getY() + 0.5D
+                - MinecraftRuntimeAccess.playerInteractionOrigin(minecraft.thePlayer).yCoord;
             double dz = target.getZ() + 0.5D - player.posZ;
             player.rotationYaw = (float) (Math.atan2(dz, dx) * 180.0D / Math.PI) - 90.0F;
             player.rotationPitch = (float) -(Math.atan2(dy, Math.sqrt(dx * dx + dz * dz)) * 180.0D / Math.PI);

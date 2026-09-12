@@ -17,6 +17,7 @@ import io.github.kaseyawolf2.horizonwright.core.task.TaskLane;
 import io.github.kaseyawolf2.horizonwright.core.task.TaskResumeCandidates;
 import io.github.kaseyawolf2.horizonwright.core.task.TaskSnapshot;
 import io.github.kaseyawolf2.horizonwright.runtime.persistence.profile.ProfileAssetEditorProvider;
+import io.github.kaseyawolf2.horizonwright.runtime.persistence.session.ClientProfileBindingCoordinator;
 import io.github.kaseyawolf2.horizonwright.runtime.persistence.session.CurrentRuntimeProvider;
 
 public final class GuiHorizonwrightDashboard extends GuiReadableScreen {
@@ -30,6 +31,7 @@ public final class GuiHorizonwrightDashboard extends GuiReadableScreen {
     private static final int TASKS_BUTTON = 7;
     private static final int OVERVIEW_TAB_BUTTON = 8;
     private static final int SCHEDULES_BUTTON = 9;
+    private static final int CREATE_PROFILE_BUTTON = 11;
     private static final int RESUME_CHOICE_BUTTON_BASE = 100;
     private static final int RESUME_PREVIOUS_BUTTON = 200;
     private static final int RESUME_NEXT_BUTTON = 201;
@@ -38,6 +40,8 @@ public final class GuiHorizonwrightDashboard extends GuiReadableScreen {
 
     private final CurrentRuntimeProvider runtimeProvider;
     private final ProfileAssetEditorProvider profileEditorProvider;
+    private final WorldProfileCreation profileCreation;
+    private GuiButton createProfileButton;
     private int left;
     private int top;
     private int panelWidth;
@@ -60,6 +64,11 @@ public final class GuiHorizonwrightDashboard extends GuiReadableScreen {
 
     public GuiHorizonwrightDashboard(CurrentRuntimeProvider runtimeProvider,
         ProfileAssetEditorProvider profileEditorProvider) {
+        this(runtimeProvider, profileEditorProvider, null);
+    }
+
+    public GuiHorizonwrightDashboard(CurrentRuntimeProvider runtimeProvider,
+        ProfileAssetEditorProvider profileEditorProvider, ClientProfileBindingCoordinator profileBindings) {
         if (runtimeProvider == null) {
             throw new IllegalArgumentException("runtimeProvider must not be null");
         }
@@ -68,6 +77,7 @@ public final class GuiHorizonwrightDashboard extends GuiReadableScreen {
         }
         this.runtimeProvider = runtimeProvider;
         this.profileEditorProvider = profileEditorProvider;
+        this.profileCreation = new WorldProfileCreation(profileBindings);
     }
 
     @Override
@@ -95,6 +105,7 @@ public final class GuiHorizonwrightDashboard extends GuiReadableScreen {
         buttonList.add(taskControlButton);
         buttonList.add(dryRunButton);
         buttonList.add(automationStopButton);
+        buttonList.add(new GuiHorizonwrightButton(10, left + 334, actionY, 70, 20, "HUD position"));
         buttonList.add(new GuiHorizonwrightButton(CLOSE_BUTTON, left + panelWidth - 82, actionY, 70, 20, "Close"));
 
         int navigationWidth = panelWidth - 24;
@@ -143,6 +154,16 @@ public final class GuiHorizonwrightDashboard extends GuiReadableScreen {
                 20,
                 "Baritone"));
 
+        createProfileButton = new GuiHorizonwrightButton(
+            CREATE_PROFILE_BUTTON,
+            left + 16,
+            top + 164,
+            180,
+            20,
+            "Create world profile");
+        buttonList.add(createProfileButton);
+        refreshProfileCreation();
+
         resumeChoiceButtons.clear();
         for (int index = 0; index < RESUME_CHOICES_PER_PAGE; index++) {
             GuiButton choice = new GuiHorizonwrightButton(
@@ -178,7 +199,29 @@ public final class GuiHorizonwrightDashboard extends GuiReadableScreen {
     }
 
     @Override
+    public void updateScreen() {
+        super.updateScreen();
+        refreshProfileCreation();
+    }
+
+    private void refreshProfileCreation() {
+        profileCreation.refresh();
+        createProfileButton.visible = profileCreation.canCreate();
+        createProfileButton.enabled = profileCreation.canCreate();
+    }
+
+    @Override
     protected void actionPerformed(GuiButton button) {
+        if (button.id == CREATE_PROFILE_BUTTON) {
+            if (!button.enabled || !button.visible) return;
+            operatorMessage = profileCreation.create();
+            refreshProfileCreation();
+            return;
+        }
+        if (button.id == 10) {
+            mc.displayGuiScreen(new GuiHudEditor(this, runtimeProvider));
+            return;
+        }
         if (button.id == CLOSE_BUTTON) {
             mc.displayGuiScreen(null);
             return;
@@ -448,12 +491,14 @@ public final class GuiHorizonwrightDashboard extends GuiReadableScreen {
         drawCenteredString(fontRendererObj, "Operations dashboard", width / 2, top + 28, 0xFF8FAAD0);
         drawString(fontRendererObj, "Session", left + 16, top + 82, 0xFFAAAAAA);
         drawString(fontRendererObj, "Unavailable", left + 112, top + 82, 0xFFFFAA66);
-        drawString(fontRendererObj, truncate(diagnostic, 58), left + 16, top + 106, 0xFFFFAA66);
+        String profileDiagnostic = profileCreation.diagnostic(diagnostic);
+        drawParagraph(profileDiagnostic, left + 16, top + 106, panelWidth - 32, 28, 0xFFFFAA66);
         drawString(
             fontRendererObj,
-            "Join the bound world or resolve the session diagnostic.",
+            createProfileButton.visible ? "Create a profile to save this world's base, areas and tasks."
+                : "Join the bound world or resolve the profile diagnostic.",
             left + 16,
-            top + 130,
+            top + 144,
             0xFFB8C8DE);
         drawString(fontRendererObj, truncate(operatorMessage, 58), left + 16, top + 224, 0xFFB8C8DE);
         drawString(

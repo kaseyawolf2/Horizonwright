@@ -15,6 +15,68 @@ import io.github.kaseyawolf2.horizonwright.core.logistics.NamedLoadout;
 public class AutomaticInventoryTest {
 
     @Test
+    public void excavationUnloadReleasesPlantingSuppliesAndRetainsFoodAndTools() {
+        net.minecraft.item.Item seed = new net.minecraft.item.ItemSeeds(
+            net.minecraft.init.Blocks.wheat,
+            net.minecraft.init.Blocks.farmland);
+        net.minecraft.item.Item food = new net.minecraft.item.ItemFood(4, false);
+        net.minecraft.item.Item tool = new net.minecraft.item.Item().setMaxStackSize(1);
+        net.minecraft.item.ItemStack[] inventory = { new net.minecraft.item.ItemStack(seed, 16),
+            new net.minecraft.item.ItemStack(food, 16), new net.minecraft.item.ItemStack(tool) };
+        io.github.kaseyawolf2.horizonwright.forge.client.container.MinecraftContainerSnapshotter snapshots = new io.github.kaseyawolf2.horizonwright.forge.client.container.MinecraftContainerSnapshotter(
+            item -> item == seed ? "test:seed" : item == food ? "test:food" : "test:tool");
+        NamedLoadout mining = AutomaticInventory
+            .inspect(inventory, java.util.Collections.emptyList(), snapshots, false);
+        assertFalse(
+            mining.getReservations()
+                .stream()
+                .anyMatch(
+                    r -> r.getItemId()
+                        .equals("test:seed")));
+        assertEquals(
+            2,
+            mining.getReservations()
+                .size());
+        assertEquals(
+            3,
+            AutomaticInventory.inspect(inventory, java.util.Collections.emptyList(), snapshots, true)
+                .getReservations()
+                .size());
+        assertEquals(0, AutomaticInventory.automaticReserveCount(inventory[0], false));
+        assertEquals(16, AutomaticInventory.automaticReserveCount(inventory[1], false));
+    }
+
+    @Test
+    public void extendedSlotToolDoesNotBlockChestUnloadingAndNormalToolRemainsReserved() {
+        net.minecraft.item.ItemStack[] inventory = new net.minecraft.item.ItemStack[40];
+        net.minecraft.item.Item cargo = new net.minecraft.item.Item();
+        net.minecraft.item.Item pick = new net.minecraft.item.Item().setMaxStackSize(1);
+        net.minecraft.item.Item axe = new net.minecraft.item.Item().setMaxStackSize(1);
+        inventory[0] = new net.minecraft.item.ItemStack(cargo, 64);
+        inventory[35] = new net.minecraft.item.ItemStack(pick);
+        inventory[36] = new net.minecraft.item.ItemStack(axe);
+        io.github.kaseyawolf2.horizonwright.forge.client.container.MinecraftContainerSnapshotter snapshotter = new io.github.kaseyawolf2.horizonwright.forge.client.container.MinecraftContainerSnapshotter(
+            item -> item == cargo ? "test:dirt" : item == pick ? "test:pick" : "test:axe");
+        NamedLoadout loadout = AutomaticInventory.inspect(inventory, java.util.Collections.emptyList(), snapshotter);
+        assertEquals(
+            1,
+            loadout.getReservations()
+                .size());
+        assertEquals(
+            "inventory-35",
+            loadout.getReservations()
+                .get(0)
+                .getId());
+        List<ItemFingerprint> chestPlayerSlots = new ArrayList<>();
+        for (int slot = 0; slot < 36; slot++) chestPlayerSlots.add(snapshotter.fingerprint(inventory[slot]));
+        io.github.kaseyawolf2.horizonwright.core.logistics.UnloadPlan plan = io.github.kaseyawolf2.horizonwright.core.logistics.UnloadPlanner
+            .plan(loadout, chestPlayerSlots);
+        assertTrue(plan.mayStartTransaction());
+        assertEquals(java.util.Collections.singletonList(0), plan.getUnloadableSlots());
+        assertEquals(axe, inventory[36].getItem());
+    }
+
+    @Test
     public void duplicateToolsAreMergedAndBothKeptDespiteDifferentDamage() {
         List<LoadoutReservation> items = new ArrayList<>();
         AutomaticInventory.reserve(items, new ItemFingerprint("test:pick", 1, "a", 1), 0, true, LoadoutRole.TOOL);

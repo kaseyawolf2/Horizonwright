@@ -38,10 +38,14 @@ import io.github.kaseyawolf2.horizonwright.core.navigation.NavigationHandle;
 import io.github.kaseyawolf2.horizonwright.core.navigation.NavigationProgress;
 import io.github.kaseyawolf2.horizonwright.core.navigation.NavigationRequest;
 import io.github.kaseyawolf2.horizonwright.core.navigation.NavigationState;
+import io.github.kaseyawolf2.horizonwright.core.navigation.ScaffoldCleanup;
 import io.github.kaseyawolf2.horizonwright.core.repair.RepairPolicy;
 import io.github.kaseyawolf2.horizonwright.core.repair.RepairToolSnapshot;
 import io.github.kaseyawolf2.horizonwright.forge.client.ClientBootstrap;
 import io.github.kaseyawolf2.horizonwright.forge.client.MinecraftRuntimeAccess;
+import io.github.kaseyawolf2.horizonwright.forge.client.PillarMaterialStaging;
+import io.github.kaseyawolf2.horizonwright.forge.client.ToolCapabilities;
+import io.github.kaseyawolf2.horizonwright.forge.client.VerticalMiningStability;
 import io.github.kaseyawolf2.horizonwright.forge.client.network.ActionPacketDispatch;
 import io.github.kaseyawolf2.horizonwright.forge.client.repair.TinkersInventoryToolReader;
 import io.github.kaseyawolf2.horizonwright.runtime.task.ConfirmedExcavationTargetResult;
@@ -88,6 +92,28 @@ public final class LiveExcavationBackend implements ExcavationBackend {
     private static final double TARGET_SAMPLE_INSET = 0.001D;
     private static final int MAX_APPROACH_ATTEMPTS = 4;
     private static final int VERTICAL_PREFLIGHT_BLOCKS = 6;
+
+    @Override
+    public boolean supportsDropCollection() {
+        return true;
+    }
+
+    @Override
+    public boolean readyForDropCollection() {
+        return guard.isReadyForSession();
+    }
+
+    @Override
+    public ExcavationBackend.DropCollection collectDrops(String taskId,
+        io.github.kaseyawolf2.horizonwright.core.excavation.CylinderExcavationSpec area, ActionLease lease) {
+        return new ExcavationDropCollector(
+            minecraft,
+            guard,
+            navigationSource.getNavigationBackend(),
+            taskId,
+            area,
+            lease);
+    }
 
     private final Minecraft minecraft;
     private final ActionSessionGuard guard;
@@ -204,7 +230,8 @@ public final class LiveExcavationBackend implements ExcavationBackend {
             request.getStartFrontier(),
             intent.getPosition(),
             observer.blockFingerprint(request.getDimensionId(), intent.getPosition()),
-            satisfied);
+            satisfied,
+            satisfied || approvedMaterial(intent.getApprovedMaterial()) != null);
         DevelopmentTrace.event(
             "excavation-managed-live",
             "observed",
@@ -389,7 +416,10 @@ public final class LiveExcavationBackend implements ExcavationBackend {
             request.getIntent()
                 .getPosition());
         List<String> treeLeafBlockIds = treeRecovery.isPresent() ? observer.connectedLeafBlockIds(treeRecovery.get())
-            : Collections.emptyList();
+            : observer.leafBlockIds(
+                request.getDimensionId(),
+                request.getIntent()
+                    .getPosition());
         LiveHandle handle = new LiveHandle(
             request,
             lease,
@@ -492,6 +522,8 @@ public final class LiveExcavationBackend implements ExcavationBackend {
         private final NavigationBackend navigation;
         private long deadlineNanos;
         private NavigationHandle navigationHandle;
+        private MiningWalkInput miningWalk;
+        private boolean targetDigStarted;
         private Phase phase = Phase.APPROACHING;
         private ExcavationActionState state = ExcavationActionState.SUBMITTED;
         private String detail = "Preparing exact-target approach";
@@ -511,6 +543,14 @@ public final class LiveExcavationBackend implements ExcavationBackend {
         private final TreeLogRecoveryPlan treeRecovery;
         private final List<String> treeLeafBlockIds;
         private int nextTreeLog;
+        private int leafDecayWaitTicks;
+        private ScaffoldCleanup scaffoldCleanup;
+        private ExcavationTargetOutcome pendingScaffoldOutcome;
+        private String pendingScaffoldDetail;
+        private boolean startAfterScaffoldCleanup;
+        private PillarMaterialStaging pillarStaging;
+        private boolean walkApproachAttempted;
+        private int walkApproachTicks;
         private boolean clearingTreeLog;
         private TargetAim verifiedTargetAim;
         private boolean finishPacketBoundaryReached;
@@ -533,9 +573,24 @@ public final class LiveExcavationBackend implements ExcavationBackend {
         }
 
         private void start() {
+            if (!navigation.remainingScaffolds()
+                .isEmpty()) {
+                startAfterScaffoldCleanup = true;
+                scaffoldCleanup = new ScaffoldCleanup(
+                    navigation,
+                    lease,
+                    request.getRequestId(),
+                    request.getDimensionId());
+                phase = Phase.REMOVING_SCAFFOLDS;
+                state = ExcavationActionState.EXECUTING;
+                deadlineNanos = saturatingAdd(System.nanoTime(), NavigationRequest.MAX_RUNTIME_NANOS);
+                detail = "Removing remaining pillar blocks before resuming excavation";
+                return;
+            }
             boolean clearingOverhead = !clearingTreeLog && prepareVerticalPreflight();
             ExcavationTargetOverlay.show(workingPosition);
-            if (canReachTarget()) {
+            if (VerticalMiningStability.isStable(minecraft.thePlayer)
+                && (canReachTarget() || canStartWalkingApproach())) {
                 phase = Phase.WAITING_FOR_DIG_SESSION;
                 deadlineNanos = saturatingAdd(System.nanoTime(), LOCAL_ACTION_TIMEOUT_NANOS);
                 state = ExcavationActionState.EXECUTING;
@@ -543,6 +598,7 @@ public final class LiveExcavationBackend implements ExcavationBackend {
                     : clearingOverhead ? "Overhead preflight target is within confirmed reach"
                         : "Target is within confirmed reach";
                 trace("phase", "reach", true);
+                if (request.isMovingMining()) beginDigWhenReady();
                 return;
             }
             submitApproach(
@@ -553,77 +609,37 @@ public final class LiveExcavationBackend implements ExcavationBackend {
 
         private void submitApproach(String reason) {
             BlockPosition position = workingPosition;
+            boolean needsTreeSupport = treeRecovery != null || clearingTreeLog || !treeLeafBlockIds.isEmpty();
+            if (needsTreeSupport) {
+                pillarStaging = PillarMaterialStaging.prepare(minecraft, guard, lease, -1, -1);
+                if (pillarStaging != null) {
+                    pendingApproachReason = reason;
+                    phase = Phase.WAITING_FOR_PILLAR_STACK;
+                    detail = "Staging logs or building blocks for canopy access";
+                    return;
+                }
+            }
             approachAttempt++;
             long startedAtNanos = System.nanoTime();
             String approachId = request.getRequestId() + "-approach-" + approachAttempt;
-            NavigationRequest approach;
-            boolean treeRoute = clearingTreeLog || obstructedTreeLog != null;
-            boolean allowLeafBreaking = treeRoute && !treeLeafBlockIds.isEmpty();
-            if (approachAttempt == 1) {
-                approach = allowLeafBreaking
-                    ? NavigationRequest.adjacentToAllowingPlacementAndBreaking(
-                        approachId,
-                        request.getActionEpoch(),
-                        request.getDimensionId(),
-                        position.getX(),
-                        position.getY(),
-                        position.getZ(),
-                        treeLeafBlockIds,
-                        startedAtNanos,
-                        APPROACH_TIMEOUT_NANOS)
-                    : clearingObstruction || clearingTreeLog
-                        ? NavigationRequest.adjacentToAllowingPlacement(
-                            approachId,
-                            request.getActionEpoch(),
-                            request.getDimensionId(),
-                            position.getX(),
-                            position.getY(),
-                            position.getZ(),
-                            startedAtNanos,
-                            APPROACH_TIMEOUT_NANOS)
-                        : NavigationRequest.adjacentTo(
-                            approachId,
-                            request.getActionEpoch(),
-                            request.getDimensionId(),
-                            position.getX(),
-                            position.getY(),
-                            position.getZ(),
-                            startedAtNanos,
-                            APPROACH_TIMEOUT_NANOS);
-            } else {
-                approach = allowLeafBreaking
-                    ? NavigationRequest.nearAllowingPlacementAndBreaking(
-                        approachId,
-                        request.getActionEpoch(),
-                        request.getDimensionId(),
-                        position.getX(),
-                        position.getY(),
-                        position.getZ(),
-                        3,
-                        treeLeafBlockIds,
-                        startedAtNanos,
-                        APPROACH_TIMEOUT_NANOS)
-                    : clearingObstruction || clearingTreeLog
-                        ? NavigationRequest.nearAllowingPlacement(
-                            approachId,
-                            request.getActionEpoch(),
-                            request.getDimensionId(),
-                            position.getX(),
-                            position.getY(),
-                            position.getZ(),
-                            3,
-                            startedAtNanos,
-                            APPROACH_TIMEOUT_NANOS)
-                        : new NavigationRequest(
-                            approachId,
-                            request.getActionEpoch(),
-                            request.getDimensionId(),
-                            position.getX(),
-                            position.getY(),
-                            position.getZ(),
-                            3,
-                            startedAtNanos,
-                            APPROACH_TIMEOUT_NANOS);
+            boolean treeRoute = treeRecovery != null || !treeLeafBlockIds.isEmpty()
+                || clearingTreeLog
+                || obstructedTreeLog != null;
+            NavigationRequest approach = ExcavationApproachPolicy.create(
+                approachId,
+                request.getActionEpoch(),
+                request.getDimensionId(),
+                position,
+                approachAttempt,
+                clearingObstruction || treeRoute,
+                treeRoute ? treeLeafBlockIds : Collections.emptyList(),
+                startedAtNanos,
+                APPROACH_TIMEOUT_NANOS);
+            if (treeRoute) {
+                java.util.List<BlockPosition> excluded = treeRecovery == null
+                    ? Collections.singletonList(workingPosition)
+                    : treeRecovery.getLogsBottomUp();
+                approach = approach.withScaffolding(excluded);
             }
             navigationHandle = navigation.submit(approach, lease);
             phase = Phase.APPROACHING;
@@ -686,10 +702,26 @@ public final class LiveExcavationBackend implements ExcavationBackend {
             }
             if (phase == Phase.APPROACHING) pollApproach();
             else if (phase == Phase.WAITING_FOR_APPROACH_SESSION) retryApproachWhenReady();
-            else if (phase == Phase.WAITING_FOR_DIG_SESSION) beginDigWhenReady();
+            else if (phase == Phase.WAITING_FOR_PILLAR_STACK) {
+                if (pillarStaging.poll()) {
+                    pillarStaging = null;
+                    phase = Phase.WAITING_FOR_APPROACH_SESSION;
+                }
+            } else if (phase == Phase.WAITING_FOR_DIG_SESSION) beginDigWhenReady();
             else if (phase == Phase.WAITING_FOR_TOOL) finishToolStaging();
             else if (phase == Phase.DIGGING) digOneTick();
-            else if (phase == Phase.FINISHING) finishWhenReady();
+            else if (phase == Phase.WALKING_INTO_REACH) walkIntoReach();
+            else if (phase == Phase.WAITING_FOR_LEAF_DECAY) waitForLeafDecay();
+            else if (phase == Phase.REMOVING_SCAFFOLDS) {
+                if (scaffoldCleanup.poll()) {
+                    scaffoldCleanup.close();
+                    scaffoldCleanup = null;
+                    if (startAfterScaffoldCleanup) {
+                        startAfterScaffoldCleanup = false;
+                        start();
+                    } else confirm(pendingScaffoldOutcome, pendingScaffoldDetail);
+                }
+            } else if (phase == Phase.FINISHING) finishWhenReady();
             return snapshot();
         }
 
@@ -699,6 +731,7 @@ public final class LiveExcavationBackend implements ExcavationBackend {
             NavigationHandle moving;
             synchronized (this) {
                 moving = navigationHandle;
+                if (miningWalk != null) miningWalk.disable();
             }
             if (moving != null) moving.cancel();
             if (minecraft.func_152345_ab()) cancelOnClientThread();
@@ -706,7 +739,16 @@ public final class LiveExcavationBackend implements ExcavationBackend {
         }
 
         private synchronized void pollApproach() {
-            if (canReachTarget()) {
+            // Lumber axes and leaf decay can remove the target while the path is still being calculated.
+            if (isAir(currentObservation())) {
+                navigationHandle.cancel();
+                navigationHandle = null;
+                phase = Phase.WAITING_FOR_DIG_SESSION;
+                detail = "Target cleared during approach; waiting to reconcile after packet drain";
+                return;
+            }
+            if (VerticalMiningStability.isStable(minecraft.thePlayer)
+                && (canReachTarget() || canStartWalkingApproach())) {
                 navigationHandle.cancel();
                 navigationHandle = null;
                 phase = Phase.WAITING_FOR_DIG_SESSION;
@@ -760,10 +802,19 @@ public final class LiveExcavationBackend implements ExcavationBackend {
             }
             String reason = pendingApproachReason;
             pendingApproachReason = null;
+            if (isAir(currentObservation()) || canReachTarget()) {
+                phase = Phase.WAITING_FOR_DIG_SESSION;
+                beginDigWhenReady();
+                return;
+            }
             submitApproach(reason == null ? "Retrying another excavation approach" : reason);
         }
 
         private synchronized void beginDigWhenReady() {
+            if (!VerticalMiningStability.isStable(minecraft.thePlayer)) {
+                detail = "Waiting for supported, vertically stationary footing before mining";
+                return;
+            }
             if (!guard.isReadyForSession()) {
                 detail = "Waiting for approach packets to drain";
                 trace("packet-drain", "blockedActions", guard.getBlockedActionCount());
@@ -797,6 +848,16 @@ public final class LiveExcavationBackend implements ExcavationBackend {
                 }
                 return;
             }
+            if (!canReachTarget() && canStartWalkingApproach()) {
+                walkApproachAttempted = true;
+                walkApproachTicks = 0;
+                guard.begin(lease);
+                ownsDigSession = true;
+                miningWalk = new MiningWalkInput(minecraft, lease, guard, workingPosition, workingPosition, true);
+                phase = Phase.WALKING_INTO_REACH;
+                detail = "Walking into breaking reach";
+                return;
+            }
             if (!canReachTarget()) {
                 if (approachAttempt < MAX_APPROACH_ATTEMPTS) {
                     submitApproach("Repositioning after the target left reach during navigation handoff");
@@ -814,6 +875,39 @@ public final class LiveExcavationBackend implements ExcavationBackend {
             startSelectedDig();
         }
 
+        private boolean canStartWalkingApproach() {
+            if (!request.isMovingMining() || walkApproachAttempted || clearingObstruction || clearingTreeLog)
+                return false;
+            EntityPlayer player = minecraft.thePlayer;
+            Vec3 origin = MinecraftRuntimeAccess.playerInteractionOrigin(player);
+            if (!MiningWalkInput.withinReach(
+                player.posX,
+                origin.yCoord,
+                player.posZ,
+                workingPosition,
+                MiningWalkInput.approachDistance(minecraft.playerController.getBlockReachDistance()))) return false;
+            MovingObjectPosition hit = MinecraftRuntimeAccess.rayTraceBlocks(
+                minecraft.theWorld,
+                origin,
+                Vec3.createVectorHelper(
+                    workingPosition.getX() + 0.5,
+                    workingPosition.getY() + 0.5,
+                    workingPosition.getZ() + 0.5),
+                false);
+            return hit != null && hit.typeOfHit == MovingObjectPosition.MovingObjectType.BLOCK
+                && hit.blockX == workingPosition.getX()
+                && hit.blockY == workingPosition.getY()
+                && hit.blockZ == workingPosition.getZ();
+        }
+
+        private void walkIntoReach() {
+            if (isAir(currentObservation()) || canReachTarget() || ++walkApproachTicks >= 20) {
+                stopDigSession();
+                phase = Phase.WAITING_FOR_DIG_SESSION;
+                detail = "Walking approach finished; checking exact breaking reach";
+            }
+        }
+
         private void finishToolStaging() {
             if (!guard.isActiveLease(lease)) {
                 fail("Tool staging lost inventory authority");
@@ -829,12 +923,38 @@ public final class LiveExcavationBackend implements ExcavationBackend {
         }
 
         private void startSelectedDig() {
+            if (!VerticalMiningStability.isStable(minecraft.thePlayer)) {
+                stopDigSession();
+                phase = Phase.WAITING_FOR_DIG_SESSION;
+                detail = "Waiting for vertical movement to stop after tool selection";
+                return;
+            }
             if (!guard.isActiveLease(lease) || !canReachTarget() || !sameFingerprint(currentObservation())) {
                 fail("Target or authority changed while selecting a tool");
                 return;
             }
+            targetDigStarted |= workingPosition.equals(
+                request.getIntent()
+                    .getPosition());
             phase = Phase.DIGGING;
             detail = "Digging one fingerprint-bound block";
+            if (request.isMovingMining() && !clearingObstruction && !clearingTreeLog) {
+                java.util.List<io.github.kaseyawolf2.horizonwright.core.excavation.ExcavationTarget> next = io.github.kaseyawolf2.horizonwright.core.excavation.CylinderExcavationGeometry
+                    .nextBatch(request.getExcavationArea(), request.getStartFrontier(), 2)
+                    .getTargets();
+                BlockPosition toward = next.size() > 1 && next.get(1)
+                    .getPosition()
+                    .getY() == workingPosition.getY() ? next.get(1)
+                        .getPosition() : workingPosition;
+                miningWalk = new MiningWalkInput(
+                    minecraft,
+                    lease,
+                    guard,
+                    workingPosition,
+                    toward,
+                    false,
+                    request.getExcavationArea());
+            }
             aimAtTarget();
             BlockPosition position = workingPosition;
             minecraft.playerController.clickBlock(position.getX(), position.getY(), position.getZ(), targetSide());
@@ -867,9 +987,14 @@ public final class LiveExcavationBackend implements ExcavationBackend {
                 fail("The target lost its ordinary breakable classification while digging");
                 return;
             }
+            if (!VerticalMiningStability.isStable(minecraft.thePlayer)) {
+                stopDigSession();
+                phase = Phase.WAITING_FOR_DIG_SESSION;
+                detail = "Mining paused until vertical movement stops";
+                return;
+            }
             if (!canReachTarget()) {
                 stopDigSession();
-                approachAttempt = 0;
                 pendingApproachReason = "Reapproaching after the player moved outside exact digging reach";
                 phase = Phase.WAITING_FOR_APPROACH_SESSION;
                 deadlineNanos = saturatingAdd(System.nanoTime(), LOCAL_ACTION_TIMEOUT_NANOS);
@@ -894,6 +1019,9 @@ public final class LiveExcavationBackend implements ExcavationBackend {
                 "inGameFocus",
                 minecraft.inGameHasFocus);
             minecraft.thePlayer.swingItem();
+            // Do not spend a full extra client tick discovering an instant/local completed break.
+            // The existing final packet boundary and guarded drain still run before confirmation.
+            if (request.isMovingMining() && isAir(currentObservation())) finishConfirmedDig();
         }
 
         private synchronized void cancelOnClientThread() {
@@ -910,17 +1038,26 @@ public final class LiveExcavationBackend implements ExcavationBackend {
         }
 
         private void stopDigSession() {
+            if (scaffoldCleanup != null) {
+                scaffoldCleanup.close();
+                scaffoldCleanup = null;
+            }
+            if (pillarStaging != null) {
+                pillarStaging.close();
+                pillarStaging = null;
+            }
+            stopMiningWalk();
             if (!ownsDigSession) return;
             ClientBootstrap.blockDamageShield()
                 .release(request.getRequestId());
             minecraft.playerController.resetBlockRemoving();
             restoreHotbarSlot();
-            guard.quarantine(lease);
-            guard.end(lease);
+            ActionPacketDispatch.endAfterPendingWrites(minecraft, guard, lease);
             ownsDigSession = false;
         }
 
         private void finishConfirmedDig() {
+            stopMiningWalk();
             ClientBootstrap.blockDamageShield()
                 .release(request.getRequestId());
             minecraft.playerController.resetBlockRemoving();
@@ -969,7 +1106,15 @@ public final class LiveExcavationBackend implements ExcavationBackend {
             else confirm(ExcavationTargetOutcome.COMPLETED, "Exact target is confirmed air");
         }
 
+        private void stopMiningWalk() {
+            if (miningWalk != null) {
+                miningWalk.close();
+                miningWalk = null;
+            }
+        }
+
         private void endDigAuthority() {
+            stopMiningWalk();
             if (!ownsDigSession) return;
             guard.quarantine(lease);
             guard.end(lease);
@@ -1105,8 +1250,7 @@ public final class LiveExcavationBackend implements ExcavationBackend {
                 if (ForgeHooks.isToolEffective(stack, target, metadata)) return true;
                 String expected = expectedToolClass(target, metadata);
                 if (expected == null) return false;
-                Set<String> classes = stack.getItem()
-                    .getToolClasses(stack);
+                Set<String> classes = ToolCapabilities.classes(stack);
                 return classes.contains(expected) || stack.getItem()
                     .getHarvestLevel(stack, expected) >= 0;
             } catch (RuntimeException failure) {
@@ -1210,7 +1354,22 @@ public final class LiveExcavationBackend implements ExcavationBackend {
         }
 
         private void confirm(ExcavationTargetOutcome outcome, String confirmationDetail) {
-            confirmed = confirmation(request, outcome);
+            if (!navigation.remainingScaffolds()
+                .isEmpty()) {
+                pendingScaffoldOutcome = outcome;
+                pendingScaffoldDetail = confirmationDetail;
+                scaffoldCleanup = new ScaffoldCleanup(
+                    navigation,
+                    lease,
+                    request.getRequestId(),
+                    request.getDimensionId());
+                phase = Phase.REMOVING_SCAFFOLDS;
+                deadlineNanos = saturatingAdd(System.nanoTime(), NavigationRequest.MAX_RUNTIME_NANOS);
+                detail = "Removing temporary tree pillar blocks before confirming excavation";
+                return;
+            }
+            confirmed = confirmation(request, outcome)
+                .withBrokenTargets(targetDigStarted && outcome == ExcavationTargetOutcome.COMPLETED ? 1 : 0);
             state = ExcavationActionState.CONFIRMED;
             detail = confirmationDetail;
             trace("confirmed", "outcome", outcome);
@@ -1255,7 +1414,7 @@ public final class LiveExcavationBackend implements ExcavationBackend {
             occludingPosition = null;
             EntityPlayer player = minecraft.thePlayer;
             double eyeX = player.posX;
-            double eyeY = player.posY + MinecraftRuntimeAccess.eyeHeight(player);
+            double eyeY = MinecraftRuntimeAccess.playerInteractionOrigin(player).yCoord;
             double eyeZ = player.posZ;
             double reach = minecraft.playerController.getBlockReachDistance();
             Block block = minecraft.theWorld.getBlock(position.getX(), position.getY(), position.getZ());
@@ -1371,10 +1530,10 @@ public final class LiveExcavationBackend implements ExcavationBackend {
             double targetY = aim == null ? position.getY() + 0.5D : aim.y;
             double targetZ = aim == null ? position.getZ() + 0.5D : aim.z;
             double dx = targetX - player.posX;
-            double dy = targetY - (player.posY + MinecraftRuntimeAccess.eyeHeight(player));
+            double dy = targetY - (MinecraftRuntimeAccess.playerInteractionOrigin(player).yCoord);
             double dz = targetZ - player.posZ;
             double horizontal = Math.sqrt(dx * dx + dz * dz);
-            player.rotationYaw = (float) (Math.atan2(dz, dx) * 180.0D / Math.PI) - 90.0F;
+            player.rotationYaw = MiningWalkInput.stableYaw(player.rotationYaw, dx, dz);
             player.rotationPitch = (float) -(Math.atan2(dy, horizontal) * 180.0D / Math.PI);
         }
 
@@ -1384,7 +1543,7 @@ public final class LiveExcavationBackend implements ExcavationBackend {
             EntityPlayer player = minecraft.thePlayer;
             BlockPosition position = workingPosition;
             double dx = player.posX - (position.getX() + 0.5D);
-            double dy = player.posY + MinecraftRuntimeAccess.eyeHeight(player) - (position.getY() + 0.5D);
+            double dy = MinecraftRuntimeAccess.playerInteractionOrigin(player).yCoord - (position.getY() + 0.5D);
             double dz = player.posZ - (position.getZ() + 0.5D);
             double ax = Math.abs(dx);
             double ay = Math.abs(dy);
@@ -1541,7 +1700,26 @@ public final class LiveExcavationBackend implements ExcavationBackend {
                 ExcavationTargetOverlay.show(workingPosition);
                 return;
             }
-            resumeLeafAfterTreeRecovery("Connected logs cleared; returning to the original leaf target");
+            clearingTreeLog = false;
+            clearingObstruction = false;
+            obstructedTreeLog = null;
+            workingPosition = request.getIntent()
+                .getPosition();
+            leafDecayWaitTicks = 0;
+            phase = Phase.WAITING_FOR_LEAF_DECAY;
+            deadlineNanos = saturatingAdd(System.nanoTime(), LOCAL_ACTION_TIMEOUT_NANOS);
+            detail = "Connected logs cleared; allowing the canopy to decay";
+        }
+
+        private void waitForLeafDecay() {
+            if (!guard.isReadyForSession()) return;
+            if (isAir(currentObservation())) {
+                confirm(ExcavationTargetOutcome.COMPLETED, "Tree logs cleared and the original leaf decayed");
+                return;
+            }
+            if (++leafDecayWaitTicks >= 100) {
+                resumeLeafAfterTreeRecovery("Leaf remained after decay wait; approaching with canopy support");
+            }
         }
 
         private void abandonTreeRecovery(String reason) {
@@ -1627,6 +1805,8 @@ public final class LiveExcavationBackend implements ExcavationBackend {
         private final ManagedQuarryMaterialPlan material;
         private final long deadlineNanos;
         private NavigationHandle navigationHandle;
+        private MiningWalkInput miningWalk;
+        private boolean targetDigStarted;
         private ManagedPhase phase = ManagedPhase.APPROACHING;
         private ExcavationActionState state = ExcavationActionState.SUBMITTED;
         private String detail = "Preparing managed-quarry placement";
@@ -1959,7 +2139,7 @@ public final class LiveExcavationBackend implements ExcavationBackend {
 
         private boolean canReach(BlockPosition position) {
             EntityPlayer player = minecraft.thePlayer;
-            double eyeY = player.posY + MinecraftRuntimeAccess.eyeHeight(player);
+            double eyeY = MinecraftRuntimeAccess.playerInteractionOrigin(player).yCoord;
             double dx = position.getX() + 0.5D - player.posX;
             double dy = position.getY() + 0.5D - eyeY;
             double dz = position.getZ() + 0.5D - player.posZ;
@@ -2151,6 +2331,10 @@ public final class LiveExcavationBackend implements ExcavationBackend {
     }
 
     private enum Phase {
+        REMOVING_SCAFFOLDS,
+        WAITING_FOR_PILLAR_STACK,
+        WALKING_INTO_REACH,
+        WAITING_FOR_LEAF_DECAY,
         APPROACHING,
         WAITING_FOR_APPROACH_SESSION,
         WAITING_FOR_DIG_SESSION,

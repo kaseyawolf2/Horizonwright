@@ -21,6 +21,100 @@ import io.github.kaseyawolf2.horizonwright.core.logistics.UnloadTransactionPlann
 
 public class VanillaChestQuickMovePredictorTest {
 
+    @Test
+    public void checkpointPersistenceDoesNotChangeLivePredictionFingerprint() {
+        net.minecraft.entity.player.InventoryPlayer player = new net.minecraft.entity.player.InventoryPlayer(null);
+        player.setInventorySlotContents(0, new ItemStack(ORE, 64));
+        ContainerChest chest = new ContainerChest(player, new InventoryBasic("storage", false, 27));
+        VanillaChestQuickMovePredictor predictor = new VanillaChestQuickMovePredictor(SNAPSHOTS);
+        String fingerprint = null;
+        for (long revision = 132; revision <= 133; revision++) {
+            VanillaChestQuickMovePredictor.Prediction prediction = predictor.predict(
+                chest,
+                null,
+                EMPTY,
+                StorageItemFilter.acceptAll(),
+                new io.github.kaseyawolf2.horizonwright.runtime.task.UnloadObservationRequest(
+                    "unload",
+                    revision,
+                    7,
+                    "empty",
+                    "chest"));
+            ContainerTransaction transaction = UnloadTransactionPlanner.createBatch(
+                "persisted-transaction",
+                7,
+                io.github.kaseyawolf2.horizonwright.core.logistics.UnloadPlanner
+                    .plan(EMPTY, prediction.getPlayerSlots(), StorageItemFilter.acceptAll()),
+                prediction.getPlayerSlots(),
+                prediction.getPredictions());
+            String current = io.github.kaseyawolf2.horizonwright.core.container.ContainerTransactionFingerprint
+                .fingerprint(transaction);
+            if (fingerprint != null) assertEquals(fingerprint, current);
+            fingerprint = current;
+        }
+    }
+
+    @Test
+    public void liveUnloadPlansOnlyNextTransferAndReobservesDrainedChest() {
+        net.minecraft.entity.player.InventoryPlayer player = new net.minecraft.entity.player.InventoryPlayer(null);
+        player.setInventorySlotContents(0, new ItemStack(ORE, 64));
+        player.setInventorySlotContents(9, new ItemStack(DIRT, 32));
+        InventoryBasic storage = new InventoryBasic("storage", false, 108);
+        ContainerChest chest = new ContainerChest(player, storage);
+        VanillaChestQuickMovePredictor predictor = new VanillaChestQuickMovePredictor(SNAPSHOTS);
+        VanillaChestQuickMovePredictor.Prediction first = predictor
+            .predict(chest, null, EMPTY, StorageItemFilter.acceptAll(), "first");
+        assertEquals(
+            2,
+            first.getPredictions()
+                .size());
+        assertEquals(
+            1,
+            first.nextExtractionAwareTransfer(108)
+                .size());
+        assertEquals(
+            108,
+            first.nextExtractionAwareTransfer(108)
+                .get(0)
+                .getClick()
+                .getExtractionStorageSlots());
+        ContainerTransaction transfer = UnloadTransactionPlanner.createBatch(
+            "live-transfer",
+            7,
+            io.github.kaseyawolf2.horizonwright.core.logistics.UnloadPlanner
+                .plan(EMPTY, first.getPlayerSlots(), StorageItemFilter.acceptAll()),
+            first.getPlayerSlots(),
+            first.nextExtractionAwareTransfer(108));
+        io.github.kaseyawolf2.horizonwright.core.container.VerifiedContainerClick click = transfer
+            .nextClick(SNAPSHOTS.capture(chest, null, 0), 7)
+            .get();
+        player.setInventorySlotContents(0, null); // Server deposited ore; pipe already extracted it.
+        org.junit.Assert.assertTrue(transfer.confirm(click.getClickId(), true, SNAPSHOTS.capture(chest, null, 1), 7));
+        assertEquals(
+            io.github.kaseyawolf2.horizonwright.core.container.ContainerTransactionState.COMPLETED,
+            transfer.getState());
+        VanillaChestQuickMovePredictor.Prediction next = predictor
+            .predict(chest, null, EMPTY, StorageItemFilter.acceptAll(), "next");
+        assertEquals(
+            9,
+            next.nextExtractionAwareTransfer(108)
+                .get(0)
+                .getPlayerSlot());
+        assertNull(
+            next.nextExtractionAwareTransfer(108)
+                .get(0)
+                .getClick()
+                .getExpectedBefore()
+                .getSlots()
+                .get(0));
+        player.setInventorySlotContents(9, null);
+        assertEquals(
+            0,
+            predictor.predict(chest, null, EMPTY, StorageItemFilter.acceptAll(), "done")
+                .nextExtractionAwareTransfer(108)
+                .size());
+    }
+
     private static final Item ORE = new Item();
     private static final Item DIRT = new Item();
     private static final MinecraftContainerSnapshotter SNAPSHOTS = new MinecraftContainerSnapshotter(item -> {
@@ -160,13 +254,12 @@ public class VanillaChestQuickMovePredictorTest {
         player.setInventorySlotContents(0, new ItemStack(ORE, 1));
         ContainerChest chest = new ContainerChest(player, storage);
 
-        try {
+        assertEquals(
+            0,
             new VanillaChestQuickMovePredictor(SNAPSHOTS)
-                .predict(chest, null, EMPTY, StorageItemFilter.acceptAll(), "full");
-            fail("a full chest cannot provide an exact reducing prediction");
-        } catch (IllegalStateException expected) {
-            assertEquals("vanilla chest has no capacity for approved player slot 0", expected.getMessage());
-        }
+                .predict(chest, null, EMPTY, StorageItemFilter.acceptAll(), "full")
+                .getPredictions()
+                .size());
         assertSame(
             ORE,
             player.getStackInSlot(0)
@@ -186,5 +279,75 @@ public class VanillaChestQuickMovePredictorTest {
         } catch (IllegalStateException expected) {
             assertEquals("unloading requires an empty cursor", expected.getMessage());
         }
+    }
+
+    @Test
+    public void oneFreeSlotProducesVerifiedBatchInsteadOfDiscardingAllTransfers() {
+        net.minecraft.entity.player.InventoryPlayer player = new net.minecraft.entity.player.InventoryPlayer(null);
+        InventoryBasic storage = new InventoryBasic("storage", false, 9);
+        for (int slot = 0; slot < 8; slot++) storage.setInventorySlotContents(slot, new ItemStack(DIRT, 64));
+        player.setInventorySlotContents(0, new ItemStack(ORE, 64));
+        player.setInventorySlotContents(1, new ItemStack(ORE, 64));
+        VanillaChestQuickMovePredictor.Prediction predicted = new VanillaChestQuickMovePredictor(SNAPSHOTS)
+            .predict(new ContainerChest(player, storage), null, EMPTY, StorageItemFilter.acceptAll(), "batch");
+        assertEquals(
+            1,
+            predicted.getPredictions()
+                .size());
+        io.github.kaseyawolf2.horizonwright.core.container.VerifiedContainerClick click = predicted.getPredictions()
+            .get(0)
+            .getClick();
+        ContainerTransaction transaction = UnloadTransactionPlanner.createBatch(
+            "batch",
+            41,
+            io.github.kaseyawolf2.horizonwright.core.logistics.UnloadPlanner.plan(EMPTY, predicted.getPlayerSlots()),
+            predicted.getPlayerSlots(),
+            predicted.getPredictions());
+        org.junit.Assert.assertTrue(
+            transaction.nextClick(click.getExpectedBefore(), 41)
+                .isPresent());
+        org.junit.Assert.assertTrue(transaction.confirm(click.getClickId(), true, click.getExpectedAfter(), 41));
+        assertEquals(
+            io.github.kaseyawolf2.horizonwright.core.container.ContainerTransactionState.COMPLETED,
+            transaction.getState());
+        assertNull(storage.getStackInSlot(8)); // Prediction never mutates live inventory.
+        assertEquals(64, player.getStackInSlot(1).stackSize);
+    }
+
+    @Test
+    public void skipsUnfittableFirstStackAndStillUsesLaterCompatibleCapacity() {
+        net.minecraft.entity.player.InventoryPlayer player = new net.minecraft.entity.player.InventoryPlayer(null);
+        InventoryBasic storage = new InventoryBasic("storage", false, 9);
+        for (int slot = 0; slot < 9; slot++)
+            storage.setInventorySlotContents(slot, new ItemStack(DIRT, slot == 0 ? 63 : 64));
+        player.setInventorySlotContents(0, new ItemStack(ORE, 64));
+        player.setInventorySlotContents(1, new ItemStack(DIRT, 9));
+        VanillaChestQuickMovePredictor.Prediction predicted = new VanillaChestQuickMovePredictor(SNAPSHOTS)
+            .predict(new ContainerChest(player, storage), null, EMPTY, StorageItemFilter.acceptAll(), "merge");
+        assertEquals(
+            1,
+            predicted.getPredictions()
+                .size());
+        assertEquals(
+            1,
+            predicted.getPredictions()
+                .get(0)
+                .getPlayerSlot());
+        assertEquals(
+            0,
+            predicted.getPredictions()
+                .get(0)
+                .getClick()
+                .getExpectedBefore()
+                .getRevision());
+        assertEquals(
+            64,
+            predicted.getPredictions()
+                .get(0)
+                .getClick()
+                .getExpectedAfter()
+                .getSlots()
+                .get(0)
+                .getCount());
     }
 }

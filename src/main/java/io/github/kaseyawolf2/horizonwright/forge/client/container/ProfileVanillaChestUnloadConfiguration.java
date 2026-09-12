@@ -21,12 +21,19 @@ public final class ProfileVanillaChestUnloadConfiguration implements LiveVanilla
     private final Minecraft minecraft;
     private final HorizonwrightPersistenceStore store;
     private final WorldProfileIdentity identity;
+    private final java.util.function.BooleanSupplier excavationUnload;
     private Container boundWindow;
     private Object boundTile, boundWorld;
     private String boundStorage;
 
     public ProfileVanillaChestUnloadConfiguration(Minecraft minecraft, HorizonwrightPersistenceStore store,
         WorldProfileIdentity identity) {
+        this(minecraft, store, identity, () -> false);
+    }
+
+    public ProfileVanillaChestUnloadConfiguration(Minecraft minecraft, HorizonwrightPersistenceStore store,
+        WorldProfileIdentity identity, java.util.function.BooleanSupplier excavationUnload) {
+        this.excavationUnload = java.util.Objects.requireNonNull(excavationUnload);
         if (minecraft == null || store == null || identity == null) {
             throw new IllegalArgumentException("minecraft, store, and identity are required");
         }
@@ -51,7 +58,7 @@ public final class ProfileVanillaChestUnloadConfiguration implements LiveVanilla
         }
         if (io.github.kaseyawolf2.horizonwright.forge.client.AutomaticInventory.ID.equals(loadoutId))
             resolvedLoadout = io.github.kaseyawolf2.horizonwright.forge.client.AutomaticInventory
-                .inspect(minecraft, profile);
+                .inspect(minecraft, profile, !excavationUnload.getAsBoolean());
         if (resolvedLoadout == null) {
             throw new IllegalStateException("profile has no named loadout '" + loadoutId + "'");
         }

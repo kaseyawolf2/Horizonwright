@@ -19,6 +19,16 @@ public final class ExcavationActionRequest {
     private final ExcavationIntent intent;
     private final CylinderExcavationSpec excavationArea;
     private final int preferredToolSlot;
+    private boolean movingMining;
+
+    ExcavationActionRequest withMovingMining(boolean enabled) {
+        movingMining = enabled;
+        return this;
+    }
+
+    public boolean isMovingMining() {
+        return movingMining;
+    }
 
     ExcavationActionRequest(String requestId, String taskId, int dimensionId, long taskRevision, long actionEpoch,
         String geometryKey, ExcavationFrontier startFrontier, ExcavationIntent intent,

@@ -19,6 +19,7 @@ public final class ScheduleEnvironment {
     private final boolean reconnected;
     private final long worldTimeTicks;
     private final Set<String> conditions;
+    private java.util.Map<String, Integer> windowLeadTicks = java.util.Collections.emptyMap();
 
     public ScheduleEnvironment(boolean connected, boolean reconnected, long worldTimeTicks, Set<String> conditions) {
         if (reconnected && !connected) {
@@ -57,6 +58,22 @@ public final class ScheduleEnvironment {
 
     public static ScheduleEnvironment reconnected(long worldTimeTicks, Set<String> conditions) {
         return new ScheduleEnvironment(true, true, worldTimeTicks, conditions);
+    }
+
+    public ScheduleEnvironment withWindowLeadTicks(java.util.Map<String, Integer> leads) {
+        ScheduleEnvironment copy = new ScheduleEnvironment(connected, reconnected, worldTimeTicks, conditions);
+        java.util.Map<String, Integer> validated = new java.util.LinkedHashMap<>();
+        for (java.util.Map.Entry<String, Integer> entry : leads.entrySet()) {
+            if (entry.getKey() == null || entry.getValue() == null || entry.getValue() < 0 || entry.getValue() > 6000)
+                throw new IllegalArgumentException("Window lead must be between 0 and 6000 ticks");
+            validated.put(entry.getKey(), entry.getValue());
+        }
+        copy.windowLeadTicks = java.util.Collections.unmodifiableMap(validated);
+        return copy;
+    }
+
+    public int getWindowLeadTicks(String scheduleId) {
+        return windowLeadTicks.getOrDefault(scheduleId, 0);
     }
 
     public boolean isConnected() {

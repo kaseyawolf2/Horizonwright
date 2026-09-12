@@ -89,6 +89,17 @@ final class MinecraftExcavationObserver {
                 .getName() : name.trim();
     }
 
+    List<String> leafBlockIds(int dimensionId, BlockPosition position) {
+        requireClientWorld(dimensionId);
+        World world = minecraft.theWorld;
+        if (!world.blockExists(position.getX(), position.getY(), position.getZ()))
+            return java.util.Collections.emptyList();
+        Block block = world.getBlock(position.getX(), position.getY(), position.getZ());
+        return block != null && block.isLeaves(world, position.getX(), position.getY(), position.getZ())
+            ? java.util.Collections.singletonList(blockIdentity(dimensionId, position))
+            : java.util.Collections.emptyList();
+    }
+
     boolean isStableSolid(int dimensionId, BlockPosition position) {
         requireClientWorld(dimensionId);
         World world = minecraft.theWorld;
@@ -97,6 +108,8 @@ final class MinecraftExcavationObserver {
         if (block == null || block.isAir(world, position.getX(), position.getY(), position.getZ())) return false;
         Material material = block.getMaterial();
         return material != null && !material.isLiquid()
+            && !io.github.kaseyawolf2.horizonwright.navigation.baritone.QuicksandTravelPolicy
+                .isHazard(block, world.getBlockMetadata(position.getX(), position.getY(), position.getZ()))
             && material.blocksMovement()
             && !(block instanceof net.minecraft.block.BlockFalling);
     }

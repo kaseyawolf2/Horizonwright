@@ -10,8 +10,8 @@ public final class TinkersRepairCompatibilityInspector {
 
     public static final ArtifactExpectation TCONSTRUCT = new ArtifactExpectation(
         "TConstruct",
-        "1.14.93-GTNH",
-        "D4B5C6F42D195938AEA74853680581FA175A925D8D17DAD8AB0A44663F9C772E");
+        "1.14.108-GTNH",
+        "EF13FB8B3FCA725FE8A4D357480777C0E7363DE2AFCE0AAC1D32C8BB861E02A0");
     public static final ArtifactExpectation TGREGWORKS = new ArtifactExpectation(
         "TGregworks",
         "1.7.10-GTNH-1.0.33",

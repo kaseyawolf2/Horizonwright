@@ -32,6 +32,82 @@ import io.github.kaseyawolf2.horizonwright.core.task.TaskState;
 
 public class UnloadTaskRunnerTest {
 
+    @Test
+    public void heldCursorBlocksWithoutAutomaticRetry() {
+        harness = new Harness();
+        harness.backend.heldCursor = true;
+        TaskSpec spec = UnloadTask.create("held-cursor", "mining", "ore-chest");
+        harness.controller.submit(spec);
+        TaskSnapshot blocked = task(harness.controller.tick(), spec.getId());
+        assertEquals(TaskState.BLOCKED, blocked.getState());
+        assertTrue(
+            blocked.getDetail()
+                .contains("empty cursor"));
+        harness.backend.heldCursor = false;
+        assertEquals(TaskState.BLOCKED, task(harness.controller.tick(), spec.getId()).getState());
+        assertEquals(0, harness.backend.submissions);
+        harness.controller.resume(spec.getId());
+        harness.controller.tick();
+        harness.controller.tick();
+        assertEquals(1, harness.backend.submissions);
+    }
+
+    @Test
+    public void closingOpenedStorageBlocksWithoutReopeningUntilExplicitRetry() {
+        harness = new Harness();
+        harness.backend.needsAccess = true;
+        TaskSpec spec = UnloadTask.create("manual-close", "mining", "ore-chest");
+        harness.controller.submit(spec);
+        harness.controller.tick();
+        harness.controller.tick();
+        harness.backend.needsAccess = true;
+        TaskSnapshot blocked = task(harness.controller.tick(), spec.getId());
+        assertEquals(TaskState.BLOCKED, blocked.getState());
+        assertTrue(
+            blocked.getDetail()
+                .contains("Storage was closed"));
+        for (int tick = 0; tick < 5; tick++) harness.controller.tick();
+        assertTrue(!harness.backend.accessLease.isValid());
+        assertEquals(0, harness.backend.submissions);
+        harness.controller.resume(spec.getId());
+        harness.controller.tick();
+        assertTrue(harness.backend.accessLease.isValid());
+    }
+
+    @Test
+    public void closingDuringTransactionCancelsAndBlocksWithoutReplaying() {
+        harness = new Harness();
+        TaskSpec spec = UnloadTask.create("close-active", "mining", "ore-chest");
+        harness.controller.submit(spec);
+        harness.controller.tick();
+        harness.controller.tick();
+        harness.backend.needsAccess = true;
+        assertEquals(TaskState.BLOCKED, task(harness.controller.tick(), spec.getId()).getState());
+        assertTrue(!harness.backend.lastLease.isValid());
+        assertEquals(UnloadActionState.FAILED, harness.backend.active.state);
+        harness.controller.tick();
+        assertEquals(1, harness.backend.submissions);
+    }
+
+    @Test
+    public void noCapacityBlocksWithoutClicksAndCanRetryAfterSpaceIsMade() {
+        harness = new Harness();
+        harness.backend.noCapacity = true;
+        TaskSpec spec = UnloadTask.create("capacity", "mining", "ore-chest");
+        harness.controller.submit(spec);
+        TaskSnapshot blocked = task(harness.controller.tick(), spec.getId());
+        assertEquals(TaskState.BLOCKED, blocked.getState());
+        assertTrue(
+            blocked.getDetail()
+                .contains("no compatible capacity"));
+        assertEquals(0, harness.backend.submissions);
+        harness.backend.noCapacity = false;
+        harness.controller.resume(spec.getId());
+        harness.controller.tick();
+        harness.controller.tick();
+        assertEquals(1, harness.backend.submissions);
+    }
+
     private static final ItemFingerprint PICK = new ItemFingerprint("tconstruct:pickaxe", 0, "tool", 1);
     private static final ItemFingerprint ORE = new ItemFingerprint("gregtech:ore", 4, "ore", 16);
     private Harness harness;
@@ -277,6 +353,8 @@ public class UnloadTaskRunnerTest {
                     PICK.getDataHash(),
                     1)));
         private boolean missingPick;
+        private boolean noCapacity;
+        private boolean heldCursor;
         private boolean unloaded;
         private boolean changedOreCount;
         private int submissions;
@@ -338,6 +416,7 @@ public class UnloadTaskRunnerTest {
 
         @Override
         public UnloadObservationResult observe(UnloadObservationRequest request) {
+            if (heldCursor) throw new IllegalStateException("unloading requires an empty cursor");
             if (missingPick) {
                 return new UnloadObservationResult(
                     request.getTaskId(),
@@ -374,7 +453,7 @@ public class UnloadTaskRunnerTest {
                 loadout,
                 Arrays.asList(PICK, observedOre),
                 StorageItemFilter.acceptAll(),
-                Collections.singletonList(new UnloadClickPrediction(1, click)));
+                noCapacity ? Collections.emptyList() : Collections.singletonList(new UnloadClickPrediction(1, click)));
         }
 
         @Override

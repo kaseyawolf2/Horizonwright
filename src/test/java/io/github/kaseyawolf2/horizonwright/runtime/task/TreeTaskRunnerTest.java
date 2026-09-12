@@ -501,9 +501,13 @@ public class TreeTaskRunnerTest {
         @Override
         public CollectionHandle collectDrops(String taskId, NamedArea collectionArea, ActionLease collectionLease) {
             collections++;
-            assertFalse(
+            // Collection may recover exact journaled supports before its movement-only pickup pass.
+            assertTrue(
                 collectionLease.getCapabilities()
                     .contains(ActionCapability.DIG));
+            assertFalse(
+                collectionLease.getCapabilities()
+                    .contains(ActionCapability.PLACE));
             return new CollectionHandle() {
 
                 public boolean poll() {

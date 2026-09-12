@@ -51,7 +51,7 @@ but cannot replace the disposable-world observation run required by the plan.
   deadlines in commit `0853c61` and authorized harvest-slot changes in commit
   `d4f29eb`. The prior physical run entered the protected crop radius and walked
   through harvesting, but it used the build that still retried at 30 seconds.
-- Physical validation of the exact Pam HarvestCraft 1.3.11-GTNH ground-crop,
+- Physical validation of the exact Pam HarvestCraft 1.3.14-GTNH ground-crop,
   hanging-fruit, and non-destructive fruiting-log adapter.
 - The public-API `IGrowable` adapter now requires a same-block `IPlantable`
   replacement and current supporting-block acceptance, while excluding

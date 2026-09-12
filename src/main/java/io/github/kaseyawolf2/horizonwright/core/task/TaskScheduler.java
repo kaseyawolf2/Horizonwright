@@ -353,7 +353,10 @@ public final class TaskScheduler {
             return;
         }
         long worldTime = environment.getWorldTimeTicks();
-        long currentOccurrence = occurrenceContaining(record.rule, worldTime);
+        long currentOccurrence = occurrenceContaining(
+            record.rule,
+            worldTime,
+            environment.getWindowLeadTicks(record.rule.getId()));
         boolean currentWindowDue = currentOccurrence != ScheduleSnapshot.NO_WORLD_OCCURRENCE
             && currentOccurrence > record.lastWorldOccurrence;
         if (currentWindowDue && conditionsMet) {
@@ -409,10 +412,15 @@ public final class TaskScheduler {
     }
 
     private static long occurrenceContaining(ScheduleRule rule, long worldTime) {
+        return occurrenceContaining(rule, worldTime, 0);
+    }
+
+    private static long occurrenceContaining(ScheduleRule rule, long worldTime, int leadTicks) {
         long day = worldTime / ScheduleRule.WORLD_DAY_TICKS;
         int timeOfDay = (int) (worldTime % ScheduleRule.WORLD_DAY_TICKS);
         int start = rule.getWindowStartTick();
         int end = rule.getWindowEndTick();
+        if (start < end) start = Math.max(0, start - leadTicks);
         if (start < end) {
             return timeOfDay >= start && timeOfDay < end ? day : ScheduleSnapshot.NO_WORLD_OCCURRENCE;
         }

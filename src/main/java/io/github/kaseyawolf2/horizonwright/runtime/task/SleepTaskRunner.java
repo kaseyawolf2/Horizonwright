@@ -83,7 +83,8 @@ final class SleepTaskRunner implements TaskRunner {
         try {
             SleepBackend.ObservationSnapshot snapshot = backend.observe(request);
             validate(request, snapshot);
-            SleepDecision decision = planner.plan(snapshot.getObservation());
+            SleepDecision decision = planner
+                .plan(snapshot.getObservation(), backend.preparationLeadTicks(SleepTask.bedLocationId(spec)));
             if (decision.getAction() == SleepActionKind.SKIP_DAYTIME) {
                 return completed(context, "Sleep no longer required; verified daytime");
             }
@@ -98,6 +99,13 @@ final class SleepTaskRunner implements TaskRunner {
     }
 
     private StepResult submit(TaskStepContext context, SleepBackend backend, SleepDecision decision) {
+        if (!backend.isReadyForAction()) {
+            return StepResult.waitFor(
+                context.getActionEpoch(),
+                checkpoint,
+                0L,
+                "Waiting for previous excavation or navigation packets to drain before sleeping");
+        }
         Optional<ActionLease> acquired = context.getActions()
             .tryAcquire(
                 Collections.unmodifiableSet(

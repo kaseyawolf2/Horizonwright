@@ -30,24 +30,43 @@ public final class AutomaticInventory {
 
     public static NamedLoadout inspect(Minecraft mc, ProfileEnvelope profile) {
         if (mc.thePlayer == null) throw new IllegalStateException("Join the world before inspecting inventory.");
+        return inspect(mc, profile, true);
+    }
+
+    public static NamedLoadout inspect(Minecraft mc, ProfileEnvelope profile, boolean keepPlantingSupplies) {
+        if (mc.thePlayer == null) throw new IllegalStateException("Join the world before inspecting inventory.");
+        return inspect(
+            mc.thePlayer.inventory.mainInventory,
+            profile.getNamedLoadouts(),
+            new MinecraftContainerSnapshotter(),
+            keepPlantingSupplies);
+    }
+
+    static NamedLoadout inspect(ItemStack[] inventory, List<NamedLoadout> savedLoadouts,
+        MinecraftContainerSnapshotter snapshots) {
+        return inspect(inventory, savedLoadouts, snapshots, true);
+    }
+
+    static NamedLoadout inspect(ItemStack[] inventory, List<NamedLoadout> savedLoadouts,
+        MinecraftContainerSnapshotter snapshots, boolean keepPlantingSupplies) {
         List<LoadoutReservation> reservations = new ArrayList<>();
-        for (NamedLoadout saved : profile.getNamedLoadouts()) {
+        for (NamedLoadout saved : savedLoadouts) {
             if (ID.equals(saved.getId())) for (LoadoutReservation item : saved.getReservations()) {
                 if (item.getRole() == LoadoutRole.REPAIR_MATERIAL) reservations.add(item);
             }
         }
-        MinecraftContainerSnapshotter snapshots = new MinecraftContainerSnapshotter();
         io.github.kaseyawolf2.horizonwright.forge.client.inventory.PortableInventoryAdapters extensions = new io.github.kaseyawolf2.horizonwright.forge.client.inventory.PortableInventoryAdapters();
-        for (int slot = 0; slot < mc.thePlayer.inventory.mainInventory.length; slot++) {
-            ItemStack stack = mc.thePlayer.inventory.mainInventory[slot];
+        // Extended/offhand entries are not part of the chest's 36 transferable player slots.
+        // They cannot be unloaded here, nor required as if they were missing from that window.
+        for (int slot = 0; slot < Math.min(36, inventory.length); slot++) {
+            ItemStack stack = inventory[slot];
             if (stack == null) continue;
             boolean carrier = extensions.find(stack) != null;
             boolean tool = carrier || stack.getMaxStackSize() == 1
-                || !stack.getItem()
-                    .getToolClasses(stack)
+                || !ToolCapabilities.classes(stack)
                     .isEmpty();
             boolean food = stack.getItem() instanceof ItemFood;
-            boolean planting = plantingSupply(stack);
+            boolean planting = keepPlantingSupplies && plantingSupply(stack);
             if (!tool && !food && !planting) continue;
             ItemFingerprint item = snapshots.fingerprint(stack);
             reserve(
@@ -96,7 +115,13 @@ public final class AutomaticInventory {
 
     /** Small working reserves keep ordinary harvest output eligible for packing and final unloading. */
     public static int automaticReserveCount(ItemStack stack) {
-        return stack != null && (stack.getItem() instanceof ItemFood || plantingSupply(stack)) ? CONSUMABLE_RESERVE : 0;
+        return automaticReserveCount(stack, true);
+    }
+
+    public static int automaticReserveCount(ItemStack stack, boolean keepPlantingSupplies) {
+        return stack != null && (stack.getItem() instanceof ItemFood || keepPlantingSupplies && plantingSupply(stack))
+            ? CONSUMABLE_RESERVE
+            : 0;
     }
 
     private static boolean plantingSupply(ItemStack stack) {

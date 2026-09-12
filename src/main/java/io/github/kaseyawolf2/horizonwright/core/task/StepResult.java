@@ -33,6 +33,25 @@ public abstract class StepResult {
         this.detail = detail == null ? "" : detail;
     }
 
+    public final StepResult withCheckpoint(TaskCheckpoint replacement) {
+        switch (kind) {
+            case PROGRESS:
+                return progress(actionEpoch, replacement, detail);
+            case WAIT:
+                return waitFor(actionEpoch, replacement, ((Wait) this).getDelayMillis(), detail);
+            case SAFE_SUSPENSION:
+                return safeSuspension(actionEpoch, replacement, detail);
+            case COMPLETED:
+                return completed(actionEpoch, replacement, detail);
+            case FAILED:
+                return failed(actionEpoch, replacement, detail, ((Failed) this).isRetryable());
+            case BLOCKED:
+                return blocked(actionEpoch, replacement, ((Blocked) this).getReason());
+            default:
+                throw new IllegalStateException("Unknown step result");
+        }
+    }
+
     public static Progress progress(long actionEpoch, TaskCheckpoint checkpoint, String detail) {
         return new Progress(actionEpoch, checkpoint, detail);
     }

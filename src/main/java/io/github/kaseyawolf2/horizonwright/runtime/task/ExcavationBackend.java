@@ -11,6 +11,29 @@ import io.github.kaseyawolf2.horizonwright.core.action.ActionLease;
  */
 public interface ExcavationBackend {
 
+    interface DropCollection extends AutoCloseable {
+
+        boolean poll();
+
+        String detail();
+
+        @Override
+        void close();
+    }
+
+    default boolean supportsDropCollection() {
+        return false;
+    }
+
+    default boolean readyForDropCollection() {
+        return true;
+    }
+
+    default DropCollection collectDrops(String taskId,
+        io.github.kaseyawolf2.horizonwright.core.excavation.CylinderExcavationSpec area, ActionLease lease) {
+        throw new UnsupportedOperationException("Drop collection is unavailable");
+    }
+
     ExcavationBackendAvailability availability();
 
     ExcavationObservationResult observe(ExcavationObservationRequest request);

@@ -33,6 +33,15 @@ public final class UnloadTask {
         return new TaskSpec(id, TYPE, "Unload at " + storageId.trim(), TaskLane.CHORE, parameters);
     }
 
+    public static boolean isExcavationUnload(TaskSpec spec) {
+        return spec != null && TYPE.equals(spec.getType())
+            && spec.getParameters()
+                .containsKey(LinkedServiceTask.PARENT_TASK_ID)
+            && "UNLOADING_REQUIRED".equals(
+                spec.getParameters()
+                    .get(LinkedServiceTask.SUSPENSION_REASON));
+    }
+
     static String loadoutId(TaskSpec spec) {
         requireType(spec);
         return requireText(

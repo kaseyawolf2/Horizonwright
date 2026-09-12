@@ -22,13 +22,24 @@ public final class UnloadTransactionPlanner {
 
     public static ContainerTransaction create(String transactionId, long actionEpoch, UnloadPlan plan,
         List<ItemFingerprint> playerSlots, List<UnloadClickPrediction> predictions) {
+        return create(transactionId, actionEpoch, plan, playerSlots, predictions, false);
+    }
+
+    /** A capacity-limited batch; every included stack must still be approved and exactly verified. */
+    public static ContainerTransaction createBatch(String transactionId, long actionEpoch, UnloadPlan plan,
+        List<ItemFingerprint> playerSlots, List<UnloadClickPrediction> predictions) {
+        return create(transactionId, actionEpoch, plan, playerSlots, predictions, true);
+    }
+
+    private static ContainerTransaction create(String transactionId, long actionEpoch, UnloadPlan plan,
+        List<ItemFingerprint> playerSlots, List<UnloadClickPrediction> predictions, boolean partial) {
         if (plan == null || playerSlots == null || predictions == null || predictions.contains(null)) {
             throw new IllegalArgumentException("plan, playerSlots, and predictions are required");
         }
         if (!plan.mayStartTransaction()) {
             throw new IllegalArgumentException("an incomplete loadout cannot produce an unload transaction");
         }
-        if (predictions.size() != plan.getUnloadableSlots()
+        if (!partial && predictions.size() != plan.getUnloadableSlots()
             .size()) {
             throw new IllegalArgumentException("the container adapter must predict every approved unload slot");
         }
@@ -50,7 +61,9 @@ public final class UnloadTransactionPlanner {
             validateSourceReduction(planned, click);
             clicks.add(click);
         }
-        if (!observed.equals(approved)) {
+        if (partial && observed.isEmpty())
+            throw new IllegalArgumentException("an unload batch must move at least one stack");
+        if (!partial && !observed.equals(approved)) {
             throw new IllegalArgumentException("container adapter predictions do not cover the exact unload plan");
         }
         return new ContainerTransaction(transactionId, actionEpoch, clicks);

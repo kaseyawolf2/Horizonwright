@@ -10,6 +10,7 @@ import net.minecraft.util.MathHelper;
 import org.lwjgl.input.Keyboard;
 
 import io.github.kaseyawolf2.horizonwright.HorizonwrightRuntime;
+import io.github.kaseyawolf2.horizonwright.core.excavation.ExcavationTraversal;
 import io.github.kaseyawolf2.horizonwright.core.persistence.NamedRepairStation;
 import io.github.kaseyawolf2.horizonwright.core.persistence.ProfileEnvelope;
 import io.github.kaseyawolf2.horizonwright.core.task.TaskSnapshot;
@@ -25,6 +26,10 @@ public final class GuiExcavationSetup extends GuiReadableScreen {
     private static final int BACK_BUTTON = 1;
     private static final int SUBMIT_BUTTON = 2;
     private static final int SERVICES_BUTTON = 3;
+    private static final int ORDER_BUTTON = 4;
+    private static final int MOVING_BUTTON = 5;
+    private ExcavationTraversal traversal = ExcavationTraversal.SQUARE_SPIRAL;
+    private boolean movingMining = true;
 
     private io.github.kaseyawolf2.horizonwright.core.base.NamedArea boundArea;
     private final GuiScreen parent;
@@ -39,6 +44,7 @@ public final class GuiExcavationSetup extends GuiReadableScreen {
     private GuiTextField stationId;
     private GuiTextField toolSlot;
     private GuiTextField workDamage;
+    private GuiTextField spiralWidth;
     private GuiButton servicesButton;
     private boolean servicesEnabled = true;
     private int left;
@@ -79,6 +85,7 @@ public final class GuiExcavationSetup extends GuiReadableScreen {
         stationId = field(left + 138, top + (boundArea == null ? 168 : 124), 120, "tool-forge");
         toolSlot = field(left + 356, top + (boundArea == null ? 168 : 124), 48, "0");
         workDamage = field(left + 138, top + (boundArea == null ? 196 : 152), 48, "1");
+        spiralWidth = field(left + 356, top + (boundArea == null ? 102 : 48), 48, "8");
         servicesButton = new GuiHorizonwrightButton(
             SERVICES_BUTTON,
             left + 282,
@@ -87,6 +94,22 @@ public final class GuiExcavationSetup extends GuiReadableScreen {
             20,
             "Services: ON");
         buttonList.add(servicesButton);
+        buttonList.add(
+            new GuiHorizonwrightButton(
+                ORDER_BUTTON,
+                left + 18,
+                top + (boundArea == null ? 222 : 178),
+                (panelWidth - 44) / 2,
+                20,
+                "Order: " + traversal.label()));
+        buttonList.add(
+            new GuiHorizonwrightButton(
+                MOVING_BUTTON,
+                left + 22 + (panelWidth - 36) / 2,
+                top + (boundArea == null ? 222 : 178),
+                (panelWidth - 44) / 2,
+                20,
+                "Walk while mining: " + (movingMining ? "ON" : "off")));
         buttonList.add(
             new GuiHorizonwrightButton(
                 SUBMIT_BUTTON,
@@ -138,7 +161,7 @@ public final class GuiExcavationSetup extends GuiReadableScreen {
             topY.setEnabled(false);
             storageId.setEnabled(false);
             status = "Uses the saved " + (boundArea.isCircular() ? "circle" : "rectangle")
-                + " exactly, in an inward spiral; edit bounds from Areas.";
+                + " exactly; edit bounds from Areas.";
         }
     }
 
@@ -149,6 +172,16 @@ public final class GuiExcavationSetup extends GuiReadableScreen {
 
     @Override
     protected void actionPerformed(GuiButton button) {
+        if (button.id == ORDER_BUTTON) {
+            traversal = ExcavationTraversal.values()[(traversal.ordinal() + 1) % ExcavationTraversal.values().length];
+            button.displayString = "Order: " + traversal.label();
+            return;
+        }
+        if (button.id == MOVING_BUTTON) {
+            movingMining = !movingMining;
+            button.displayString = "Walk while mining: " + (movingMining ? "ON" : "off");
+            return;
+        }
         if (button.id == BACK_BUTTON) {
             mc.displayGuiScreen(parent);
             return;
@@ -227,6 +260,14 @@ public final class GuiExcavationSetup extends GuiReadableScreen {
             }
             if (boundArea != null)
                 spec = io.github.kaseyawolf2.horizonwright.runtime.task.ExcavationTask.forArea(spec, boundArea);
+            spec = io.github.kaseyawolf2.horizonwright.runtime.task.ExcavationTask.withTraversal(spec, traversal);
+            java.util.Map<String, String> miningParameters = new java.util.LinkedHashMap<>(spec.getParameters());
+            miningParameters.put("movingMining", Boolean.toString(movingMining));
+            int parsedWidth = integer(spiralWidth.getText(), "spiral width");
+            if (parsedWidth < 1 || parsedWidth > 64)
+                throw new IllegalArgumentException("Spiral width must be 1..64 blocks.");
+            miningParameters.put("spiralWidth", Integer.toString(parsedWidth));
+            spec = new TaskSpec(spec.getId(), spec.getType(), spec.getDisplayName(), spec.getLane(), miningParameters);
             TaskSnapshot submitted = runtime.submitExcavation(spec);
             status = "Queued '" + submitted.getSpec()
                 .getId() + "' at X/Z " + centerX + "/" + centerZ + ".";
@@ -277,6 +318,7 @@ public final class GuiExcavationSetup extends GuiReadableScreen {
         } else {
             drawString(fontRendererObj, "Area: " + boundArea.getDisplayName(), left + 18, top + 50, 0xFFB8C8DE);
         }
+        label("Spiral width", left + 270, top + (boundArea == null ? 108 : 54));
         drawString(
             fontRendererObj,
             "Optional shared services",
@@ -288,12 +330,6 @@ public final class GuiExcavationSetup extends GuiReadableScreen {
         label("Repair station", left + 18, top + (boundArea == null ? 174 : 130));
 
         label("Work damage", left + 18, top + (boundArea == null ? 202 : 158));
-        drawString(
-            fontRendererObj,
-            "Center now: " + centerSummary(),
-            left + 18,
-            top + (boundArea == null ? 230 : 186),
-            0xFFB8C8DE);
         drawString(
             fontRendererObj,
             truncate(status, 76),
@@ -362,7 +398,7 @@ public final class GuiExcavationSetup extends GuiReadableScreen {
     }
 
     private GuiTextField[] fields() {
-        return new GuiTextField[] { taskId, radius, bottomY, topY, storageId, stationId, workDamage };
+        return new GuiTextField[] { taskId, radius, bottomY, topY, storageId, stationId, workDamage, spiralWidth };
     }
 
     private void label(String text, int x, int y) {

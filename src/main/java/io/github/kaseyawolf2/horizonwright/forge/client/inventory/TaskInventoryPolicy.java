@@ -23,6 +23,8 @@ import io.github.kaseyawolf2.horizonwright.core.persistence.NamedStorageEndpoint
 import io.github.kaseyawolf2.horizonwright.core.persistence.ProfileEnvelope;
 import io.github.kaseyawolf2.horizonwright.core.task.TaskSpec;
 import io.github.kaseyawolf2.horizonwright.forge.client.AutomaticInventory;
+import io.github.kaseyawolf2.horizonwright.forge.client.PillarMaterialPolicy;
+import io.github.kaseyawolf2.horizonwright.forge.client.ToolCapabilities;
 import io.github.kaseyawolf2.horizonwright.forge.client.container.MinecraftContainerSnapshotter;
 import io.github.kaseyawolf2.horizonwright.runtime.task.ExcavationTask;
 import io.github.kaseyawolf2.horizonwright.runtime.task.FarmTask;
@@ -79,15 +81,19 @@ final class TaskInventoryPolicy {
         List<ItemStack> candidates = new ArrayList<>();
         for (ItemStack stack : main) {
             int desired = stack == null ? 0
-                : Math.max(taskRequiredCount(stack), AutomaticInventory.automaticReserveCount(stack));
+                : Math.max(
+                    taskRequiredCount(stack),
+                    AutomaticInventory.automaticReserveCount(
+                        stack,
+                        !ExcavationTask.TYPE.equals(task.getType())
+                            && !io.github.kaseyawolf2.horizonwright.runtime.task.UnloadTask.isExcavationUnload(task)));
             if (desired <= 0) continue;
             if (isTool(stack)) candidates.add(stack);
             else reserveExact(result, stack, desired);
         }
         candidates.sort(
             Comparator.comparingInt(
-                (ItemStack stack) -> stack.getItem()
-                    .getToolClasses(stack.copy())
+                (ItemStack stack) -> ToolCapabilities.classes(stack)
                     .size())
                 .reversed());
         List<ItemStack> retained = new ArrayList<>();
@@ -174,7 +180,12 @@ final class TaskInventoryPolicy {
 
     int requiredCount(ItemStack stack) {
         if (stack == null) return 0;
-        int count = Math.max(taskRequiredCount(stack), AutomaticInventory.automaticReserveCount(stack));
+        int count = Math.max(
+            taskRequiredCount(stack),
+            AutomaticInventory.automaticReserveCount(
+                stack,
+                !ExcavationTask.TYPE.equals(task.getType())
+                    && !io.github.kaseyawolf2.horizonwright.runtime.task.UnloadTask.isExcavationUnload(task)));
         ItemFingerprint item = fingerprints.fingerprint(stack);
         for (LoadoutReservation reservation : reservations) {
             if (reservation.matches(item)) count = Math.max(count, reservation.getMinimumCount());
@@ -186,9 +197,9 @@ final class TaskInventoryPolicy {
         if (stack == null) return 0;
         String type = task.getType();
         if (isTool(stack) && !usableTool(stack) && !RepairTask.TYPE.equals(type)) return 0;
-        Set<String> classes = stack.getItem()
-            .getToolClasses(stack.copy());
+        Set<String> classes = ToolCapabilities.classes(stack);
         if (TreeTask.TYPE.equals(type)) {
+            if (PillarMaterialPolicy.suitable(stack)) return 16;
             if (classes.contains("axe")) return 1;
             if (stack.getItem() == Item.getItemFromBlock(Blocks.sapling)
                 && stack.getItemDamage() == integer("plantSpecies", -1))
@@ -250,12 +261,10 @@ final class TaskInventoryPolicy {
     }
 
     private static boolean covers(List<ItemStack> retained, ItemStack candidate) {
-        Set<String> classes = candidate.getItem()
-            .getToolClasses(candidate.copy());
+        Set<String> classes = ToolCapabilities.classes(candidate);
         for (ItemStack present : retained) {
             if (!usableTool(present)) continue;
-            if (!classes.isEmpty() && present.getItem()
-                .getToolClasses(present.copy())
+            if (!classes.isEmpty() && ToolCapabilities.classes(present)
                 .containsAll(classes)) return true;
             if (present.getItem() == candidate.getItem() && present.getItemDamage() == candidate.getItemDamage())
                 return true;
@@ -281,8 +290,7 @@ final class TaskInventoryPolicy {
     }
 
     static boolean isTool(ItemStack stack) {
-        return stack != null && (!stack.getItem()
-            .getToolClasses(stack.copy())
+        return stack != null && (!ToolCapabilities.classes(stack)
             .isEmpty() || stack.getItem()
                 .getClass()
                 .getName()
@@ -292,13 +300,7 @@ final class TaskInventoryPolicy {
 
     /** Broken tools cannot satisfy an operational tool class; repair preparation still retains them in place. */
     static boolean usableTool(ItemStack stack) {
-        if (stack == null) return false;
-        if (stack.isItemStackDamageable() && stack.getItemDamage() >= stack.getMaxDamage()) return false;
-        return !stack.hasTagCompound() || !stack.getTagCompound()
-            .hasKey("InfiTool")
-            || !stack.getTagCompound()
-                .getCompoundTag("InfiTool")
-                .getBoolean("Broken");
+        return ToolCapabilities.usable(stack);
     }
 
     private static boolean spade(ItemStack stack) {

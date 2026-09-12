@@ -22,6 +22,85 @@ public class GeneralizedInventoryPlannerTest {
     private final GeneralizedInventoryPlanner planner = new GeneralizedInventoryPlanner();
 
     @Test
+    public void fullStacksMoveBeforePartialStacksAndAvoidSplittingIntoExistingNine() {
+        Plan plan = planner.plan(
+            Arrays.asList(
+                endpoint("player", Kind.PLAYER, slot(0, item("dirt", "none", 9)), slot(1, item("dirt", "none", 64))),
+                endpoint("bag", Kind.PORTABLE, slot(0, item("dirt", "none", 9)), slot(1, null))),
+            Collections.emptyList(),
+            ignored -> false,
+            ignored -> true);
+        assertMove(
+            plan.getMoves()
+                .get(0),
+            "player",
+            1,
+            "bag",
+            1,
+            64);
+        assertMove(
+            plan.getMoves()
+                .get(1),
+            "player",
+            0,
+            "bag",
+            0,
+            9);
+        assertEquals(
+            2,
+            plan.getMoves()
+                .size());
+    }
+
+    @Test
+    public void dirtNeverMergesIntoSandOrDifferentMetadataOrNbt() {
+        Plan plan = planner.plan(
+            Arrays.asList(
+                endpoint("player", Kind.PLAYER, slot(0, item("dirt", "none", 9))),
+                endpoint(
+                    "bag",
+                    Kind.PORTABLE,
+                    slot(0, item("sand", "none", 9)),
+                    slot(1, new ItemFingerprint("dirt", 1, "none", 9)),
+                    slot(2, item("dirt", "other", 9)),
+                    slot(3, null))),
+            Collections.emptyList(),
+            ignored -> false,
+            ignored -> true);
+        assertEquals(
+            1,
+            plan.getMoves()
+                .size());
+        assertMove(
+            plan.getMoves()
+                .get(0),
+            "player",
+            0,
+            "bag",
+            3,
+            9);
+    }
+
+    @Test
+    public void fullStackCanStillUsePartialCapacityWhenNoEmptySlotExists() {
+        Plan plan = planner.plan(
+            Arrays.asList(
+                endpoint("player", Kind.PLAYER, slot(0, item("dirt", "none", 64))),
+                endpoint("bag", Kind.PORTABLE, slot(0, item("dirt", "none", 9)))),
+            Collections.emptyList(),
+            ignored -> false,
+            ignored -> true);
+        assertMove(
+            plan.getMoves()
+                .get(0),
+            "player",
+            0,
+            "bag",
+            0,
+            55);
+    }
+
+    @Test
     public void fullPlayerStowsCargoBeforeRetrievingTaskToolFromBag() {
         InventoryEndpoint player = endpoint("player", Kind.PLAYER, slot(0, item("ore", "a", 32)));
         InventoryEndpoint bag = endpoint("bag", Kind.PORTABLE, slot(0, item("pick", "tool", 1)), slot(1, null));
