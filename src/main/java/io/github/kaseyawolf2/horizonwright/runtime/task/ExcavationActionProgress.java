@@ -16,11 +16,13 @@ public final class ExcavationActionProgress {
         if (state == null) {
             throw new IllegalArgumentException("state must not be null");
         }
-        if (state == ExcavationActionState.CONFIRMED && confirmation == null) {
+        if ((state == ExcavationActionState.CONFIRMED || state == ExcavationActionState.PENDING_CONFIRMATION)
+            && confirmation == null) {
             throw new IllegalArgumentException("confirmed progress requires a post-action confirmation");
         }
-        if (state != ExcavationActionState.CONFIRMED && confirmation != null) {
-            throw new IllegalArgumentException("only confirmed progress may carry a confirmation");
+        if (state != ExcavationActionState.CONFIRMED && state != ExcavationActionState.PENDING_CONFIRMATION
+            && confirmation != null) {
+            throw new IllegalArgumentException("only confirmed or pending progress may carry target evidence");
         }
         this.state = state;
         this.detail = detail == null ? "" : detail;

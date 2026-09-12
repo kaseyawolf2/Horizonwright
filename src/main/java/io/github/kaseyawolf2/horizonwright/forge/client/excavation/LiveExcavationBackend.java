@@ -553,6 +553,8 @@ public final class LiveExcavationBackend implements ExcavationBackend {
         private int walkApproachTicks;
         private boolean clearingTreeLog;
         private TargetAim verifiedTargetAim;
+        private io.github.kaseyawolf2.horizonwright.forge.client.network.ServerBlockConfirmation breakConfirmation;
+        private int rejectedBreakRetries;
         private boolean finishPacketBoundaryReached;
         private long finishStartedAtNanos;
         private volatile boolean cancellationRequested;
@@ -684,6 +686,8 @@ public final class LiveExcavationBackend implements ExcavationBackend {
                 minecraft.thePlayer == null ? "missing" : minecraft.thePlayer.posZ,
                 "selectedSlot",
                 minecraft.thePlayer == null ? "missing" : minecraft.thePlayer.inventory.currentItem);
+            if (state == ExcavationActionState.PENDING_CONFIRMATION) return pollDeferredBreak();
+            if (state == ExcavationActionState.RETRY_REQUIRED) return snapshot();
             if (state == ExcavationActionState.CONFIRMED || state == ExcavationActionState.FAILED
                 || state == ExcavationActionState.CANCELLED) return snapshot();
             if (cancellationRequested) {
@@ -933,6 +937,13 @@ public final class LiveExcavationBackend implements ExcavationBackend {
                 fail("Target or authority changed while selecting a tool");
                 return;
             }
+            closeBreakConfirmation();
+            breakConfirmation = io.github.kaseyawolf2.horizonwright.forge.client.network.ServerBlockConfirmation.watch(
+                minecraft.getNetHandler()
+                    .getNetworkManager()
+                    .channel(),
+                workingPosition,
+                !minecraft.theWorld.provider.hasNoSky);
             targetDigStarted |= workingPosition.equals(
                 request.getIntent()
                     .getPosition());
@@ -1031,13 +1042,22 @@ public final class LiveExcavationBackend implements ExcavationBackend {
                 navigationHandle = null;
             }
             stopDigSession();
+            confirmed = null;
             state = ExcavationActionState.CANCELLED;
             detail = "Excavation action cancelled before checkpoint advancement";
             ExcavationTargetOverlay.clear();
             clearActive(this);
         }
 
+        private void closeBreakConfirmation() {
+            if (breakConfirmation != null) {
+                breakConfirmation.close();
+                breakConfirmation = null;
+            }
+        }
+
         private void stopDigSession() {
+            closeBreakConfirmation();
             if (scaffoldCleanup != null) {
                 scaffoldCleanup.close();
                 scaffoldCleanup = null;
@@ -1101,9 +1121,73 @@ public final class LiveExcavationBackend implements ExcavationBackend {
                 trace("finish-drain", "blockedActions", guard.getBlockedActionCount());
                 return;
             }
+            ExcavationObservation finalObservation = currentObservation();
+            if (!isAir(finalObservation)) {
+                closeBreakConfirmation();
+                if (!sameFingerprint(finalObservation) || ++rejectedBreakRetries > 3) {
+                    fail("Server did not clear the excavation target; checkpoint was not advanced");
+                    return;
+                }
+                phase = Phase.WAITING_FOR_DIG_SESSION;
+                detail = "Server restored the block; retrying the same excavation target";
+                trace("server-break-retry", "attempt", rejectedBreakRetries);
+                return;
+            }
+            if (breakConfirmation == null || !breakConfirmation.confirmedAir()) {
+                if (breakConfirmation != null && request.isAsyncConfirmation()
+                    && !clearingObstruction
+                    && !clearingTreeLog
+                    && navigation.remainingScaffolds()
+                        .isEmpty()) {
+                    confirmed = confirmation(request, ExcavationTargetOutcome.COMPLETED).withBrokenTargets(1);
+                    state = ExcavationActionState.PENDING_CONFIRMATION;
+                    detail = "Locally broken; server confirmation pending while mining continues";
+                    deadlineNanos = saturatingAdd(System.nanoTime(), 5_000_000_000L);
+                    trace("break-pending", "position", workingPosition);
+                    clearActive(this);
+                } else detail = "Waiting for the server to confirm the mined block is air";
+                return;
+            }
+            closeBreakConfirmation();
+            rejectedBreakRetries = 0;
             if (clearingObstruction) resumePlannedTargetAfterObstruction();
             else if (clearingTreeLog) continueTreeRecovery();
-            else confirm(ExcavationTargetOutcome.COMPLETED, "Exact target is confirmed air");
+            else confirm(ExcavationTargetOutcome.COMPLETED, "Server and client confirm the exact target is air");
+        }
+
+        /** A detached pending handle observes only; it never reuses its released action lease. */
+        private synchronized ExcavationActionProgress pollDeferredBreak() {
+            if (cancellationRequested) {
+                cancelOnClientThread();
+                return snapshot();
+            }
+            try {
+                if (minecraft.theWorld == null || minecraft.thePlayer == null
+                    || minecraft.theWorld.provider.dimensionId != request.getDimensionId()
+                    || minecraft.getNetHandler() == null
+                    || !breakConfirmation.isConnection(
+                        minecraft.getNetHandler()
+                            .getNetworkManager()
+                            .channel())) {
+                    fail("Pending break lost its world connection");
+                } else if (!isAir(currentObservation())) {
+                    closeBreakConfirmation();
+                    confirmed = null;
+                    state = ExcavationActionState.RETRY_REQUIRED;
+                    detail = "Server restored pending block at " + workingPosition;
+                    trace("pending-break-restored", "position", workingPosition);
+                } else if (breakConfirmation.confirmedAir()) {
+                    closeBreakConfirmation();
+                    state = ExcavationActionState.CONFIRMED;
+                    detail = "Server confirmed pending block at " + workingPosition;
+                    trace("pending-break-confirmed", "position", workingPosition);
+                } else if (System.nanoTime() - deadlineNanos >= 0L) {
+                    fail("Server confirmation timed out for pending block " + workingPosition);
+                }
+            } catch (RuntimeException failure) {
+                fail("Pending break observation failed: " + failure.getMessage());
+            }
+            return snapshot();
         }
 
         private void stopMiningWalk() {
@@ -1378,6 +1462,8 @@ public final class LiveExcavationBackend implements ExcavationBackend {
         }
 
         private void fail(String failureDetail) {
+            confirmed = null;
+            closeBreakConfirmation();
             state = ExcavationActionState.FAILED;
             detail = failureDetail;
             trace("failed", "failure", failureDetail);

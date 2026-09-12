@@ -80,7 +80,7 @@ public final class HorizonwrightClientCommand extends CommandBase {
 
     @Override
     public String getCommandUsage(ICommandSender sender) {
-        return "/hw [panel|profile [status|enroll|recover|reassociate <id>]|debug [on|off|status]|status|task [id]|goto <x> <y> <z> [tolerance]|excavate cylinder <id> <radius> <bottom-y> <top-y> [<loadout> <storage> <station> <tool-slot> <work-damage>]|excavate managed <id> <radius> <bottom-y> <top-y> <ramp-block> <light-block> <filler-block> <light-interval> [<loadout> <storage> <station> <tool-slot> <work-damage>]|farm <task-id> <plot-id> [seed-reserve]|farmschedule <id> <plot-id> <minutes> [seed-reserve]|trees <task-id> <area-id> [sapling-reserve]|treeschedule <id> <area-id> <minutes> [sapling-reserve]|husbandryscan <pen-id>|husbandryprotected <pen-id>|husbandryprotect <pen-id>|husbandryunprotect <pen-id> [uuid]|husbandry <task-id> <pen-id> <species> <minimum> <maximum> [max-actions]|husbandryschedule <id> <pen-id> <species> <minimum> <maximum> <minutes> [max-actions]|sleep <task-id> <bed-location>|sleepschedule <id> <bed-location>|pause [id]|resume [id]|cancel <id>|navcancel|dryrun [on|off]|stop|reset]";
+        return "/hw [combatscan [radius]|panel|profile [status|enroll|recover|reassociate <id>]|debug [on|off|status]|status|task [id]|goto <x> <y> <z> [tolerance]|excavate cylinder <id> <radius> <bottom-y> <top-y> [<loadout> <storage> <station> <tool-slot> <work-damage>]|excavate managed <id> <radius> <bottom-y> <top-y> <ramp-block> <light-block> <filler-block> <light-interval> [<loadout> <storage> <station> <tool-slot> <work-damage>]|farm <task-id> <plot-id> [seed-reserve]|farmschedule <id> <plot-id> <minutes> [seed-reserve]|trees <task-id> <area-id> [sapling-reserve]|treeschedule <id> <area-id> <minutes> [sapling-reserve]|husbandryscan <pen-id>|husbandryprotected <pen-id>|husbandryprotect <pen-id>|husbandryunprotect <pen-id> [uuid]|husbandry <task-id> <pen-id> <species> <minimum> <maximum> [max-actions]|husbandryschedule <id> <pen-id> <species> <minimum> <maximum> <minutes> [max-actions]|sleep <task-id> <bed-location>|sleepschedule <id> <bed-location>|pause [id]|resume [id]|cancel <id>|navcancel|dryrun [on|off]|stop|reset]";
     }
 
     @Override
@@ -163,6 +163,10 @@ public final class HorizonwrightClientCommand extends CommandBase {
         }
         if ("treeschedule".equals(subcommand)) {
             scheduleTrees(sender, arguments, runtime);
+            return;
+        }
+        if ("combatscan".equals(subcommand)) {
+            scanCombat(sender, arguments);
             return;
         }
         if ("husbandryscan".equals(subcommand)) {
@@ -252,6 +256,7 @@ public final class HorizonwrightClientCommand extends CommandBase {
             || "farmschedule".equals(subcommand)
             || "trees".equals(subcommand)
             || "treeschedule".equals(subcommand)
+            || "combatscan".equals(subcommand)
             || "husbandryscan".equals(subcommand)
             || "husbandryprotected".equals(subcommand)
             || "husbandryprotect".equals(subcommand)
@@ -313,6 +318,7 @@ public final class HorizonwrightClientCommand extends CommandBase {
                 "farmschedule",
                 "trees",
                 "treeschedule",
+                "combatscan",
                 "husbandryscan",
                 "husbandryprotected",
                 "husbandryprotect",
@@ -706,6 +712,27 @@ public final class HorizonwrightClientCommand extends CommandBase {
                 .equals(plotId)) return;
         }
         throw new IllegalStateException("active profile has no named area '" + plotId + "'");
+    }
+
+    private void scanCombat(ICommandSender sender, String[] arguments) {
+        if (arguments.length > 2) {
+            MinecraftRuntimeAccess
+                .addChatMessage(sender, new ChatComponentText("Usage: /hw combatscan [radius 1..32]"));
+            return;
+        }
+        try {
+            int radius = arguments.length == 2 ? ProfileAssetInput.positiveInteger(arguments[1], "combat scan radius")
+                : 12;
+            for (String line : new io.github.kaseyawolf2.horizonwright.forge.client.combat.MinecraftCombatObserver(
+                Minecraft.getMinecraft(),
+                profileEditorProvider).describe(radius)) {
+                MinecraftRuntimeAccess.addChatMessage(sender, new ChatComponentText(EnumChatFormatting.GRAY + line));
+            }
+        } catch (RuntimeException failure) {
+            MinecraftRuntimeAccess.addChatMessage(
+                sender,
+                new ChatComponentText(EnumChatFormatting.RED + "Combat scan unavailable: " + safeMessage(failure)));
+        }
     }
 
     private void scanHusbandryPen(ICommandSender sender, String[] arguments) {

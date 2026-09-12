@@ -8,6 +8,8 @@ import io.github.kaseyawolf2.horizonwright.core.action.ActionLease;
  * <p>
  * An implementation must observe on the client thread, verify the action request's fingerprint before sending any
  * gameplay action, and expose CONFIRMED only after a post-action observation proves the exact outcome.
+ * An explicitly asynchronous request may expose PENDING_CONFIRMATION after local removal and
+ * packet drainage; subsequent progress calls must be observation-only after its lease is released.
  */
 public interface ExcavationBackend {
 

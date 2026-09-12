@@ -57,6 +57,7 @@ final class OutboundPacketFirewall extends ChannelDuplexHandler {
 
     @Override
     public void channelRead(ChannelHandlerContext context, Object message) throws Exception {
+        ServerBlockConfirmation.observe(context.channel(), message);
         if (deathSafetyBridge != null && message instanceof S06PacketUpdateHealth) {
             double health = ((S06PacketUpdateHealth) message).func_149332_c();
             if (health <= 0.0D) {

@@ -317,7 +317,7 @@ public class TaskInventoryPolicyTest {
     }
 
     @Test
-    public void ordinaryFoodPacksSurplusBeyondSixteen() {
+    public void ordinaryFoodIsAllCargoUntilAutoProvisioning() {
         ItemFood food = new ItemFood(2, 0.5F, false);
         ids.put(food, "test:food");
         TaskInventoryPolicy policy = policy(TreeTask.TYPE, Collections.emptyMap(), Collections.emptyList(), null);
@@ -330,7 +330,7 @@ public class TaskInventoryPolicyTest {
             plan.getMoves()
                 .size());
         assertEquals(
-            48,
+            64,
             plan.getMoves()
                 .get(0)
                 .getCount());
@@ -377,11 +377,11 @@ public class TaskInventoryPolicyTest {
     }
 
     @Test
-    public void networkDepositKeepsFoodAndTaskSuppliesButAcceptsWholeSurplusStacks() {
+    public void networkDepositUnloadsFoodButPreservesExplicitTaskSupplies() {
         ItemFood food = new ItemFood(2, 0.5F, false);
         ids.put(food, "test:food");
         TaskInventoryPolicy policy = policy(TreeTask.TYPE, Collections.emptyMap(), Collections.emptyList(), null);
-        assertFalse(policy.mayDepositWholeStack(new ItemStack[] { new ItemStack(food, 64) }, 0));
+        assertTrue(policy.mayDepositWholeStack(new ItemStack[] { new ItemStack(food, 64) }, 0));
         assertTrue(
             policy.mayDepositWholeStack(new ItemStack[] { new ItemStack(food, 64), new ItemStack(food, 16) }, 0));
         ItemStack axe = tool("test:axe", "axe");

@@ -15,7 +15,7 @@ import io.github.kaseyawolf2.horizonwright.core.logistics.NamedLoadout;
 public class AutomaticInventoryTest {
 
     @Test
-    public void excavationUnloadReleasesPlantingSuppliesAndRetainsFoodAndTools() {
+    public void excavationUnloadReleasesFoodAndPlantingSuppliesButRetainsTools() {
         net.minecraft.item.Item seed = new net.minecraft.item.ItemSeeds(
             net.minecraft.init.Blocks.wheat,
             net.minecraft.init.Blocks.farmland);
@@ -34,16 +34,22 @@ public class AutomaticInventoryTest {
                     r -> r.getItemId()
                         .equals("test:seed")));
         assertEquals(
-            2,
+            1,
             mining.getReservations()
                 .size());
         assertEquals(
-            3,
+            2,
             AutomaticInventory.inspect(inventory, java.util.Collections.emptyList(), snapshots, true)
                 .getReservations()
                 .size());
         assertEquals(0, AutomaticInventory.automaticReserveCount(inventory[0], false));
-        assertEquals(16, AutomaticInventory.automaticReserveCount(inventory[1], false));
+        assertEquals(0, AutomaticInventory.automaticReserveCount(inventory[1], false));
+        List<ItemFingerprint> slots = new ArrayList<>();
+        for (net.minecraft.item.ItemStack stack : inventory) slots.add(snapshots.fingerprint(stack));
+        assertEquals(
+            java.util.Arrays.asList(0, 1),
+            io.github.kaseyawolf2.horizonwright.core.logistics.UnloadPlanner.plan(mining, slots)
+                .getUnloadableSlots());
     }
 
     @Test

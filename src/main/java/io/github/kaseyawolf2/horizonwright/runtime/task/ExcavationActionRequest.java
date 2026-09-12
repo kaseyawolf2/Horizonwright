@@ -20,6 +20,16 @@ public final class ExcavationActionRequest {
     private final CylinderExcavationSpec excavationArea;
     private final int preferredToolSlot;
     private boolean movingMining;
+    private boolean asyncConfirmation;
+
+    ExcavationActionRequest withAsyncConfirmation() {
+        asyncConfirmation = true;
+        return this;
+    }
+
+    public boolean isAsyncConfirmation() {
+        return asyncConfirmation;
+    }
 
     ExcavationActionRequest withMovingMining(boolean enabled) {
         movingMining = enabled;

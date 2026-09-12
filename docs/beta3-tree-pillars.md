@@ -45,3 +45,9 @@ The subsequent trace repeatedly alternated approach-reach cancellation and dig-r
 Excavation and tree harvesting now require grounded, unchanged vertical position before cancelling an approach to take over mining, before starting or resuming a dig, and while damaging an existing block. A jump apex is not accepted even if instantaneous vertical velocity is zero. Landing must settle for a tick; normal grounded gravity bookkeeping (approximately -0.0784 motionY) does not prevent digging when actual Y is unchanged. Horizontal movement remains permitted. Direct support removal uses the same gate and waits for each landing. Excavation waits preserve the queued held-slot restoration boundary from the desync fix.
 
 Regression tests replay jump, apex, fall, first landing, and settled support states, and cover horizontal walking, vertical steps, and invalid motion data. Physical jump-place handoff confirmation remains pending.
+
+## Pillar above tall grass
+
+The September 12 13:09:36 trace stalled in removal approach for the recorded log at (168,67,335), with player feet at Y=68. The saved chunk has tall grass at Y=66 and solid grass ground at Y=65. The direct descent check accepted only air between a removed support and its landing floor, so it rejected this safe two-block descent and fell back to an adjacent Baritone path that made no progress.
+
+Descent now accepts collision-free air, plants, and vines between the support and a verified floor. Thorns and quicksand remain excluded by the hazard policy; liquids, fire, webs, portals, unknown materials, colliding plants, unloaded cells, and drops exceeding three blocks remain disallowed. Vertical stability and exact recorded support identity are still required. Tests reproduce the recorded tall-grass gap and check missing/deep floors and hazardous or colliding gaps. No world or scaffold journal edits are needed; pending cleanup can retry on resume.

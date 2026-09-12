@@ -98,6 +98,29 @@ final class ExcavationTaskRunner implements TaskRunner {
     private Integer verificationLayerY;
     private boolean verificationChanged;
     private boolean activeVerification;
+    private static final int MAX_PENDING_BREAKS = 16;
+    private static final long PENDING_BREAK_TIMEOUT_MILLIS = 5000L;
+    private final List<PendingBreak> pendingBreaks = new ArrayList<>();
+    private ExcavationCheckpoint pendingRollback;
+    private int pendingRejections;
+    private BlockPosition lastRejectedPending;
+
+    private static final class PendingBreak {
+
+        private final ExcavationActionHandle handle;
+        private final ExcavationActionRequest request;
+        private final ExcavationBackend backend;
+        private final long started;
+
+        private PendingBreak(ExcavationActionHandle handle, ExcavationActionRequest request, ExcavationBackend backend,
+            long started) {
+            this.handle = handle;
+            this.request = request;
+            this.backend = backend;
+            this.started = started;
+        }
+    }
+
     private boolean cacheAuditPending;
     private ExcavationFrontier cacheAuditFrontier;
     private long cacheAuditOffset;
@@ -136,7 +159,8 @@ final class ExcavationTaskRunner implements TaskRunner {
 
     @Override
     public synchronized boolean isInventoryPreparationSafe() {
-        return dropCollection == null && collectionLease == null
+        return pendingBreaks.isEmpty() && dropCollection == null
+            && collectionLease == null
             && activeHandle == null
             && activeLease == null
             && activeManagedHandle == null
@@ -156,6 +180,23 @@ final class ExcavationTaskRunner implements TaskRunner {
         statistics.tick(context.getNowMillis());
         TaskCheckpoint before = taskCheckpoint;
         StepResult result = stepWork(context);
+        if (pendingRollback != null) {
+            if (result.getKind() != StepResult.Kind.WAIT && result.getKind() != StepResult.Kind.PROGRESS) {
+                RuntimeException cleanup = stopActive();
+                if (cleanup != null) result = StepResult.failed(
+                    context.getActionEpoch(),
+                    taskCheckpoint,
+                    "Pending excavation cleanup failed: " + describe(cleanup),
+                    false);
+            } else {
+                // Persist only the frontier preceding unresolved server evidence. A restart
+                // reobserves this small speculative window instead of losing pending blocks.
+                taskCheckpoint = ExcavationTaskCheckpointCodec.encode(cylinder, pendingRollback);
+            }
+            result = result.withCheckpoint(taskCheckpoint);
+        }
+        if (result.getKind() != StepResult.Kind.WAIT && result.getKind() != StepResult.Kind.PROGRESS)
+            result = result.withCheckpoint(taskCheckpoint);
         if (excavationCheckpoint != null) statistics.layer(
             excavationCheckpoint.isComplete() ? cylinder.getBottomY()
                 : excavationCheckpoint.getFrontier()
@@ -258,13 +299,26 @@ final class ExcavationTaskRunner implements TaskRunner {
                     + " to action epoch "
                     + context.getActionEpoch());
         }
+        StepResult pendingResult = pollPendingBreaks(context, backend);
+        if (pendingResult != null) return pendingResult;
+        if (!pendingBreaks.isEmpty() && activeHandle == null
+            && (pendingBreaks.size() >= MAX_PENDING_BREAKS || verificationFrontier != null
+                || collectionDue
+                || pendingManagedPlan != null)) {
+            return StepResult.waitFor(
+                context.getActionEpoch(),
+                taskCheckpoint,
+                0L,
+                "Waiting for " + pendingBreaks.size() + " pending server block confirmations");
+        }
         if (activeManagedHandle != null) return observeManagedAction(context, backend);
         if (pendingManagedPlan != null) return advanceManagedSequence(context, backend);
         if (activeHandle != null) {
             return observeAction(context, backend);
         }
-        if (dropCollection != null || backend.supportsDropCollection() && (collectionDue || targetsSinceCollection > 0
-            && context.getNowMillis() - lastCollectionMillis >= PERIODIC_PICKUP_INTERVAL_MILLIS)) {
+        if (pendingBreaks.isEmpty() && (dropCollection != null
+            || backend.supportsDropCollection() && (collectionDue || targetsSinceCollection > 0
+                && context.getNowMillis() - lastCollectionMillis >= PERIODIC_PICKUP_INTERVAL_MILLIS))) {
             return collectDrops(context, backend);
         }
         if (verificationFrontier != null) return verifyCompletedVolume(context, backend);
@@ -430,10 +484,12 @@ final class ExcavationTaskRunner implements TaskRunner {
             plan.getStartFrontier(),
             intent,
             cylinder,
-            policy != null && policy.hasRepair() ? policy.getReservedToolSlot() : -1).withMovingMining(
-                Boolean.parseBoolean(
-                    spec.getParameters()
-                        .get("movingMining")));
+            policy != null && policy.hasRepair() ? policy.getReservedToolSlot() : -1)
+                .withMovingMining(
+                    Boolean.parseBoolean(
+                        spec.getParameters()
+                            .get("movingMining")))
+                .withAsyncConfirmation();
         ExcavationActionHandle handle = null;
         try {
             if (!lease.isValid() || lease.getEpoch() != context.getActionEpoch()
@@ -809,6 +865,11 @@ final class ExcavationTaskRunner implements TaskRunner {
 
     private StepResult suspendForSharedOperation(TaskStepContext context, ExcavationPlan plan,
         ExcavationObservationResult observed) {
+        if (!pendingBreaks.isEmpty()) return StepResult.waitFor(
+            context.getActionEpoch(),
+            taskCheckpoint,
+            0L,
+            "Waiting for pending mining confirmations before servicing inventory");
         ExcavationSuspensionReason reason = observed.getSuspensionReason();
         if (reason != ExcavationSuspensionReason.UNLOADING_REQUIRED
             && reason != ExcavationSuspensionReason.REPAIR_REQUIRED) {
@@ -898,6 +959,8 @@ final class ExcavationTaskRunner implements TaskRunner {
             case EXECUTING:
                 return StepResult
                     .waitFor(context.getActionEpoch(), taskCheckpoint, POLL_DELAY_MILLIS, progress.getDetail());
+            case PENDING_CONFIRMATION:
+                return applyPendingBreak(context, backend, progress);
             case CONFIRMED:
                 return applyConfirmation(context, backend, progress);
             case CANCELLED:
@@ -918,6 +981,136 @@ final class ExcavationTaskRunner implements TaskRunner {
         }
     }
 
+    private StepResult applyPendingBreak(TaskStepContext context, ExcavationBackend backend,
+        ExcavationActionProgress progress) {
+        try {
+            if (activeVerification || !activeRequest.isAsyncConfirmation()
+                || pendingBreaks.size() >= MAX_PENDING_BREAKS) {
+                throw new IllegalStateException("This action cannot advance speculatively");
+            }
+            ConfirmedExcavationTargetResult candidate = progress.getConfirmation()
+                .get();
+            validateConfirmation(candidate);
+            if (candidate.getTargetResult()
+                .getOutcome() != ExcavationTargetOutcome.COMPLETED)
+                throw new IllegalStateException("Only ordinary completed breaks may be pending");
+            ExcavationResultApplication application = ExcavationReducer.apply(
+                excavationCheckpoint,
+                new ExcavationExecutionResult(
+                    activePlan,
+                    Collections.singletonList(candidate.getTargetResult()),
+                    ExcavationSuspensionReason.NONE));
+            if (!application.wasApplied()) throw new IllegalStateException("Pending frontier could not advance");
+            if (pendingRollback == null) pendingRollback = excavationCheckpoint;
+            pendingBreaks.add(new PendingBreak(activeHandle, activeRequest, backend, context.getNowMillis()));
+            RuntimeException release = releaseConfirmed();
+            if (release != null) throw release;
+            return acceptPrimaryCheckpoint(
+                context,
+                application.getCheckpoint(),
+                "Locally broken target remains pending server confirmation; " + pendingBreaks.size() + " pending");
+        } catch (RuntimeException failure) {
+            return StepResult.failed(
+                context.getActionEpoch(),
+                taskCheckpoint,
+                appendCleanup("Could not track pending excavation: " + describe(failure), stopActive()),
+                false);
+        }
+    }
+
+    private StepResult pollPendingBreaks(TaskStepContext context, ExcavationBackend backend) {
+        if (pendingBreaks.isEmpty()) return null;
+        try {
+            java.util.Iterator<PendingBreak> iterator = pendingBreaks.iterator();
+            while (iterator.hasNext()) {
+                PendingBreak pending = iterator.next();
+                if (pending.backend != backend || pending.request.getActionEpoch() != context.getActionEpoch())
+                    throw new IllegalStateException("Pending excavation authority/backend changed");
+                ExcavationActionProgress progress = pending.handle.progress();
+                if (progress == null || !pending.request.getRequestId()
+                    .equals(progress.getRequestId()))
+                    throw new IllegalStateException("Mismatched pending excavation result");
+                if (progress.getState() == ExcavationActionState.RETRY_REQUIRED) {
+                    RuntimeException cleanup = stopActive();
+                    if (cleanup != null) throw cleanup;
+                    BlockPosition rejected = pending.request.getIntent()
+                        .getPosition();
+                    pendingRejections = rejected.equals(lastRejectedPending) ? pendingRejections + 1 : 1;
+                    lastRejectedPending = rejected;
+                    if (pendingRejections > 3) throw new IllegalStateException(
+                        "Repeated server rejection of pending excavation at " + rejected);
+                    return StepResult.progress(
+                        context.getActionEpoch(),
+                        taskCheckpoint,
+                        "Server restored a pending block; rechecking the speculative targets before continuing");
+                }
+                if (progress.getState() == ExcavationActionState.CONFIRMED) {
+                    ConfirmedExcavationTargetResult confirmed = progress.getConfirmation()
+                        .get();
+                    validateConfirmation(pending.request, confirmed);
+                    if (confirmed.getTargetResult()
+                        .getOutcome() != ExcavationTargetOutcome.COMPLETED)
+                        throw new IllegalStateException("Pending block was not confirmed clear");
+                    clearPendingRejection(
+                        confirmed.getTargetResult()
+                            .getPosition());
+                    statistics.broken(
+                        confirmed.getBrokenTargets(),
+                        confirmed.getTargetResult()
+                            .getPosition()
+                            .getY());
+                    targetsSinceCollection++;
+                    iterator.remove();
+                } else if (progress.getState() != ExcavationActionState.PENDING_CONFIRMATION
+                    || context.getNowMillis() - pending.started >= PENDING_BREAK_TIMEOUT_MILLIS) {
+                        throw new IllegalStateException("Pending block was not confirmed: " + progress.getDetail());
+                    }
+            }
+            if (pendingBreaks.isEmpty()) {
+                pendingRollback = null;
+                taskCheckpoint = ExcavationTaskCheckpointCodec.encode(cylinder, excavationCheckpoint);
+                cacheAuditPending = true;
+            }
+            return null;
+        } catch (RuntimeException failure) {
+            RuntimeException cleanup = stopActive();
+            return StepResult.failed(
+                context.getActionEpoch(),
+                taskCheckpoint,
+                appendCleanup("Pending excavation confirmation failed: " + describe(failure), cleanup),
+                true);
+        }
+    }
+
+    private void clearPendingRejection(BlockPosition confirmed) {
+        if (confirmed.equals(lastRejectedPending)) {
+            lastRejectedPending = null;
+            pendingRejections = 0;
+        }
+    }
+
+    private RuntimeException cancelPendingBreaks() {
+        RuntimeException failure = null;
+        for (PendingBreak pending : pendingBreaks) {
+            try {
+                pending.handle.cancel();
+            } catch (RuntimeException problem) {
+                if (failure == null) failure = problem;
+                else failure.addSuppressed(problem);
+            }
+        }
+        pendingBreaks.clear();
+        if (pendingRollback != null) {
+            excavationCheckpoint = pendingRollback;
+            pendingRollback = null;
+            taskCheckpoint = ExcavationTaskCheckpointCodec.encode(cylinder, excavationCheckpoint);
+            clearVerification();
+            resetCacheAuditCursor();
+            cacheAuditPending = false;
+        }
+        return failure;
+    }
+
     private StepResult applyConfirmation(TaskStepContext context, ExcavationBackend backend,
         ExcavationActionProgress progress) {
         if (activeVerification) {
@@ -931,6 +1124,7 @@ final class ExcavationTaskRunner implements TaskRunner {
                 throw new IllegalStateException("excavation authority changed before confirmation was applied");
             }
             ExcavationTargetResult targetResult = confirmation.getTargetResult();
+            clearPendingRejection(targetResult.getPosition());
             ExcavationExecutionResult execution = new ExcavationExecutionResult(
                 activePlan,
                 Collections.singletonList(targetResult),
@@ -1214,10 +1408,13 @@ final class ExcavationTaskRunner implements TaskRunner {
     }
 
     private long nextRevision() {
-        if (taskCheckpoint.getRevision() == Long.MAX_VALUE) {
+        long revision = Math.max(
+            taskCheckpoint.getRevision(),
+            excavationCheckpoint == null ? 0L : excavationCheckpoint.getTaskRevision());
+        if (revision == Long.MAX_VALUE) {
             throw new IllegalStateException("excavation task checkpoint revision exhausted");
         }
-        return taskCheckpoint.getRevision() + 1L;
+        return revision + 1L;
     }
 
     private void validateObservation(ExcavationObservationRequest request, ExcavationObservationResult result) {
@@ -1247,13 +1444,18 @@ final class ExcavationTaskRunner implements TaskRunner {
     }
 
     private void validateConfirmation(ConfirmedExcavationTargetResult confirmation) {
-        ExcavationIntent intent = activeRequest.getIntent();
-        if (confirmation.getTaskRevision() != activeRequest.getTaskRevision()
-            || confirmation.getActionEpoch() != activeRequest.getActionEpoch()
+        validateConfirmation(activeRequest, confirmation);
+    }
+
+    private static void validateConfirmation(ExcavationActionRequest request,
+        ConfirmedExcavationTargetResult confirmation) {
+        ExcavationIntent intent = request.getIntent();
+        if (confirmation.getTaskRevision() != request.getTaskRevision()
+            || confirmation.getActionEpoch() != request.getActionEpoch()
             || !confirmation.getGeometryKey()
-                .equals(activeRequest.getGeometryKey())
+                .equals(request.getGeometryKey())
             || !confirmation.getStartFrontier()
-                .equals(activeRequest.getStartFrontier())
+                .equals(request.getStartFrontier())
             || !confirmation.getObservedFingerprint()
                 .equals(intent.getObservedFingerprint())
             || !confirmation.getTargetResult()
@@ -1412,6 +1614,9 @@ final class ExcavationTaskRunner implements TaskRunner {
         clearActiveReferences();
         clearManagedSequence(true);
         RuntimeException failure = cancelAndClose(handle, lease);
+        RuntimeException pendingFailure = cancelPendingBreaks();
+        if (failure == null) failure = pendingFailure;
+        else if (pendingFailure != null) failure.addSuppressed(pendingFailure);
         RuntimeException collectionFailure = stopCollection();
         if (failure == null) failure = collectionFailure;
         else if (collectionFailure != null) failure.addSuppressed(collectionFailure);

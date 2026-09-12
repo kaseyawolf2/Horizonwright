@@ -1,5 +1,10 @@
 # Horizonwright
 
+Combat foundations now include hostile target policy, resource/retreat decisions,
+and a bounded melee request state machine. `/hw combatscan [radius]` previews
+nearby target exclusions and resource advice without attacking or moving.
+See [combat foundations](docs/combat-foundation.md) for scope and validation.
+
 Mining setup now offers square/circle spirals, chunk order and X/Z rows, optional walking during digging,
 and persisted layer timers, throughput and ETA. Bag-content observations are cached and Freecam camera
 movement is distinguished from player takeover. See the [performance test checklist](docs/mining-performance-smoke-test.md)

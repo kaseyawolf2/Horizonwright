@@ -457,6 +457,13 @@ Requirements:
 
 ### Exploration, prospecting, dungeons, and combat
 
+Combat foundation started: pure target eligibility/selection, configurable resource
+thresholds with health recovery hysteresis, and epoch-scoped bounded melee request
+cadence are implemented. `/hw combatscan [radius]` provides read-only live diagnostics
+using active-profile livestock protections. Live attack dispatch, task preemption,
+retreat navigation, persisted settings, and ranged weapon adapters remain pending.
+See [combat foundation scope and checks](docs/combat-foundation.md).
+
 - Persist exploration frontiers, POIs, danger exclusions, return budgets, and home routes.
 - Survey GT ore cells using the `3N+1` center grid and a configurable multi-probe bore/lateral pattern.
 - Use GregTech APIs to identify natural vein ore, ignore small ores, and interact once to register a discovery with VisualProspecting.

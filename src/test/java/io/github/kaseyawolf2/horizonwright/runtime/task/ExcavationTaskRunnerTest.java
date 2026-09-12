@@ -2,6 +2,7 @@ package io.github.kaseyawolf2.horizonwright.runtime.task;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
@@ -38,6 +39,202 @@ import io.github.kaseyawolf2.horizonwright.core.task.TaskSpec;
 import io.github.kaseyawolf2.horizonwright.core.task.TaskState;
 
 public class ExcavationTaskRunnerTest {
+
+    @Test
+    public void pendingBreakReleasesLeaseAndNextBlockStartsBeforeAcknowledgement() {
+        TaskSpec spec = beginAsyncTest("async-next", 3);
+        ActionLease firstLease = harness.backend.lastLease;
+        RecordingBackend.Handle first = markPending();
+        harness.controller.tick();
+        assertFalse(firstLease.isValid());
+        assertEquals(0L, processed(spec));
+        for (int i = 0; i < 12 && harness.backend.submissions < 2; i++) harness.controller.tick();
+        assertEquals(2, harness.backend.submissions);
+        assertEquals(ExcavationActionState.PENDING_CONFIRMATION, first.state);
+        assertEquals(0L, processed(spec));
+        assertNotEquals(
+            first.request.getIntent()
+                .getPosition(),
+            harness.backend.lastRequest.getIntent()
+                .getPosition());
+        first.state = ExcavationActionState.CONFIRMED;
+        harness.controller.tick();
+        assertTrue(processed(spec) >= 1L);
+    }
+
+    @Test
+    public void outOfOrderConfirmationsDoNotPersistPastAnEarlierPendingBlock() {
+        TaskSpec spec = beginAsyncTest("async-order", 3);
+        RecordingBackend.Handle first = markPending();
+        harness.controller.tick();
+        for (int i = 0; i < 12 && harness.backend.submissions < 2; i++) harness.controller.tick();
+        RecordingBackend.Handle second = markPending();
+        harness.controller.tick();
+        second.state = ExcavationActionState.CONFIRMED;
+        harness.controller.tick();
+        assertEquals(0L, processed(spec));
+        first.state = ExcavationActionState.CONFIRMED;
+        harness.controller.tick();
+        assertTrue(processed(spec) >= 2L);
+    }
+
+    @Test
+    public void restoredPendingBlockCancelsCurrentActionAndRevisitsTheOriginalPosition() {
+        TaskSpec spec = beginAsyncTest("async-restore", 3);
+        RecordingBackend.Handle first = markPending();
+        harness.controller.tick();
+        for (int i = 0; i < 12 && harness.backend.submissions < 2; i++) harness.controller.tick();
+        RecordingBackend.Handle second = harness.backend.active;
+        harness.backend.confirmedClear.remove(
+            first.request.getIntent()
+                .getPosition());
+        first.confirmation = null;
+        first.state = ExcavationActionState.RETRY_REQUIRED;
+        harness.controller.tick();
+        assertEquals(ExcavationActionState.CANCELLED, second.state);
+        assertEquals(0L, processed(spec));
+        for (int i = 0; i < 12 && harness.backend.submissions < 3; i++) harness.controller.tick();
+        assertEquals(3, harness.backend.submissions);
+        assertEquals(
+            first.request.getIntent()
+                .getPosition(),
+            harness.backend.lastRequest.getIntent()
+                .getPosition());
+    }
+
+    @Test
+    public void finalCompletionWaitsForPendingServerEvidence() {
+        TaskSpec spec = beginAsyncTest("async-final", 0);
+        RecordingBackend.Handle first = markPending();
+        for (int i = 0; i < 12; i++) harness.controller.tick();
+        assertEquals(1, harness.backend.submissions);
+        assertEquals(TaskState.RUNNING, task(harness.controller.snapshot(), spec.getId()).getState());
+        assertEquals(0L, processed(spec));
+        first.state = ExcavationActionState.CONFIRMED;
+        for (int i = 0; i < 20; i++) harness.controller.tick();
+        assertEquals(TaskState.COMPLETED, task(harness.controller.snapshot(), spec.getId()).getState());
+    }
+
+    @Test
+    public void pendingQueueIsBoundedWhileTheServerIsSilent() {
+        TaskSpec spec = beginAsyncTest("async-bound", 10);
+        for (int i = 0; i < 250; i++) {
+            if (harness.backend.active.state == ExcavationActionState.SUBMITTED) markPending();
+            harness.controller.tick();
+        }
+        assertEquals(16, harness.backend.submissions);
+        assertEquals(0L, processed(spec));
+        assertEquals(TaskState.RUNNING, task(harness.controller.snapshot(), spec.getId()).getState());
+    }
+
+    @Test
+    public void pauseAndRestartRetainTheFrontierBeforePendingBreaks() {
+        TaskSpec spec = beginAsyncTest("async-restart", 3);
+        RecordingBackend.Handle first = markPending();
+        for (int i = 0; i < 8; i++) harness.controller.tick();
+        TaskCheckpoint saved = task(harness.controller.snapshot(), spec.getId()).getCheckpoint();
+        assertEquals(0L, processed(spec));
+        harness.controller.pause(spec.getId());
+        harness.controller.tick();
+        assertEquals(ExcavationActionState.CANCELLED, first.state);
+        harness.close();
+        harness = new Harness();
+        harness.controller.restore(spec, saved);
+        for (int i = 0; i < 12 && harness.backend.submissions < 1; i++) harness.controller.tick();
+        assertEquals(
+            first.request.getIntent()
+                .getPosition(),
+            harness.backend.lastRequest.getIntent()
+                .getPosition());
+    }
+
+    @Test
+    public void missingServerAcknowledgementNeverCommitsSpeculativeProgress() {
+        TaskSpec spec = beginAsyncTest("async-timeout", 3);
+        RecordingBackend.Handle first = markPending();
+        harness.controller.tick();
+        harness.nowMillis = 5001L;
+        TaskSnapshot result = task(harness.controller.tick(), spec.getId());
+        assertEquals(ExcavationActionState.CANCELLED, first.state);
+        assertEquals(0L, processed(spec));
+        assertTrue(
+            result.getDetail()
+                .contains("Pending excavation confirmation failed"));
+    }
+
+    @Test
+    public void unloadWaitsForPendingBreaksBeforeSuspendingExcavation() {
+        TaskSpec spec = beginAsyncTest("async-service", 3);
+        RecordingBackend.Handle first = markPending();
+        harness.controller.tick();
+        harness.backend.suspensionReason = ExcavationSuspensionReason.UNLOADING_REQUIRED;
+        for (int i = 0; i < 8; i++) harness.controller.tick();
+        assertEquals(TaskState.RUNNING, task(harness.controller.snapshot(), spec.getId()).getState());
+        assertEquals(0L, processed(spec));
+        first.state = ExcavationActionState.CONFIRMED;
+        for (int i = 0; i < 8; i++) harness.controller.tick();
+        assertEquals(TaskState.BLOCKED, task(harness.controller.snapshot(), spec.getId()).getState());
+    }
+
+    @Test
+    public void backendReplacementCancelsPendingEvidenceAndRetainsSavedFrontier() {
+        TaskSpec spec = beginAsyncTest("async-backend-change", 3);
+        RecordingBackend.Handle first = markPending();
+        harness.controller.tick();
+        harness.access.backend = new RecordingBackend();
+        harness.controller.tick();
+        assertEquals(ExcavationActionState.CANCELLED, first.state);
+        assertEquals(0L, processed(spec));
+    }
+
+    @Test
+    public void repeatedRejectionOfSamePendingBlockIsBoundedWithoutCommittingIt() {
+        TaskSpec spec = beginAsyncTest("async-repeat-rejection", 3);
+        for (int rejection = 1; rejection <= 4; rejection++) {
+            RecordingBackend.Handle pending = markPending();
+            harness.controller.tick();
+            harness.backend.confirmedClear.remove(
+                pending.request.getIntent()
+                    .getPosition());
+            pending.state = ExcavationActionState.RETRY_REQUIRED;
+            pending.confirmation = null;
+            TaskSnapshot result = task(harness.controller.tick(), spec.getId());
+            assertEquals(0L, processed(spec));
+            if (rejection == 4) {
+                assertTrue(
+                    result.getDetail()
+                        .contains("Repeated server rejection"));
+            } else {
+                int previous = harness.backend.submissions;
+                for (int i = 0; i < 12 && harness.backend.submissions == previous; i++) harness.controller.tick();
+                assertEquals(previous + 1, harness.backend.submissions);
+            }
+        }
+    }
+
+    private TaskSpec beginAsyncTest(String id, int radius) {
+        harness = new Harness();
+        TaskSpec spec = ExcavationTask.cleanVolumeCylinder(id, 0, 0, 0, radius, 12, 12);
+        harness.controller.submit(spec);
+        for (int i = 0; i < 12 && harness.backend.submissions < 1; i++) harness.controller.tick();
+        assertEquals(1, harness.backend.submissions);
+        assertTrue(harness.backend.lastRequest.isAsyncConfirmation());
+        return spec;
+    }
+
+    private RecordingBackend.Handle markPending() {
+        harness.backend.confirm();
+        harness.backend.active.confirmation = harness.backend.active.confirmation.withBrokenTargets(1);
+        harness.backend.active.state = ExcavationActionState.PENDING_CONFIRMATION;
+        return harness.backend.active;
+    }
+
+    private long processed(TaskSpec spec) {
+        return ExcavationTaskCheckpointCodec
+            .decode(ExcavationTask.parse(spec), task(harness.controller.snapshot(), spec.getId()).getCheckpoint())
+            .getProgress()
+            .getProcessed();
+    }
 
     @Test
     public void periodicPickupWaitsTwoMinutesFromStartEvenAfterManyTargets() {

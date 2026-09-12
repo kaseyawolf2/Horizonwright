@@ -61,22 +61,22 @@ public final class AutomaticInventory {
         for (int slot = 0; slot < Math.min(36, inventory.length); slot++) {
             ItemStack stack = inventory[slot];
             if (stack == null) continue;
+            // Food provisioning is disabled until auto-eating owns an explicit supply policy.
+            if (stack.getItem() instanceof ItemFood) continue;
             boolean carrier = extensions.find(stack) != null;
             boolean tool = carrier || stack.getMaxStackSize() == 1
                 || !ToolCapabilities.classes(stack)
                     .isEmpty();
-            boolean food = stack.getItem() instanceof ItemFood;
             boolean planting = keepPlantingSupplies && plantingSupply(stack);
-            if (!tool && !food && !planting) continue;
+            if (!tool && !planting) continue;
             ItemFingerprint item = snapshots.fingerprint(stack);
             reserve(
                 reservations,
                 item,
                 slot,
                 tool,
-                food ? LoadoutRole.FOOD
-                    : planting ? LoadoutRole.OTHER_RESERVED
-                        : stack.getItem() instanceof ItemArmor ? LoadoutRole.ARMOR : LoadoutRole.TOOL);
+                planting ? LoadoutRole.OTHER_RESERVED
+                    : stack.getItem() instanceof ItemArmor ? LoadoutRole.ARMOR : LoadoutRole.TOOL);
         }
         return new NamedLoadout(ID, "Automatic inventory", reservations);
     }
@@ -119,7 +119,7 @@ public final class AutomaticInventory {
     }
 
     public static int automaticReserveCount(ItemStack stack, boolean keepPlantingSupplies) {
-        return stack != null && (stack.getItem() instanceof ItemFood || keepPlantingSupplies && plantingSupply(stack))
+        return stack != null && !(stack.getItem() instanceof ItemFood) && keepPlantingSupplies && plantingSupply(stack)
             ? CONSUMABLE_RESERVE
             : 0;
     }

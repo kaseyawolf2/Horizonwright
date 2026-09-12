@@ -5,7 +5,10 @@ import java.util.Objects;
 import io.github.kaseyawolf2.horizonwright.core.excavation.ExcavationFrontier;
 import io.github.kaseyawolf2.horizonwright.core.excavation.ExcavationTargetResult;
 
-/** Post-action confirmation for exactly one bound excavation request. */
+/**
+ * Post-action target evidence for one bound request. PENDING_CONFIRMATION progress
+ * carries a provisional result; only CONFIRMED progress supplies server-confirmed evidence.
+ */
 public final class ConfirmedExcavationTargetResult {
 
     private final long taskRevision;

@@ -212,18 +212,21 @@ public final class ScaffoldDigHandle implements NavigationHandle {
             || box.minY < target.getY() + 1) return true;
         if (!mc.thePlayer.onGround) return false;
         int x = target.getX(), z = target.getZ();
-        return ScaffoldDescentSafety.safeLanding(
-            target.getY(),
-            box.minY,
-            y -> mc.theWorld.blockExists(x, y, z) && mc.theWorld.isAirBlock(x, y, z),
-            y -> {
-                if (!mc.theWorld.blockExists(x, y, z)) return false;
-                Block floor = mc.theWorld.getBlock(x, y, z);
-                return ScaffoldDescentSafety
-                    .supportsLanding(floor.getCollisionBoundingBoxFromPool(mc.theWorld, x, y, z), x, y, z)
-                    && !(floor instanceof BlockFalling)
-                    && !QuicksandTravelPolicy.isHazard(mc.theWorld, x, y, z);
-            });
+        return ScaffoldDescentSafety.safeLanding(target.getY(), box.minY, y -> {
+            if (!mc.theWorld.blockExists(x, y, z)) return false;
+            Block gap = mc.theWorld.getBlock(x, y, z);
+            return ScaffoldDescentSafety.passableGap(
+                gap.getMaterial(),
+                gap.getCollisionBoundingBoxFromPool(mc.theWorld, x, y, z),
+                QuicksandTravelPolicy.isHazard(mc.theWorld, x, y, z));
+        }, y -> {
+            if (!mc.theWorld.blockExists(x, y, z)) return false;
+            Block floor = mc.theWorld.getBlock(x, y, z);
+            return ScaffoldDescentSafety
+                .supportsLanding(floor.getCollisionBoundingBoxFromPool(mc.theWorld, x, y, z), x, y, z)
+                && !(floor instanceof BlockFalling)
+                && !QuicksandTravelPolicy.isHazard(mc.theWorld, x, y, z);
+        });
     }
 
     public void cancel() {
